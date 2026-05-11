@@ -1,0 +1,84 @@
+rules:
+  - name: High Error Rate
+    source: elasticsearch
+    metric: error_count_5m
+    condition: gt
+    threshold: 50
+    duration_seconds: 300
+    severity: warning
+    enabled: true
+    notify_slack: true
+    notify_email: false
+    notify_webhook: false
+
+  - name: APM Latency Spike
+    source: apm
+    metric: p95_latency_ms
+    condition: gt
+    threshold: 2000
+    duration_seconds: 120
+    severity: warning
+    enabled: true
+    notify_slack: true
+    notify_email: false
+    notify_webhook: false
+
+  - name: APM Error Rate
+    source: apm
+    metric: error_rate_percent
+    condition: gt
+    threshold: 5.0
+    duration_seconds: 180
+    severity: critical
+    enabled: true
+    notify_slack: true
+    notify_email: true
+    notify_webhook: false
+
+  - name: High CPU Usage
+    source: prometheus
+    metric: cpu_percent
+    condition: gt
+    threshold: 90
+    duration_seconds: 300
+    severity: critical
+    enabled: true
+    notify_slack: true
+    notify_email: true
+    notify_webhook: false
+
+  - name: High Memory Usage
+    source: prometheus
+    metric: memory_percent
+    condition: gt
+    threshold: 90
+    duration_seconds: 300
+    severity: critical
+    enabled: true
+    notify_slack: true
+    notify_email: true
+    notify_webhook: false
+
+  - name: Pod Crash
+    source: kubernetes
+    metric: pods_failed
+    condition: gt
+    threshold: 0
+    duration_seconds: 60
+    severity: critical
+    enabled: true
+    notify_slack: true
+    notify_email: true
+    notify_webhook: false
+
+  - name: Deployment Unavailable
+    source: kubernetes
+    metric: deployments_unavailable
+    condition: gt
+    threshold: 0
+    duration_seconds: 60
+    severity: warning
+    enabled: true
+    notify_slack: true
+    notify_email: false
+    notify_webhook: false

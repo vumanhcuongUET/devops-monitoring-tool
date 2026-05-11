@@ -1,0 +1,22 @@
+slo_configs:
+  - service_name: "api-gateway"
+    slo_type: "availability"
+    target: 99.9
+    window_days: 30
+
+  - service_name: "api-gateway"
+    slo_type: "latency"
+    target: 99.0
+    latency_threshold_ms: 200
+    window_days: 30
+
+  - service_name: "api-gateway"
+    slo_type: "availability"
+    target: 99.9
+    window_days: 7
+
+  - service_name: "api-gateway"
+    slo_type: "latency"
+    target: 99.0
+    latency_threshold_ms: 200
+    window_days: 7

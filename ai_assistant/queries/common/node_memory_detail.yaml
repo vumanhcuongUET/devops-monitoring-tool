@@ -1,0 +1,93 @@
+type: prometheus
+source_types: [prometheus_infra]
+
+# Chi tiết Memory per node: used%, swap%, buffers+cached, OOM kill events.
+# Biến template:
+#   {{ namespace_selector }} = {namespace="x"}
+#   {{ prom_range }}         = range duration tự tính từ time_range
+
+queries:
+  # ── Memory used % ────────────────────────────────────────────────────────────
+  - id: mem_used_pct
+    promql_template: |-
+      (
+        1 - sum by (namespace, hostname, instance, server) (
+              node_memory_MemAvailable_bytes{{ namespace_selector }}
+            )
+            / sum by (namespace, hostname, instance, server) (
+              node_memory_MemTotal_bytes{{ namespace_selector }}
+            )
+      ) * 100 > 70
+
+  # ── Swap used % ──────────────────────────────────────────────────────────────
+  # Loại bỏ node không có swap (SwapTotal = 0)
+  - id: mem_swap_pct
+    promql_template: |-
+      (
+        1 - sum by (namespace, hostname, instance, server) (
+              node_memory_SwapFree_bytes{{ namespace_selector }}
+            )
+            / sum by (namespace, hostname, instance, server) (
+              node_memory_SwapTotal_bytes{{ namespace_selector }}
+            )
+      ) * 100 > 10
+      and
+      sum by (namespace, hostname, instance, server) (
+        node_memory_SwapTotal_bytes{{ namespace_selector }}
+      ) > 0
+
+  # ── Buffers + Cached (GiB) ────────────────────────────────────────────────────
+  - id: mem_bufcache_gib
+    promql_template: |-
+      (
+        sum by (namespace, hostname, instance, server) (node_memory_Buffers_bytes{{ namespace_selector }})
+        +
+        sum by (namespace, hostname, instance, server) (node_memory_Cached_bytes{{ namespace_selector }})
+      ) / 1073741824
+
+  # ── OOM kill events trong khoảng time_range ──────────────────────────────────
+  - id: mem_oom_kills
+    promql_template: |-
+      increase(
+        node_vmstat_oom_kill{{ namespace_selector }}[{{ prom_range }}]
+      ) > 0
+
+display:
+  mem_used_pct:
+    unit: "% RAM used"
+    format: "table: | Host | Server | Mem % | Status |"
+    note: "chỉ node > 70%"
+    highlight:
+      - "value >= 70 → ⚠️"
+      - "value >= 90 → 🔴"
+    troubleshooting:
+      - "≥70%: ps aux --sort=-%mem | head -15 để tìm process dùng nhiều RAM"
+      - "≥90%: nguy cơ OOM cao — kiểm tra mem_oom_kills và mem_swap_pct"
+      - "Nếu mem cao nhưng app bình thường: Linux dùng RAM cho cache (xem mem_bufcache_gib)"
+  mem_swap_pct:
+    unit: "% Swap used"
+    format: "table: | Host | Server | Swap % | Status |"
+    note: "chỉ node dùng swap > 10% — hệ thống đang thiếu RAM thực"
+    highlight:
+      - "value >= 10 → ⚠️  (đang dùng swap, hiệu năng bị ảnh hưởng)"
+      - "value >= 50 → 🔴 (RAM cạn kiệt, risk OOM rất cao)"
+    troubleshooting:
+      - "Swap >10%: xác định process leak memory — watch -n5 'ps aux --sort=-%mem | head'"
+      - "Swap >50%: khẩn cấp — restart service bị leak hoặc tăng RAM node"
+      - "Tạm thời giải phóng swap: swapoff -a && swapon -a (cần RAM còn đủ trước khi chạy)"
+  mem_bufcache_gib:
+    unit: "GiB (buffers + page cache)"
+    format: "table: | Host | Server | Buf+Cache GiB |"
+    note: "thông tin tham khảo — Linux tận dụng RAM còn trống để cache, không phải leak"
+  mem_oom_kills:
+    unit: "OOM kill events"
+    format: "table: | Host | Server | OOM kills | 🔴 |"
+    note: "số lần OOM killer kích hoạt trong khoảng time_range"
+    highlight:
+      - "value > 0 → 🔴 (process đã bị kill do hết RAM)"
+    troubleshooting:
+      - "Tìm process bị kill: grep 'Killed process' /var/log/syslog | tail -20"
+      - "Chi tiết OOM: dmesg -T | grep -A20 'Out of memory'"
+      - "Xem xét: tăng RAM, tăng memory limit container, hoặc fix memory leak trong code"
+      - "Ngắn hạn: thêm swap để giảm OOM, nhưng không phải giải pháp dài hạn"
+  empty_message: "✅ Memory tất cả node trong giới hạn bình thường"

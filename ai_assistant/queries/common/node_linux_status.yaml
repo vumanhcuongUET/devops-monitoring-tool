@@ -1,0 +1,238 @@
+type: prometheus
+source_types: [prometheus_infra]
+
+# Tổng hợp toàn bộ node metrics Linux vào 1 file.
+# Mỗi cặp query_id là 1 section riêng trong báo cáo:
+#   <metric>_total  — đếm tổng số node/partition đang được giám sát
+#   <metric>        — chỉ trả về node/partition vượt ngưỡng warning
+#
+# Biến template:
+#   {{ namespace_selector }} = {namespace="x"}   — metric không có label sẵn
+#   {{ namespace_filter }}   = , namespace="x"   — bên trong {} đã có label khác
+#   {{ prom_range }}         = 2h / 30m / ...    — range duration cho subquery (tự tính từ time_range)
+
+queries:
+  # ── CPU ────────────────────────────────────────────────────────────────────
+  - id: cpu_load_total
+    promql_template: |-
+      count by (namespace) (
+        node_load1{{ namespace_selector }}
+      )
+
+  - id: cpu_load
+    promql_template: |-
+      (
+        sum by (namespace, hostname, instance, server) (node_load1{{ namespace_selector }})
+        /
+        count by (namespace, hostname, instance, server) (
+          rate(node_cpu_seconds_total{mode="idle"{{ namespace_filter }}}[5m])
+        )
+      ) * 100 > 80
+
+  # ── Memory ─────────────────────────────────────────────────────────────────
+  - id: memory_total
+    promql_template: |-
+      count by (namespace) (
+        node_memory_MemTotal_bytes{{ namespace_selector }}
+      )
+
+  - id: memory_pct
+    promql_template: |-
+      (
+        1 - sum by (namespace, hostname, instance, server) (node_memory_MemAvailable_bytes{{ namespace_selector }})
+            / sum by (namespace, hostname, instance, server) (node_memory_MemTotal_bytes{{ namespace_selector }})
+      ) * 100 > 80
+
+  # ── Disk < 500 GiB → cảnh báo theo % ──────────────────────────────────────
+  # 500 GiB = 536_870_912_000 bytes
+  - id: small_disk_total
+    promql_template: |-
+      count by (namespace) (
+        sum by (namespace, hostname, instance, server, mountpoint) (
+          node_filesystem_size_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+        ) < 536870912000
+      )
+
+  - id: small_disk_pct
+    promql_template: |-
+      (
+        1 - sum by (namespace, hostname, instance, server, mountpoint) (
+              node_filesystem_avail_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+            )
+            / sum by (namespace, hostname, instance, server, mountpoint) (
+              node_filesystem_size_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+            )
+      ) * 100 > 80
+      and
+      sum by (namespace, hostname, instance, server, mountpoint) (
+        node_filesystem_size_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+      ) < 536870912000
+
+  # ── Disk >= 500 GiB → cảnh báo theo dung lượng còn trống (GiB) ────────────
+  - id: large_disk_total
+    promql_template: |-
+      count by (namespace) (
+        sum by (namespace, hostname, instance, server, mountpoint) (
+          node_filesystem_size_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+        ) >= 536870912000
+      )
+
+  - id: large_disk_free_gib
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, mountpoint) (
+        node_filesystem_avail_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+      ) / 1073741824 < 100
+      and
+      sum by (namespace, hostname, instance, server, mountpoint) (
+        node_filesystem_size_bytes{mountpoint=~"(/|/data)",fstype!="tmpfs"{{ namespace_filter }}}
+      ) >= 536870912000
+
+  # ── Open File Descriptors ──────────────────────────────────────────────────
+  - id: file_fd_total
+    promql_template: |-
+      count by (namespace) (
+        sum by (namespace, hostname, instance, server) (
+          node_filefd_allocated{{ namespace_selector }}
+        )
+      )
+
+  - id: file_fd
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        node_filefd_allocated{{ namespace_selector }}
+      ) > 50000
+
+  # ── Conntrack ──────────────────────────────────────────────────────────────
+  - id: nf_conntrack_total
+    promql_template: |-
+      count by (namespace) (
+        sum by (namespace, hostname, instance, server) (
+          node_nf_conntrack_entries{{ namespace_selector }}
+        )
+      )
+
+  - id: nf_conntrack
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        node_nf_conntrack_entries{{ namespace_selector }}
+      ) > 50000
+
+  # ── Network peak RX (MB/s) trong khoảng time_range ────────────────────────
+  # Loại bỏ loopback, virtual, container interfaces.
+  - id: net_rx_total
+    promql_template: |-
+      count by (namespace) (
+        max by (namespace, hostname, instance, server) (
+          rate(node_network_receive_bytes_total{device!~"lo|veth.+|docker.+|br-.+|cali.+|flannel.+"{{ namespace_filter }}}[5m])
+        )
+      )
+
+  - id: net_rx_peak_mbps
+    promql_template: |-
+      max by (namespace, hostname, instance, server) (
+        max_over_time(
+          rate(node_network_receive_bytes_total{device!~"lo|veth.+|docker.+|br-.+|cali.+|flannel.+"{{ namespace_filter }}}[5m])
+          [{{ prom_range }}:5m]
+        )
+      ) / 1048576 > 500
+
+  # ── Network peak TX (MB/s) trong khoảng time_range ────────────────────────
+  - id: net_tx_total
+    promql_template: |-
+      count by (namespace) (
+        max by (namespace, hostname, instance, server) (
+          rate(node_network_transmit_bytes_total{device!~"lo|veth.+|docker.+|br-.+|cali.+|flannel.+"{{ namespace_filter }}}[5m])
+        )
+      )
+
+  - id: net_tx_peak_mbps
+    promql_template: |-
+      max by (namespace, hostname, instance, server) (
+        max_over_time(
+          rate(node_network_transmit_bytes_total{device!~"lo|veth.+|docker.+|br-.+|cali.+|flannel.+"{{ namespace_filter }}}[5m])
+          [{{ prom_range }}:5m]
+        )
+      ) / 1048576 > 500
+
+display:
+  cpu_load_total:
+    unit: "nodes monitored"
+    format: "scalar: tổng số node đang giám sát CPU"
+  cpu_load:
+    unit: "% (load/cores * 100)"
+    format: "table: | Host | Server | CPU % | Status |"
+    note: "chỉ node > 80%"
+    highlight:
+      - "value >= 80 → ⚠️"
+      - "value >= 95 → 🔴"
+  memory_total:
+    unit: "nodes monitored"
+    format: "scalar: tổng số node đang giám sát Memory"
+  memory_pct:
+    unit: "% used"
+    format: "table: | Host | Server | Mem % | Status |"
+    note: "chỉ node > 80%"
+    highlight:
+      - "value >= 80 → ⚠️"
+      - "value >= 90 → 🔴"
+  small_disk_total:
+    unit: "partitions monitored (< 500GiB)"
+    format: "scalar: tổng số partition nhỏ đang giám sát"
+  small_disk_pct:
+    unit: "% used  (disk < 500GiB)"
+    format: "table: | Host | Mount | Used % | Status |"
+    note: "chỉ partition > 80%"
+    highlight:
+      - "value >= 80 → ⚠️"
+      - "value >= 90 → 🔴"
+  large_disk_total:
+    unit: "partitions monitored (≥ 500GiB)"
+    format: "scalar: tổng số partition lớn đang giám sát"
+  large_disk_free_gib:
+    unit: "GiB free  (disk ≥ 500GiB)"
+    format: "table: | Host | Mount | Free GiB | Status |"
+    note: "chỉ partition < 100 GiB còn trống"
+    highlight:
+      - "value <= 100 → ⚠️"
+      - "value <= 50  → 🔴"
+  file_fd_total:
+    unit: "nodes monitored"
+    format: "scalar: tổng số node đang giám sát File FD"
+  file_fd:
+    unit: "open file descriptors"
+    format: "table: | Host | Server | Open FDs | Status |"
+    note: "chỉ node > 50,000 FDs"
+    highlight:
+      - "value >= 50000  → ⚠️"
+      - "value >= 100000 → 🔴"
+  nf_conntrack_total:
+    unit: "nodes monitored"
+    format: "scalar: tổng số node đang giám sát Conntrack"
+  nf_conntrack:
+    unit: "conntrack entries"
+    format: "table: | Host | Server | Entries | Status |"
+    note: "chỉ node > 50,000 entries"
+    highlight:
+      - "value >= 50000  → ⚠️"
+      - "value >= 100000 → 🔴"
+  net_rx_total:
+    unit: "nodes monitored"
+    format: "scalar: tổng số node đang giám sát Net RX"
+  net_rx_peak_mbps:
+    unit: "MB/s peak receive"
+    format: "table: | Host | Server | Peak RX MB/s | Status |"
+    note: "chỉ node > 500 MB/s"
+    highlight:
+      - "value >= 500 → ⚠️"
+      - "value >= 900 → 🔴"
+  net_tx_total:
+    unit: "nodes monitored"
+    format: "scalar: tổng số node đang giám sát Net TX"
+  net_tx_peak_mbps:
+    unit: "MB/s peak transmit"
+    format: "table: | Host | Server | Peak TX MB/s | Status |"
+    note: "chỉ node > 500 MB/s"
+    highlight:
+      - "value >= 500 → ⚠️"
+      - "value >= 900 → 🔴"
+  empty_message: "✅ Không lấy được dữ liệu node (kiểm tra Prometheus)"

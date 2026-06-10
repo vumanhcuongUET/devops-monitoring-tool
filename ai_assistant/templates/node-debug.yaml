@@ -1,0 +1,38 @@
+# Template: Debug tình trạng Node chi tiết
+# Dùng để trace/investigate sự cố node: CPU spike, memory leak, network drop, TCP issues, system errors.
+# Chạy: python tools/run_query.py --project <project> --section <query_file> [--time-range now-30m]
+
+name: node-debug
+title: "Debug Node {{ project }}"
+description: "Báo cáo chi tiết CPU/Memory/Network/TCP và System Logs — dùng để điều tra sự cố node"
+
+sections:
+  - id: node_cpu_detail
+    title: "🔥 CPU — Usage / iowait / steal / Load"
+    query_file: node_cpu_detail
+    sources: [prometheus_infra]
+    required: true
+
+  - id: node_memory_detail
+    title: "🧠 Memory — Used / Swap / OOM kills"
+    query_file: node_memory_detail
+    sources: [prometheus_infra]
+    required: true
+
+  - id: node_network_detail
+    title: "🌐 Network — Băng thông & Packet drops/errors"
+    query_file: node_network_detail
+    sources: [prometheus_infra]
+    required: true
+
+  - id: node_tcp_states
+    title: "🔌 TCP — ESTABLISHED / TIME_WAIT / Retransmits"
+    query_file: node_tcp_states
+    sources: [prometheus_infra]
+    required: false
+
+  - id: node_sys_logs
+    title: "📋 System Logs — Lỗi & Hướng xử lý"
+    query_file: node_sys_logs
+    sources: [elk_system]
+    required: false

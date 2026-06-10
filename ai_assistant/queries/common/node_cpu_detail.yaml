@@ -1,0 +1,82 @@
+type: prometheus
+source_types: [prometheus_infra]
+
+# Chi tiết CPU per node: usage%, iowait%, steal%, load 15m.
+# Biến template:
+#   {{ namespace_selector }} = {namespace="x"}
+#   {{ namespace_filter }}   = , namespace="x"
+#   {{ prom_range }}         = range duration tự tính từ time_range
+
+queries:
+  # ── CPU Usage % (all modes except idle) ─────────────────────────────────────
+  - id: cpu_usage_pct
+    promql_template: |-
+      (
+        1 - avg by (namespace, hostname, instance, server) (
+          rate(node_cpu_seconds_total{mode="idle"{{ namespace_filter }}}[5m])
+        )
+      ) * 100 > 70
+
+  # ── CPU iowait % — dấu hiệu bottleneck I/O disk ─────────────────────────────
+  - id: cpu_iowait_pct
+    promql_template: |-
+      avg by (namespace, hostname, instance, server) (
+        rate(node_cpu_seconds_total{mode="iowait"{{ namespace_filter }}}[5m])
+      ) * 100 > 5
+
+  # ── CPU steal % — VM bị hypervisor lấy bớt CPU ──────────────────────────────
+  - id: cpu_steal_pct
+    promql_template: |-
+      avg by (namespace, hostname, instance, server) (
+        rate(node_cpu_seconds_total{mode="steal"{{ namespace_filter }}}[5m])
+      ) * 100 > 2
+
+  # ── Load average 15m — tải dài hạn ──────────────────────────────────────────
+  - id: cpu_load15
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        node_load15{{ namespace_selector }}
+      ) > 2
+
+display:
+  cpu_usage_pct:
+    unit: "% CPU used"
+    format: "table: | Host | Server | CPU % | Status |"
+    note: "chỉ node > 70%"
+    highlight:
+      - "value >= 70 → ⚠️"
+      - "value >= 95 → 🔴"
+    troubleshooting:
+      - "≥70%: xác định process ngốn CPU — top -b -n1 -o%CPU | head -20"
+      - "≥95%: khẩn cấp — kiểm tra CPU spike, xem xét scale hoặc restart service"
+  cpu_iowait_pct:
+    unit: "% iowait"
+    format: "table: | Host | Server | iowait % | Status |"
+    note: "chỉ node > 5% — dấu hiệu I/O disk bị bottleneck"
+    highlight:
+      - "value >= 5  → ⚠️  (disk I/O chậm)"
+      - "value >= 30 → 🔴 (disk bị nghẽn nghiêm trọng)"
+    troubleshooting:
+      - "≥5%: dùng iostat -x 1 5 để xác định disk nào bị saturation"
+      - "≥30%: kiểm tra smartctl -a /dev/sdX, xem xét thêm IOPS hoặc chuyển SSD"
+  cpu_steal_pct:
+    unit: "% steal"
+    format: "table: | Host | Server | steal % | Status |"
+    note: "chỉ node > 2% — VM đang bị hypervisor lấy bớt CPU"
+    highlight:
+      - "value >= 2  → ⚠️  (hypervisor đang chia sẻ CPU cao)"
+      - "value >= 15 → 🔴 (VM bị CPU starvation nghiêm trọng)"
+    troubleshooting:
+      - "≥2%: báo team infra kiểm tra hypervisor utilization và các VM cùng host"
+      - "≥15%: migrate VM sang host khác hoặc tăng CPU reservation trong vSphere/KVM"
+  cpu_load15:
+    unit: "load average 15m"
+    format: "table: | Host | Server | Load 15m | Status |"
+    note: "chỉ node > 2.0 — cần so với số CPU core (load/nCPU > 1 = overloaded)"
+    highlight:
+      - "value > nCPU * 0.8 → ⚠️"
+      - "value > nCPU * 1.5 → 🔴"
+    troubleshooting:
+      - "Load cao kéo dài: xem cpu_usage_pct + cpu_iowait_pct để xác định nguyên nhân"
+      - "Load cao nhưng CPU usage thấp: tắc I/O (iowait) hoặc uninterruptible sleep"
+  empty_message: "✅ CPU tất cả node trong giới hạn bình thường"

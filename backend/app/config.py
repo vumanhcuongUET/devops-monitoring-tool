@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     AUTH_TOKEN_TTL_SECONDS: int = 86400  # 24h token lifetime
     ALLOWED_WEBHOOK_HOSTS: list[str] = []  # If empty, allow all (legacy); set to restrict
 
+    # AI / LLM
+    ANTHROPIC_API_KEY: str = ""  # Claude API key for Triage Card generation
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"  # Default model (Sonnet 4)
+    AI_MAX_TOKENS: int = 4096  # Max tokens for LLM response
+
     # SLO Reporting
     SLO_REPORT_ENABLED: bool = True
     SLO_REPORT_HOUR: int = 9

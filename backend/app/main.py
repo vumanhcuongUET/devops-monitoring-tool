@@ -88,7 +88,12 @@ async def lifespan(app: FastAPI):
     await app.state.es_client.close()
 
 
-app = FastAPI(title="DevOps Monitor", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="DevOps AI Agentics 2026",
+    version="1.0.0",
+    description="Unified DevOps monitoring platform with AI-powered observability copilot",
+    lifespan=lifespan,
+)
 
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20)
 app.add_middleware(AuthMiddleware)

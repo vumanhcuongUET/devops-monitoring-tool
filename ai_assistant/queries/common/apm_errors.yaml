@@ -1,0 +1,36 @@
+# APM error events from Elasticsearch APM.
+# Uses apm_filter (labels.app_id + service.name) instead of project_filter
+# because APM data uses different field names from application logs.
+type: elk
+source_types: [elk_apm]
+
+elk_body_template: |
+  {
+    "size": {{ max_results }},
+    "sort": [{ "@timestamp": "desc" }],
+    "query": {
+      "bool": {
+        "must": [
+          { "term": { "processor.event": "error" }},
+          { "range": { "@timestamp": { "gte": "{{ time_range }}" }}}
+        ],
+        "filter": [{{ apm_filter }}]
+      }
+    },
+    "aggs": {
+      "by_service": {
+        "terms": { "field": "service.name.keyword", "size": 10 }
+      },
+      "by_exception": {
+        "terms": { "field": "error.exception.type.keyword", "size": 10 }
+      }
+    }
+  }
+
+display:
+  show:
+    - total APM error count (hits.total.value)
+    - top services by error count (aggs.by_service.buckets)
+    - top exception types (aggs.by_exception.buckets)
+    - latest 5: \@timestamp | service.name | error.exception.type | error.exception.message
+  empty_message: "✅ Không có APM error trong {{ time_range }}"

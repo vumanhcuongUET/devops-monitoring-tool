@@ -1,0 +1,76 @@
+project: meinvoice
+namespace: meinvoice
+node_job: ""
+report_template: system-status
+
+sources:
+  elk_error:
+    inherit: true
+    extra:
+      - name: ELK-MeInvoice-App
+        url: "https://elkerror-elastic.misaonline.vpnlocal"
+        index: "logstash-meinvoice*"
+        auth_env: ELK_AUTH
+
+  elk_bus:
+    inherit: false
+    extra:
+      - name: ELK-Bus-MeInvoice
+        url: "https://elkbus-elastic.misaonline.vpnlocal"
+        index: "logstash-meinvoice*"
+        auth_env: ELK_AUTH
+
+  elk_apm:
+    inherit: true
+    extra:
+      - name: ELK-APM-MeInvoice
+        url: "https://elkapm-elastic.misaonline.vpnlocal"
+        index: "trace-apm-default"
+        auth_env: ELK_AUTH
+
+  # MeInvoice chạy trên K8s cluster riêng — trỏ prometheus_k8s về cluster đó
+  prometheus_k8s:
+    inherit: false
+    extra: 
+      - name: Prometheus-K8s-MeInvoice
+        url: "https://k8smonitor-prometheus.misaonline.vpnlocal/k8s-mon-mei/"
+
+  # System logs từ ELK-Sys — filter theo hostname pattern node meinvoice
+  elk_system:
+    inherit: false
+    extra:
+      - name: ELK-Sys-MeInvoice
+        url: "https://elksys-elastic.misaonline.vpnlocal"
+        index: "syslog-*"
+        auth_env: ELK_AUTH
+
+  # alerts và infra dùng chung global
+  prometheus_alerts:
+    inherit: false
+    extra: 
+      - name: Prometheus-K8s-MeInvoice
+        url: "https://k8smonitor-prometheus.misaonline.vpnlocal/k8s-mon-mei/"
+
+  prometheus_infra:
+    inherit: false
+    extra: 
+      - name: Prometheus-K8s-MeInvoice
+        url: "https://k8smonitor-prometheus.misaonline.vpnlocal/k8s-mon-mei/"
+
+query_vars:
+  time_range: "now-2h"
+  max_results: 10
+  # project_filter: dùng cho elk_error, elk_bus (app log sources)
+  project_filter: '{"term": {"app_id.keyword": "meinvoice"}}'
+  # apm_filter: dùng cho elk_apm — filter theo labels.app_id + service.name
+  # Nhiều service name thì dùng "terms", một service thì dùng "term"
+  apm_filter: '{"term": {"labels.app_id": "meinvoice"}}, {"terms": {"service.name.keyword": ["meinvoice-api", "meinvoice-service", "meinvoice-worker"]}}'
+  # sys_filter: dùng cho node_sys_logs — filter hostname node thuộc cluster meinvoice
+  # Cập nhật pattern cho đúng với hostname thực tế nếu cần
+  sys_filter: '{"query_string": {"query": "host.name:(*inv*)", "default_field": "host.name"}}'
+
+skip_sections: [
+  "apm_errors",
+  "errors",
+  "slow_endpoints"
+]

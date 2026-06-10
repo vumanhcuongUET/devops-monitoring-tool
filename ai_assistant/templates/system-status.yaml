@@ -1,0 +1,43 @@
+# Template: Tình trạng hệ thống tổng quan
+# Defines sections to include and their display order
+
+name: system-status
+title: "Tình trạng hệ thống {{ project }}"
+description: "Báo cáo giám sát tổng hợp"
+
+sections:
+  - id: alerts
+    title: "🚨 Alerts đang Active"
+    query_file: alerts
+    sources: [prometheus_alerts]
+    required: true
+
+  - id: errors
+    title: "❌ Lỗi ERROR gần nhất (App logs)"
+    query_file: errors
+    sources: [elk_error, elk_bus]
+    required: true
+
+  - id: apm_errors
+    title: "❌ Lỗi ERROR gần nhất (APM)"
+    query_file: apm_errors
+    sources: [elk_apm]
+    required: false
+
+  - id: slow_endpoints
+    title: "🐢 Top Endpoint/Query chậm"
+    query_file: slow_endpoints
+    sources: [elk_apm]
+    required: false
+
+  - id: node_linux_status
+    title: "🖥️ Tình trạng Node Linux"
+    query_file: node_linux_status
+    sources: [prometheus_infra]
+    required: false
+
+  - id: pod_status
+    title: "🟢 Trạng thái Pod/Service"
+    query_file: pod_status
+    sources: [prometheus_k8s]
+    required: false

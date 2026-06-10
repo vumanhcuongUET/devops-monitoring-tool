@@ -445,7 +445,7 @@ interface SLOConfig {
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ANTHROPIC_API_KEY` | Claude API key | — |
-| `ANTHROPIC_MODEL` | LLM model | `claude-3-7-sonnet-20250214` |
+| `ANTHROPIC_MODEL` | LLM model | `claude-sonnet-4-20250514` |
 | `KUBECONFIG_PATH` | Kubeconfig path (empty=in-cluster) | `""` |
 | `K8S_NAMESPACES` | Namespaces to monitor (JSON) | `["default"]` |
 | `SLACK_WEBHOOK_URL` | Slack webhook | — |

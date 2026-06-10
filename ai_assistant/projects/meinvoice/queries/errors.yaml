@@ -1,0 +1,40 @@
+# MeInvoice override: adds FATAL level + error_code aggregation
+#
+# elk_error / elk_bus → app log sources, filter by app.keyword (project_filter)
+# elk_apm             → APM error source, has different field mapping (labels.app_id)
+#                       queried separately via section "apm_errors" in template
+#
+# This file covers elk_error + elk_bus only.
+type: elk
+source_types: [elk_error, elk_bus]
+
+elk_body_template: |
+  {
+    "size": {{ max_results }},
+    "sort": [{ "@timestamp": "desc" }],
+    "query": {
+      "bool": {
+        "must": [
+          { "terms": { "level.keyword": ["ERROR", "FATAL"] }},
+          { "range": { "@timestamp": { "gte": "{{ time_range }}" }}}
+        ],
+        "filter": [{{ project_filter }}]
+      }
+    },
+    "aggs": {
+      "by_error_code": {
+        "terms": { "field": "error_code.keyword", "size": 10 }
+      },
+      "by_service": {
+        "terms": { "field": "service.name.keyword", "size": 10 }
+      }
+    }
+  }
+
+display:
+  show:
+    - total ERROR + FATAL count per source (hits.total.value)
+    - top error codes (aggs.by_error_code.buckets)
+    - top services by error count (aggs.by_service.buckets)
+    - latest 5 errors as list: @timestamp | service.name | error_code | message
+  empty_message: "✅ Không có lỗi ERROR/FATAL trong {{ time_range }}"

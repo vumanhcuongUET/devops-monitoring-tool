@@ -1,0 +1,61 @@
+# Project config template — copy this folder and rename to your project name
+
+project: your-project-name
+namespace: your-k8s-namespace   # used for pod/alert queries (leave blank if not k8s)
+node_job: your-project-nodes    # Prometheus job label for infra nodes (leave blank for all nodes)
+report_template: system-status  # optional, defaults to system-status
+
+# Override or extend global sources.
+# Each source type is an ARRAY — add as many endpoints as needed.
+# inherit: true  → project extra endpoints ADD TO global list
+# inherit: false → project endpoints REPLACE global list entirely
+sources:
+  elk_error:
+    inherit: true
+    extra:
+      - name: ELK-ProjectSpecific
+        url: "http://elk-project.internal:9200"
+        index: "project-logs-error-*"
+        auth_env: ELK_PROJECT_AUTH
+
+  elk_bus:
+    # Bus/event logs are project-specific — no global default
+    inherit: false
+    extra:
+      - name: ELK-Bus
+        url: "http://elk.internal:9200"
+        index: "bus-logs-*"
+        auth_env: ELK_AUTH
+
+  elk_apm:
+    inherit: true
+    extra: []
+
+  # Prometheus sub-servers: override only the ones that differ from global.
+  # Available types: prometheus_alerts | prometheus_k8s | prometheus_infra
+  # Add project-specific sub-servers or point to a dedicated instance:
+  prometheus_alerts:
+    inherit: true
+    extra: []
+
+  prometheus_k8s:
+    inherit: true
+    extra: []
+
+  prometheus_infra:
+    inherit: true
+    extra: []
+
+# Project-level query variable overrides
+query_vars:
+  time_range: "now-1h"
+  max_results: 10
+  # project_filter: cho elk_error, elk_bus (app log sources — thường dùng app.keyword)
+  project_filter: '{"term": {"app_id.keyword": "your-project-name"}}'
+  # apm_filter: cho elk_apm — bắt buộc có labels.app_id, thêm service.name để thu hẹp
+  # Nếu không set, tự động fallback về project_filter
+  apm_filter: '{"term": {"labels.app_id": "your-project-name"}}, {"terms": {"service.name.keyword": ["your-service-api", "your-service-worker"]}}'
+
+# Sections to skip for this project (optional)
+skip_sections: []
+# Example: skip_sections: [pod_status]

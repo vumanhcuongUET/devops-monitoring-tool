@@ -1,0 +1,40 @@
+type: elk
+source_types: [elk_apm]
+# apm_filter: filters by labels.app_id + service.name — set in project config.
+# Falls back to project_filter if apm_filter not defined.
+elk_body_template: |
+  {
+    "size": 0,
+    "query": {
+      "bool": {
+        "must": [
+          { "term": { "processor.event": "transaction" }},
+          { "range": { "@timestamp": { "gte": "{{ time_range }}" }}}
+        ],
+        "filter": [{{ apm_filter }}]
+      }
+    },
+    "aggs": {
+      "top_slow": {
+        "terms": {
+          "field": "transaction.name.keyword",
+          "size": 10,
+          "order": { "avg_duration": "desc" }
+        },
+        "aggs": {
+          "avg_duration": { "avg": { "field": "transaction.duration.us" }},
+          "p95_duration": { "percentiles": { "field": "transaction.duration.us", "percents": [95] }},
+          "count": { "value_count": { "field": "transaction.id" }}
+        }
+      }
+    }
+  }
+
+display:
+  extract: aggs.top_slow.buckets
+  # Convert duration: microseconds → milliseconds (divide by 1000)
+  format: "table: | Endpoint/Transaction | Avg (ms) | P95 (ms) | Count |"
+  highlight:
+    - "avg > 1000ms → ⚠️"
+    - "p95 > 3000ms → 🔴"
+  empty_message: "✅ Không có transaction chậm trong {{ time_range }}"

@@ -2,10 +2,11 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
-from app.models.alerts import AlertRule
+from app.models.alerts import AlertRule, AlertStatsRequest, ClusterAlertStats, NamespaceAlertStats
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -65,3 +66,125 @@ async def get_history():
         return []
     with open(history_file) as f:
         return json.load(f)
+
+
+@router.get("/prometheus/stats", response_model=ClusterAlertStats)
+async def get_prometheus_alert_stats(
+    request: Request,
+    namespaces: Optional[str] = None,
+    include_pending: bool = True,
+    top_n: int = 5,
+):
+    """
+    Get alert statistics from Prometheus grouped by namespace.
+
+    Query Parameters:
+    - namespaces: Comma-separated list of namespaces (default: all configured)
+    - include_pending: Include pending alerts in counts (default: true)
+    - top_n: Number of top alerts to return per namespace (default: 5)
+
+    Returns:
+        ClusterAlertStats with per-namespace breakdown
+    """
+    prom = request.app.state.prometheus_client
+
+    # Parse namespaces from query param
+    ns_list = None
+    if namespaces:
+        ns_list = [ns.strip() for ns in namespaces.split(",")]
+
+    # Get stats from Prometheus
+    stats = await prom.get_alerts_stats(namespaces=ns_list)
+
+    # Build response
+    namespace_responses = []
+    total_alerts = 0
+    total_firing = 0
+
+    for namespace, ns_stats in stats.items():
+        total_alerts += ns_stats["total"]
+        total_firing += ns_stats["firing"]
+
+        # Build top alerts list
+        top_alerts = []
+        for alert in ns_stats["alerts"][:top_n]:
+            top_alerts.append({
+                "name": alert["name"],
+                "severity": alert["severity"],
+                "state": alert["state"],
+                "summary": alert["annotations"].get("summary", ""),
+            })
+
+        namespace_responses.append(NamespaceAlertStats(
+            namespace=namespace,
+            total_alerts=ns_stats["total"],
+            firing=ns_stats["firing"],
+            pending=ns_stats["pending"] if include_pending else 0,
+            by_severity=ns_stats["by_severity"],
+            top_alerts=top_alerts,
+        ))
+
+    # Sort namespaces by firing count (descending)
+    namespace_responses.sort(key=lambda x: x.firing, reverse=True)
+
+    # Build top namespaces summary
+    top_ns = [
+        {"namespace": ns.namespace, "firing": ns.firing, "total": ns.total_alerts}
+        for ns in namespace_responses[:5]
+    ]
+
+    return ClusterAlertStats(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        total_namespaces=len(namespace_responses),
+        total_alerts=total_alerts,
+        total_firing=total_firing,
+        namespaces=namespace_responses,
+        top_namespaces=top_ns,
+    )
+
+
+@router.get("/prometheus/namespace/{namespace}", response_model=NamespaceAlertStats)
+async def get_namespace_alert_stats(
+    namespace: str,
+    request: Request,
+    include_pending: bool = True,
+    top_n: int = 10,
+):
+    """
+    Get alert statistics for a specific namespace.
+
+    Path Parameters:
+    - namespace: Kubernetes namespace to query
+
+    Query Parameters:
+    - include_pending: Include pending alerts (default: true)
+    - top_n: Number of top alerts to return (default: 10)
+    """
+    prom = request.app.state.prometheus_client
+
+    stats = await prom.get_alerts_stats(namespaces=[namespace])
+
+    if namespace not in stats:
+        raise HTTPException(status_code=404, detail=f"Namespace '{namespace}' not found or has no alerts")
+
+    ns_stats = stats[namespace]
+
+    # Build top alerts
+    top_alerts = []
+    for alert in ns_stats["alerts"][:top_n]:
+        top_alerts.append({
+            "name": alert["name"],
+            "severity": alert["severity"],
+            "state": alert["state"],
+            "summary": alert["annotations"].get("summary", ""),
+            "labels": alert["labels"],
+        })
+
+    return NamespaceAlertStats(
+        namespace=namespace,
+        total_alerts=ns_stats["total"],
+        firing=ns_stats["firing"],
+        pending=ns_stats["pending"] if include_pending else 0,
+        by_severity=ns_stats["by_severity"],
+        top_alerts=top_alerts,
+    )

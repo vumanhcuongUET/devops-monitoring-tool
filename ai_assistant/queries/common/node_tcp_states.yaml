@@ -1,0 +1,88 @@
+type: prometheus
+source_types: [prometheus_infra]
+
+# TCP connection states per node: ESTABLISHED, TIME_WAIT, socket allocation, retransmit rate.
+# Biến template:
+#   {{ namespace_selector }} = {namespace="x"}
+#   {{ prom_range }}         = range duration tự tính từ time_range
+
+queries:
+  # ── ESTABLISHED connections ───────────────────────────────────────────────────
+  - id: tcp_established
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        node_netstat_Tcp_CurrEstab{{ namespace_selector }}
+      ) > 500
+
+  # ── TIME_WAIT connections ─────────────────────────────────────────────────────
+  # TIME_WAIT cao = connection short-lived nhiều (HTTP không keep-alive, churn cao)
+  - id: tcp_time_wait
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        node_sockstat_TCP_tw{{ namespace_selector }}
+      ) > 1000
+
+  # ── Tổng TCP socket được cấp phát ────────────────────────────────────────────
+  - id: tcp_alloc
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        node_sockstat_TCP_alloc{{ namespace_selector }}
+      ) > 5000
+
+  # ── TCP retransmit rate (segments/s) ─────────────────────────────────────────
+  # Retransmit cao = mạng mất gói hoặc congestion
+  - id: tcp_retransmit_rate
+    promql_template: |-
+      sum by (namespace, hostname, instance, server) (
+        rate(node_netstat_Tcp_RetransSegs{{ namespace_selector }}[5m])
+      ) > 5
+
+display:
+  tcp_established:
+    unit: "ESTABLISHED connections"
+    format: "table: | Host | Server | ESTABLISHED | Status |"
+    note: "chỉ node > 500 — đánh giá mức tải kết nối"
+    highlight:
+      - "value >= 500   → ⚠️"
+      - "value >= 5000  → 🔴 (rất cao, kiểm tra connection leak)"
+    troubleshooting:
+      - "Xác nhận số thực: ss -s hoặc ss -tn state established | wc -l"
+      - "Tìm process mở nhiều connection: ss -tnp | grep ESTAB | awk '{print $6}' | sort | uniq -c | sort -rn"
+      - "Nếu tăng bất thường: kiểm tra connection pool config và leak trong app"
+  tcp_time_wait:
+    unit: "TIME_WAIT connections"
+    format: "table: | Host | Server | TIME_WAIT | Status |"
+    note: "TIME_WAIT cao = HTTP short-lived hoặc connection churn nhiều"
+    highlight:
+      - "value >= 1000  → ⚠️  (connection tạo/đóng nhanh)"
+      - "value >= 10000 → 🔴 (nguy cơ cạn ephemeral port)"
+    troubleshooting:
+      - "Bật tcp_tw_reuse: sysctl -w net.ipv4.tcp_tw_reuse=1"
+      - "Mở rộng ephemeral port range: sysctl -w net.ipv4.ip_local_port_range='1024 65535'"
+      - "Giải pháp gốc rễ: bật HTTP keep-alive trong app/reverse proxy để tái dùng connection"
+      - "Giảm TIME_WAIT timeout: sysctl -w net.ipv4.tcp_fin_timeout=15 (mặc định 60s)"
+  tcp_alloc:
+    unit: "allocated TCP sockets"
+    format: "table: | Host | Server | TCP Alloc | Status |"
+    note: "tổng socket TCP đang được cấp phát"
+    highlight:
+      - "value >= 5000  → ⚠️"
+      - "value >= 20000 → 🔴 (nguy cơ cạn socket file descriptor)"
+    troubleshooting:
+      - "Kiểm tra giới hạn socket: sysctl net.ipv4.tcp_max_orphans"
+      - "Kiểm tra ulimit: ulimit -n và so với số socket đang dùng"
+      - "Tăng limit nếu cần: sysctl -w net.core.somaxconn=65535"
+  tcp_retransmit_rate:
+    unit: "retransmits/s"
+    format: "table: | Host | Server | Retrans/s | Status |"
+    note: "TCP retransmit cao = mất gói hoặc network congestion"
+    highlight:
+      - "value >= 5  → ⚠️  (có dấu hiệu packet loss/congestion)"
+      - "value >= 50 → 🔴 (mạng bị ảnh hưởng nghiêm trọng)"
+    troubleshooting:
+      - "Kiểm tra packet loss: ping -c 100 <target_ip> | tail -2"
+      - "Trace route: mtr --report <target_ip>"
+      - "Kiểm tra network errors: xem net_rx_errors, net_tx_errors trong node_network_detail"
+      - "Kiểm tra MTU: ping -M do -s 1472 <target_ip> (1500 MTU - 28 header)"
+      - "Nếu retransmit chỉ xảy ra với specific destination: kiểm tra route và switch"
+  empty_message: "✅ TCP connections tất cả node bình thường"

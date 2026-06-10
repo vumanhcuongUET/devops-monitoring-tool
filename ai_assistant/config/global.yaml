@@ -1,0 +1,51 @@
+# Global default configuration
+# Projects can override any value in their own config.yaml
+
+defaults:
+  time_range: "now-1h"
+  max_results: 10
+  timeout_seconds: 10
+
+# Global source endpoints — projects can add more or override per source type.
+#
+# Prometheus sub-servers are named by function so each query can target the right one:
+#   prometheus_alerts  → Alertmanager / firing alerts
+#   prometheus_k8s     → Kubernetes cluster metrics (pods, deployments, endpoints)
+#   prometheus_infra   → Node/VM infrastructure metrics (disk, CPU, memory)
+#
+# Each type is an ARRAY — add multiple endpoints to fan-out a query across clusters.
+sources:
+  elk_error:
+    - name: ELK-Main
+      url: "http://elk.internal:9200"
+      index: "logs-error-*"
+      auth_env: ELK_AUTH
+
+  elk_system:
+    - name: ELK-System
+      url: "http://elk.internal:9200"
+      index: "logs-system-*"
+      auth_env: ELK_AUTH
+
+  elk_apm:
+    - name: ELK-APM
+      url: "https://elkapm-elastic.misaonline.vpnlocal"
+      index: "trace-apm-default"
+      auth_env: ELK_AUTH
+
+  prometheus_alerts:
+    - name: Prometheus-Alerts
+      url: "https://k8smonitor-prometheus.misaonline.vpnlocal"
+      auth_env: PROM_AUTH
+
+  prometheus_k8s:
+    - name: Prometheus-K8s
+      url: "https://k8smonitor-prometheus.misaonline.vpnlocal/k8s-inv/"
+      auth_env: PROM_AUTH
+
+  prometheus_infra:
+    - name: Prometheus-Infra
+      url: "https://k8smonitor-prometheus.misaonline.vpnlocal"
+      auth_env: PROM_AUTH
+
+report_template: system-status

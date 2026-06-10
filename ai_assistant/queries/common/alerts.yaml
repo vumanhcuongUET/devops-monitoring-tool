@@ -1,0 +1,12 @@
+type: prometheus
+source_types: [prometheus_alerts]
+promql_template: 'ALERTS{alertstate="firing"{{ namespace_filter }}}'
+
+display:
+  extract:
+    - metric.alertname
+    - metric.severity
+    - metric.summary
+    - value[0]  # unix timestamp → duration
+  format: "table: | Alert | Severity | Duration | Summary |"
+  empty_message: "✅ Không có alert nào đang firing"

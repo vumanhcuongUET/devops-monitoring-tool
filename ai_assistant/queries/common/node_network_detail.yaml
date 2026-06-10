@@ -1,0 +1,106 @@
+type: prometheus
+source_types: [prometheus_infra]
+
+# Chi tiết Network per interface: băng thông RX/TX, packet drops, errors.
+# Loại bỏ loopback, veth (container), docker bridge, calico, flannel interfaces.
+# Biến template:
+#   {{ namespace_filter }} = , namespace="x"   (dùng bên trong {} đã có label khác)
+
+queries:
+  # ── RX bandwidth (MB/s) hiện tại ─────────────────────────────────────────────
+  - id: net_rx_mbps
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device) (
+        rate(node_network_receive_bytes_total{device!~"lo|veth.+|docker.+|br-.+|cali.+|flannel.+"{{ namespace_filter }}}[5m])
+      ) / 1048576 > 10
+
+  # ── TX bandwidth (MB/s) hiện tại ─────────────────────────────────────────────
+  - id: net_tx_mbps
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device) (
+        rate(node_network_transmit_bytes_total{device!~"lo|veth.+|docker.+|br-.+|cali.+|flannel.+"{{ namespace_filter }}}[5m])
+      ) / 1048576 > 10
+
+  # ── RX packet drops ──────────────────────────────────────────────────────────
+  - id: net_rx_drops
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device) (
+        rate(node_network_receive_drop_total{device!~"lo|veth.+|docker.+|br-.+"{{ namespace_filter }}}[5m])
+      ) > 0
+
+  # ── TX packet drops ──────────────────────────────────────────────────────────
+  - id: net_tx_drops
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device) (
+        rate(node_network_transmit_drop_total{device!~"lo|veth.+|docker.+|br-.+"{{ namespace_filter }}}[5m])
+      ) > 0
+
+  # ── RX hardware errors ────────────────────────────────────────────────────────
+  - id: net_rx_errors
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device) (
+        rate(node_network_receive_errs_total{device!~"lo|veth.+|docker.+|br-.+"{{ namespace_filter }}}[5m])
+      ) > 0
+
+  # ── TX hardware errors ────────────────────────────────────────────────────────
+  - id: net_tx_errors
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device) (
+        rate(node_network_transmit_errs_total{device!~"lo|veth.+|docker.+|br-.+"{{ namespace_filter }}}[5m])
+      ) > 0
+
+display:
+  net_rx_mbps:
+    unit: "MB/s receive"
+    format: "table: | Host | Device | RX MB/s | Status |"
+    note: "chỉ interface > 10 MB/s"
+    highlight:
+      - "value >= 100 → ⚠️  (băng thông đáng kể)"
+      - "value >= 800 → 🔴 (gần đến giới hạn 1Gbps NIC)"
+  net_tx_mbps:
+    unit: "MB/s transmit"
+    format: "table: | Host | Device | TX MB/s | Status |"
+    note: "chỉ interface > 10 MB/s"
+    highlight:
+      - "value >= 100 → ⚠️"
+      - "value >= 800 → 🔴"
+  net_rx_drops:
+    unit: "packets/s dropped (RX)"
+    format: "table: | Host | Device | RX Drop/s | ⚠️ |"
+    note: "bất kỳ drop nào đều cần xem xét"
+    highlight:
+      - "value > 0 → ⚠️"
+    troubleshooting:
+      - "Kiểm tra ring buffer có đủ không: ethtool -g <device>"
+      - "Tăng ring buffer: ethtool -G <device> rx 4096"
+      - "Kiểm tra IRQ affinity: cat /proc/interrupts | grep <device>"
+      - "Nếu xảy ra liên tục: xem xét RSS/RPS, nâng cấp NIC hoặc giảm traffic"
+  net_tx_drops:
+    unit: "packets/s dropped (TX)"
+    format: "table: | Host | Device | TX Drop/s | ⚠️ |"
+    highlight:
+      - "value > 0 → ⚠️"
+    troubleshooting:
+      - "Kiểm tra txqueuelen: ip link show <device> | grep qlen"
+      - "Tăng txqueuelen: ip link set <device> txqueuelen 10000"
+      - "Kiểm tra QoS/traffic shaping policy đang áp dụng"
+  net_rx_errors:
+    unit: "errors/s (RX hardware)"
+    format: "table: | Host | Device | RX Err/s | 🔴 |"
+    highlight:
+      - "value > 0 → 🔴 (lỗi phần cứng)"
+    troubleshooting:
+      - "Thường là lỗi NIC hardware hoặc cáp/switch port bị lỗi"
+      - "Chi tiết lỗi: ethtool -S <device> | grep -i 'err\\|drop\\|miss'"
+      - "Kiểm tra physical: thay cáp, kiểm tra switch port error counter"
+      - "Nếu lỗi tăng dần: lên kế hoạch thay NIC tránh downtime đột xuất"
+  net_tx_errors:
+    unit: "errors/s (TX hardware)"
+    format: "table: | Host | Device | TX Err/s | 🔴 |"
+    highlight:
+      - "value > 0 → 🔴"
+    troubleshooting:
+      - "Kiểm tra MTU mismatch: ip link show <device> và so với switch config"
+      - "Kiểm tra duplex: ethtool <device> | grep -i 'speed\\|duplex'"
+      - "TX errors kết hợp RX errors: khả năng cao là lỗi hardware NIC"
+  empty_message: "✅ Network tất cả node không có bất thường"

@@ -1,0 +1,177 @@
+type: elk
+source_types: [elk_system]
+
+# System logs lỗi từ OS: OOM killer, disk I/O error, CPU soft lockup,
+# file descriptor limit, segfault, kernel panic, SSH/auth failures.
+#
+# Biến bắt buộc trong project config:
+#   sys_filter — JSON filter để giới hạn theo hostname/node thuộc project.
+#   Ví dụ: '{"wildcard": {"host.name.keyword": "*inv*"}}'
+#
+# Field mapping phổ biến (Filebeat/Elastic Agent):
+#   host.name     — hostname của node
+#   process.name  — tên process/program ghi log
+#   log.level     — mức log (nếu có)
+#   message       — nội dung log
+#   @timestamp    — thời gian
+
+elk_body_template: |
+  {
+    "size": {{ max_results }},
+    "sort": [{ "@timestamp": "desc" }],
+    "query": {
+      "bool": {
+        "must": [
+          { "range": { "@timestamp": { "gte": "{{ time_range }}" }}},
+          {
+            "bool": {
+              "should": [
+                { "terms": { "log.level": ["error", "critical", "alert", "emerg",
+                                            "ERROR", "CRITICAL", "ALERT", "EMERG"] }},
+                { "terms": { "syslog_severity": ["error", "critical", "alert", "emergency"] }},
+                {
+                  "query_string": {
+                    "query": "message:(\"Out of memory\" OR \"Killed process\" OR \"kernel panic\" OR \"I/O error\" OR \"EXT4-fs error\" OR \"XFS (device\" OR \"SCSI error\" OR \"CPU soft lockup\" OR \"Too many open files\" OR \"segfault\" OR \"kernel BUG\" OR \"NFS: server\" OR \"disk quota exceeded\")",
+                    "default_field": "message"
+                  }
+                }
+              ],
+              "minimum_should_match": 1
+            }
+          }
+        ],
+        "filter": [{{ sys_filter }}]
+      }
+    },
+    "aggs": {
+      "by_host": {
+        "terms": { "field": "host.name.keyword", "size": 10 }
+      },
+      "by_program": {
+        "terms": { "field": "process.name.keyword", "size": 10, "missing": "kernel" }
+      },
+      "by_category": {
+        "filters": {
+          "filters": {
+            "oom_killer": {
+              "query_string": {
+                "query": "message:(\"Out of memory\" OR \"Killed process\" OR \"oom_kill_process\" OR \"oom-kill\")"
+              }
+            },
+            "disk_io_error": {
+              "query_string": {
+                "query": "message:(\"I/O error\" OR \"EXT4-fs error\" OR \"XFS (device\" OR \"SCSI error\" OR \"blk_update_request\" OR \"Buffer I/O error\")"
+              }
+            },
+            "cpu_soft_lockup": {
+              "query_string": {
+                "query": "message:(\"soft lockup\" OR \"hard lockup\" OR \"RCU stall\")"
+              }
+            },
+            "fd_limit": {
+              "query_string": {
+                "query": "message:(\"Too many open files\" OR \"EMFILE\" OR \"file table overflow\")"
+              }
+            },
+            "segfault": {
+              "query_string": {
+                "query": "message:(\"segfault\" OR \"general protection fault\" OR \"SIGSEGV\")"
+              }
+            },
+            "kernel_panic": {
+              "query_string": {
+                "query": "message:(\"kernel panic\" OR \"Oops:\" OR \"kernel BUG at\")"
+              }
+            },
+            "nfs_fs_error": {
+              "query_string": {
+                "query": "message:(\"NFS: server\" OR \"nfs4_reclaim\" OR \"disk quota exceeded\" OR \"filesystem full\")"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+display:
+  show:
+    - total system error count (hits.total.value)
+    - error breakdown by category (aggs.by_category.buckets) — hiển thị tên category + count
+    - top hosts có nhiều lỗi nhất (aggs.by_host.buckets)
+    - top processes gây lỗi (aggs.by_program.buckets)
+    - latest {{ max_results }} log entries: @timestamp | host.name | process.name | message (truncate 120 chars)
+  empty_message: "✅ Không có system log lỗi trong {{ time_range }}"
+
+  # Hướng xử lý theo từng category — hiển thị khi category đó có count > 0
+  troubleshooting_hints:
+    oom_killer:
+      symptom: "OOM Killer kích hoạt — process bị kill do node hết RAM"
+      steps:
+        - "Xác định process bị kill: grep -E 'Killed process|oom_kill' /var/log/syslog | tail -10"
+        - "Chi tiết OOM event: dmesg -T | grep -A20 'Out of memory'"
+        - "Process ngốn RAM nhất: ps aux --sort=-%mem | head -15"
+        - "Nếu là container: tăng memory limit (kubectl edit deployment ..., resources.limits.memory)"
+        - "Dài hạn: xác định và fix memory leak, hoặc thêm RAM cho node"
+        - "Ngắn hạn: thêm/tăng swap để giảm tần suất OOM (không thay thế RAM)"
+
+    disk_io_error:
+      symptom: "Lỗi I/O disk — filesystem hoặc thiết bị lưu trữ bị lỗi"
+      steps:
+        - "Xem lỗi mới nhất: dmesg -T | grep -iE 'i/o error|ext4|xfs|scsi|blk_update' | tail -20"
+        - "Kiểm tra SMART disk: smartctl -a /dev/sdX (thay sdX bằng disk thực tế)"
+        - "Kiểm tra filesystem: df -h (xem filesystem có bị remount read-only không)"
+        - "Nếu EXT4 bị lỗi: fsck.ext4 -n /dev/sdX (dry-run, cần umount trước khi fix thực)"
+        - "Nếu XFS bị lỗi: xfs_repair -n /dev/sdX (dry-run)"
+        - "CẢNH BÁO: fsck/xfs_repair cần umount hoặc rescue mode — lên kế hoạch maintenance window"
+        - "Nếu SMART báo reallocated sectors tăng: chuẩn bị thay disk gấp"
+
+    cpu_soft_lockup:
+      symptom: "CPU soft lockup — CPU bị một process chiếm quá lâu (> watchdog threshold)"
+      steps:
+        - "Xem chi tiết trong dmesg: dmesg -T | grep -A10 'soft lockup'"
+        - "Kiểm tra process CPU cao: top -b -n1 -o%CPU | head -20"
+        - "Nếu trên VM: báo team infra kiểm tra hypervisor và CPU steal trên host"
+        - "Kiểm tra kernel version: uname -r — soft lockup có thể là kernel bug đã được fix"
+        - "Nếu tái diễn thường xuyên: xem xét reboot node vào maintenance window"
+
+    fd_limit:
+      symptom: "Quá giới hạn file descriptor — process không thể mở file/socket mới"
+      steps:
+        - "Xem limit hiện tại: ulimit -n (per user) / sysctl fs.file-max (system-wide)"
+        - "Process dùng nhiều FD nhất: lsof 2>/dev/null | awk '{print $1}' | sort | uniq -c | sort -rn | head -10"
+        - "FD của một process cụ thể: ls /proc/<pid>/fd | wc -l"
+        - "Tăng limit cho service (systemd): thêm LimitNOFILE=65536 trong [Service] section"
+        - "Tăng limit toàn hệ thống: echo 'fs.file-max = 1000000' >> /etc/sysctl.conf && sysctl -p"
+        - "Tăng per-user limit: edit /etc/security/limits.conf — thêm '<user> soft nofile 65536'"
+
+    segfault:
+      symptom: "Segmentation fault — process crash do truy cập vùng nhớ không hợp lệ"
+      steps:
+        - "Xem chi tiết: dmesg -T | grep segfault | tail -20"
+        - "Format log: 'process[pid]: segfault at <addr> ... error <code>'"
+        - "error 4 = read access violation, error 6 = write access violation"
+        - "Kiểm tra core dump: ls /var/crash hoặc cat /proc/sys/kernel/core_pattern"
+        - "Debug bằng strace: strace -p <pid> 2>&1 | tail -20 (trước khi crash)"
+        - "Kiểm tra RAM lỗi nếu nhiều process khác nhau bị segfault: memtest86+"
+        - "Nếu xảy ra ngay sau deploy: rollback version trước và kiểm tra binary"
+
+    kernel_panic:
+      symptom: "Kernel panic hoặc Oops — kernel crash, có thể dẫn đến reboot tự động"
+      steps:
+        - "Xem logs trước khi reboot: journalctl -b -1 -p err --no-pager | tail -50"
+        - "Panic message: dmesg -T | grep -A30 'kernel panic\\|Oops'"
+        - "Nếu có kdump configured: xem crash dump tại /var/crash"
+        - "Nguyên nhân thường gặp: hardware fault (RAM/disk), driver bug, OOM + critical process"
+        - "Báo ngay cho team infra — kernel panic cần phân tích kỹ trước khi tiếp tục dùng node"
+        - "Kiểm tra hardware error log: ipmitool sel list (nếu có IPMI)"
+
+    nfs_fs_error:
+      symptom: "Lỗi NFS hoặc filesystem full — node không đọc/ghi được dữ liệu"
+      steps:
+        - "Kiểm tra disk space: df -h (tìm filesystem 100% hoặc mounted read-only)"
+        - "NFS timeout: ping <nfs_server_ip> và kiểm tra mount: showmount -e <nfs_server>"
+        - "Remount NFS bị stuck: umount -l <mountpoint> rồi mount lại"
+        - "Nếu disk full: tìm file lớn — du -sh /* 2>/dev/null | sort -rh | head -20"
+        - "Xóa log cũ: journalctl --vacuum-time=7d hoặc find /var/log -mtime +7 -delete"
+        - "Quota exceeded: quota -u <username> hoặc repquota -a"

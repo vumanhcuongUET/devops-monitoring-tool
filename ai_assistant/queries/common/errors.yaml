@@ -1,0 +1,29 @@
+type: elk
+source_types: [elk_error, elk_bus, elk_apm]
+# project_filter: JSON object inserted into filter array, e.g. {"term": {"app.keyword": "myapp"}}
+elk_body_template: |
+  {
+    "size": {{ max_results }},
+    "sort": [{ "@timestamp": "desc" }],
+    "query": {
+      "bool": {
+        "must": [
+          { "match": { "level": "ERROR" }},
+          { "range": { "@timestamp": { "gte": "{{ time_range }}" }}}
+        ],
+        "filter": [{{ project_filter }}]
+      }
+    },
+    "aggs": {
+      "by_service": {
+        "terms": { "field": "service.name.keyword", "size": 10 }
+      }
+    }
+  }
+
+display:
+  show:
+    - total error count per source (hits.total.value)
+    - top services by error count (aggs.by_service.buckets)
+    - latest 5 errors as list: \@timestamp | service.name | message
+  empty_message: "✅ Không có lỗi ERROR trong {{ time_range }}"

@@ -1,7 +1,18 @@
 
+## **🎯 Trạng thái triển khai (Implementation Status)**
+
+| Giai đoạn | Trạng thái | Hoàn thành | Mô tả |
+|-----------|-----------|------------|-------|
+| **Phase 1** | ✅ **HOÀN THÀNH** | 2026-08 | Foundation & Observability Copilot |
+| **Phase 2** | ⏳ **PENDING** | — | Human-in-the-loop & Action Proposer |
+| **Phase 3** | ⏳ **PENDING** | — | Governance & Advanced Skills |
+| **Phase 4** | ⏳ **PENDING** | — | Autonomous Reliability |
+
+---
+
 ## **🎯 Tầm nhìn chiến lược (Strategic Vision)**
 *   **Mục tiêu:** Xây dựng một **Centralized Agentic Platform** có khả năng tự mở rộng (scalable) cho mọi dự án thông qua cấu hình (config-driven), đảm bảo tính an toàn (guardrails) và độ tin cậy cao (production-ready).
-*   **Nguyên tắc cốt lõi:** 
+*   **Nguyên tắc cốt lõi:**
     1.  **Standardization:** Mọi dự án dùng chung một ngôn ngữ (Triage Card).
     2.  **Safety First:** Không tự trị (Autonomous) khi chưa kiểm soát được rủi ro.
     3.  **Self-Service:** DevOps dự án tự cấu hình, SRE chỉ xây dựng công cụ.
@@ -10,16 +21,23 @@
 
 ## **📅 Kế hoạch triển khai 4 Giai đoạn (The 4-Phase Roadmap)**
 
-### **Giai đoạn 1: Foundation &amp; Observability Copilot (Tháng 1-2)**
+### **Giai đoạn 1: Foundation &amp; Observability Copilot (Tháng 1-2) ✅ HOÀN THÀNH**
 *Mục tiêu: Chứng minh giá trị (Proof of Value) bằng cách giảm thời gian điều tra lỗi (MTTI).*
 
 *   **Nhiệm vụ của Team SRE:**
-    1.  **Build Core Engine:** Phát triển API (FastAPI) và tích hợp LLM (Claude).
-    2.  **Develop Connectors:** Viết các module lấy dữ liệu chuẩn từ ELK, Prometheus, K8s.
-    3.  **Prompt Engineering:** Xây dựng System Prompt chuẩn cho "DevOps Expert".
-    4.  **Standardize Output:** Chốt Schema **Triage Card** (đã làm ở bước trước).
-    5.  **Pilot Project (meinvoice):** Triển khai chạy thử chế độ **Read-only**.
-*   **Output:** Một dashboard hoặc Slack bot hiển thị Triage Card khi có alert.
+    1.  ✅ **Build Core Engine:** Phát triển API (FastAPI) và tích hợp LLM (Claude).
+    2.  ✅ **Develop Connectors:** Viết các module lấy dữ liệu chuẩn từ ELK, Prometheus, K8s.
+    3.  ✅ **Prompt Engineering:** Xây dựng System Prompt chuẩn cho "DevOps Expert".
+    4.  ✅ **Standardize Output:** Chốt Schema **Triage Card**.
+    5.  ✅ **Pilot Project (meinvoice):** Triển khai chạy thử chế độ **Read-only**.
+*   **Output:** ✅ Dashboard + API endpoint `/api/v1/analyze` hiển thị Triage Card với:
+    *   Context collection từ 5 nguồn (logs, APM, metrics, K8s, alerts)
+    *   Root cause identification với confidence scores
+    *   Prioritized recommendations với commands
+    *   Full TypeScript types + Pydantic models
+    *   Comprehensive test coverage
+
+> **Documentation:** Xem [docs/ai-triage-cards.md](ai-triage-cards.md) để biết chi tiết API và ví dụ sử dụng.
 
 ### **Giai đoạn 2: Human-in-the-loop &amp; Action Proposer (Tháng 3-4)**
 *Mục tiêu: Giảm thời gian xử lý lỗi (MTTR) bằng cách đề xuất hành động thực thi.*

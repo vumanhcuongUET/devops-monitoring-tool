@@ -42,6 +42,12 @@ You already have Elasticsearch, Prometheus, and Kubernetes — each with its own
 
 See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the complete 4-phase strategic roadmap.
 
+📖 **Documentation:**
+- [AI Triage Cards Guide](docs/ai-triage-cards.md) — Comprehensive guide for AI-powered incident analysis
+- [Alert Statistics Guide](docs/alert-statistics.md) — Prometheus alert monitoring and statistics
+- [Deployment Guide](DEPLOY.md) — Detailed setup instructions for dev and production
+- [Strategy & Roadmap](docs/chien_luoc_tong_the.md) — 4-phase implementation plan
+
 ---
 
 ## 📋 Features

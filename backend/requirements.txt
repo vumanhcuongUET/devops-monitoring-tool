@@ -8,3 +8,9 @@ pyyaml==6.*
 websockets==14.*
 python-telegram-bot==21.*
 anthropic==0.40.*
+
+# Testing dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-mock>=3.14.0
+pytest-cov>=5.0.0

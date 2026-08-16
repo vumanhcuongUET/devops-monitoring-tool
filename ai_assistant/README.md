@@ -21,7 +21,9 @@ devops_ai_assistant/
 │       ├── errors.yaml / .md
 │       ├── slow_endpoints.yaml / .md
 │       ├── disk_usage.yaml / .md
-│       └── pod_status.yaml / .md
+│       ├── pod_status.yaml / .md
+│       ├── apm_errors.yaml / .md
+│       └── ... (14 query types)
 ├── tools/
 │   ├── run_query.py                 # Cross-platform Python query executor
 │   └── http-client.md               # Tool usage docs

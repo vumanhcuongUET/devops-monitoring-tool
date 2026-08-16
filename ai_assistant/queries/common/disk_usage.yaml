@@ -1,0 +1,100 @@
+type: prometheus
+source_types: [prometheus_infra]
+
+# Chi tiết Disk usage per node: used%, available, filesystem full warnings.
+# Biến template:
+#   {{ namespace_selector }} = {namespace="x"}
+#   {{ prom_range }}         = range duration tự tính từ time_range
+
+queries:
+  # ── Disk used % ───────────────────────────────────────────────────────────────
+  - id: disk_used_pct
+    promql_template: |-
+      (
+        1 - sum by (namespace, hostname, instance, server, device, mountpoint) (
+              node_filesystem_avail_bytes{{ namespace_selector }}
+            )
+            / sum by (namespace, hostname, instance, server, device, mountpoint) (
+              node_filesystem_size_bytes{{ namespace_selector }}
+            )
+      ) * 100 > 70
+      and
+      sum by (namespace, hostname, instance, server, device, mountpoint) (
+        node_filesystem_size_bytes{{ namespace_selector }}
+      ) > 0
+
+  # ── Disk available (GB) ─────────────────────────────────────────────────────────
+  - id: disk_available_gb
+    promql_template: |-
+      sum by (namespace, hostname, instance, server, device, mountpoint) (
+        node_filesystem_avail_bytes{{ namespace_selector }}
+      ) / 1073741824
+
+  # ── Disk inodes free % ───────────────────────────────────────────────────────────
+  - id: disk_inodes_free_pct
+    promql_template: |-
+      (
+        sum by (namespace, hostname, instance, server, device, mountpoint) (
+          node_filesystem_files_free{{ namespace_selector }}
+        )
+        / sum by (namespace, hostname, instance, server, device, mountpoint) (
+          node_filesystem_files{{ namespace_selector }}
+        )
+      ) * 100 < 20
+
+  # ── Disk read/write rate (MB/s) ───────────────────────────────────────────────────
+  - id: disk_io_rate
+    promql_template: |-
+      (
+        rate(node_disk_read_bytes_total{{ namespace_selector }}[5m])
+        +
+        rate(node_disk_written_bytes_total{{ namespace_selector }}[5m])
+      ) / 1048576
+
+display:
+  disk_used_pct:
+    unit: "% Disk used"
+    format: "table: | Host | Mountpoint | Disk % | Status |"
+    note: "chỉ filesystem > 70% dùng"
+    highlight:
+      - "value >= 70 → ⚠️"
+      - "value >= 85 → 🔴"
+    troubleshooting:
+      - "≥70%: cần dọn dẹp log cũ, temp files, hoặc tăng disk size"
+      - "≥85%: khẩn cấp — disk sắp full, có thể gây crash app"
+      - "Tìm file lớn: du -sh /* 2>/dev/null | sort -hr | head -10"
+      - "Tìm file cũ hơn 30 ngày: find /var/log -name '*.log' -mtime +30 -exec ls -lh {} \\;"
+      - "Check inode usage: df -i để xem có còn inode free không"
+  disk_available_gb:
+    unit: "GB Available"
+    format: "table: | Host | Mountpoint | Available GB |"
+    note: "dung lượng disk còn trống"
+    highlight:
+      - "value < 10 → ⚠️ (dưới 10GB còn lại)"
+      - "value < 5 → 🔴 (dưới 5GB — nguy cơ disk full cao)"
+    troubleshooting:
+      - "< 10GB: cần lên kế hoạch mở rộng disk hoặc dọn dẹp dữ liệu"
+      - "< 5GB: khẩn cấp — xóa log cũ, backup data sang storage khác"
+  disk_inodes_free_pct:
+    unit: "% Inodes free"
+    format: "table: | Host | Mountpoint | Inodes % | Status |"
+    note: "chỉ filesystem < 20% inodes free"
+    highlight:
+      - "value <= 15 → ⚠️ (inodes sắp hết)"
+      - "value <= 5 → 🔴 (inodes cạn kiệt)"
+    troubleshooting:
+      - "Inodes full thường do nhiều file nhỏ (log files, temp files)"
+      - "Tìm directory có nhiều file nhất: for d in /*; do echo $d; find $d -type f | wc -l; done | sort -k2 -rn"
+      - "Clean up small files: find /tmp -type f -atime +7 -delete"
+  disk_io_rate:
+    unit: "MB/s (read+write)"
+    format: "table: | Host | Device | IO Rate |"
+    note: "tốc độ đọc/viết disk trung bình 5 phút"
+    highlight:
+      - "value >= 50 → ⚠️ (IO cao - có thể ảnh hưởng performance)"
+      - "value >= 100 → 🔴 (IO rất cao - disk có thể bottleneck)"
+    troubleshooting:
+      - "IO cao: kiểm tra process nào đang đọc/viết nhiều disk — iotop hoặc iostat -x 1"
+      - "Nếu database: có thể do query nặng, checkpoint không tối ưu"
+      - "Nếu log app: cân nhắc rotate log sớm hơn hoặc giảm log level"
+  empty_message: "✅ Disk usage tất cả node trong giới hạn bình thường"

@@ -14,7 +14,11 @@
       "Bash(apt list *)",
       "Read(//usr/lib/**)",
       "Bash(apt-get install *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(curl -s http://localhost:8000/docs)",
+      "Bash(uvicorn app.main:app --reload --port 8000)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }

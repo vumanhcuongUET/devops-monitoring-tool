@@ -18,7 +18,15 @@
       "Bash(curl -s http://localhost:8000/docs)",
       "Bash(uvicorn app.main:app --reload --port 8000)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(python -c \"from app.actions.engine import get_action_engine; from app.approvals.store import get_approval_tracker; print\\('Backend imports OK'\\)\")",
+      "Bash(timeout 30 python -c ' *)",
+      "Bash(timeout 30 python -c \"\nimport sys\nsys.path.insert\\(0, '.'\\)\nprint\\('Testing imports...'\\)\ntry:\n    from app.models.actions import Action, ActionStatus, CommandType\n    print\\('✓ models.actions imported'\\)\n    from app.models.audit import AuditEntry, AuditEventType\n    print\\('✓ models.audit imported'\\)\n    from app.models.registry import ProjectConfig, RegistryConfig\n    print\\('✓ models.registry imported'\\)\n    from app.actions.parser import get_command_parser\n    print\\('✓ actions.parser imported'\\)\n    from app.actions.validator import get_command_validator\n    print\\('✓ actions.validator imported'\\)\n    from app.actions.executor import get_command_executor\n    print\\('✓ actions.executor imported'\\)\n    from app.actions.engine import get_action_engine\n    print\\('✓ actions.engine imported'\\)\n    from app.approvals.store import get_approval_tracker\n    print\\('✓ approvals.store imported'\\)\n    from app.approvals.slack import get_slack_approval_notifier\n    print\\('✓ approvals.slack imported'\\)\n    from app.approvals.webhook import router as approvals_webhook_router\n    print\\('✓ approvals.webhook imported'\\)\n    from app.audit.logger import get_audit_logger\n    print\\('✓ audit.logger imported'\\)\n    from app.registry.loader import get_registry\n    print\\('✓ registry.loader imported'\\)\n    from app.api.v1.actions import router as actions_router\n    print\\('✓ api.v1.actions imported'\\)\n    print\\('\\\\\\\\n✅ All Phase 2 imports successful!'\\)\nexcept Exception as e:\n    print\\(f'❌ Import failed: {e}'\\)\n    import traceback\n    traceback.print_exc\\(\\)\n\" 2>&1)",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(npx -y tsc --noEmit --skipLibCheck)",
+      "Bash(npx -y tsc --noEmit)",
+      "Bash(echo \"Exit code: $?\")"
     ]
   }
 }

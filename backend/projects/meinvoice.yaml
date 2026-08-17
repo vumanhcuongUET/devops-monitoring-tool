@@ -1,0 +1,63 @@
+# MeInvoice Project Configuration
+# This file configures the context-aware action system for the MeInvoice service
+
+name: "meinvoice"
+display_name: "MeInvoice Service"
+
+cluster:
+  name: "production"
+  context: "prod-cluster"
+  region: "ap-southeast-1"
+  platform: "kubernetes"
+
+namespaces:
+  app: "meinvoice"
+  database: "meinvoice-db"
+  monitoring: "monitoring"
+
+owners:
+  - user: "devops-team"
+    email: "devops@example.com"
+    slack: "U12345678"
+    teams: "19:1234567890abcdef@thread.tacv2"
+
+rbac:
+  allowed_actions:
+    - kubectl_get
+    - kubectl_describe
+    - kubectl_logs
+    - kubectl_top
+    - helm_list
+    - helm_status
+    - argocd_app_get
+
+  requires_approval:
+    - kubectl_delete
+    - kubectl_scale
+    - kubectl_rollout_restart
+    - kubectl_apply
+    - helm_upgrade
+    - argocd_app_sync
+
+  forbidden_actions:
+    - kubectl_delete_namespace
+    - kubectl_delete_node
+    - kubectl_delete_persistentvolume
+
+  max_restarts_per_hour: 3
+  requires_comment_for:
+    - kubectl_delete
+    - helm_uninstall
+    - argocd_app_delete
+
+tags:
+  environment: "production"
+  criticality: "high"
+  tier: "backend"
+
+metadata:
+  slack_channel: "meinvoice-alerts"
+  slack_webhook_url: "${SLACK_WEBHOOK_URL}"
+  on_call_rotation: "devops-on-call"
+  runbook_url: "https://docs.example.com/runbooks/meinvoice"
+  service_owner: "backend-team"

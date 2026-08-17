@@ -1,0 +1,67 @@
+# Project configuration for meinvoice
+# This file defines cluster, namespaces, owners, and RBAC constraints for the meinvoice project
+
+name: meinvoice
+display_name: "MeInvoice Service"
+
+cluster:
+  name: production-cluster
+  context: arn:aws:eks:ap-southeast-1:123456789:cluster/production
+  region: ap-southeast-1
+  platform: kubernetes
+
+namespaces:
+  app: meinvoice
+  database: meinvoice-db
+  monitoring: monitoring
+
+owners:
+  - user: john.doe
+    email: john.doe@example.com
+    slack: U12345678
+
+  - user: jane.smith
+    email: jane.smith@example.com
+    slack: U87654321
+
+rbac:
+  # Actions allowed without approval
+  allowed_actions:
+    - kubectl_get
+    - kubectl_describe
+    - kubectl_logs
+    - kubectl_top
+
+  # Actions that require approval
+  requires_approval:
+    - kubectl_delete
+    - kubectl_scale
+    - kubectl_restart
+    - kubectl_rollout_restart
+    - helm_upgrade
+    - argocd_sync
+
+  # Actions that are never allowed
+  forbidden_actions:
+    - kubectl_delete_namespace
+    - kubectl_delete_pvc
+    - cluster_admin_commands
+
+  # Rate limiting
+  max_restarts_per_hour: 5
+
+  # Actions requiring comments
+  requires_comment_for:
+    - kubectl_delete
+    - kubectl_scale
+    - helm_upgrade
+
+tags:
+  environment: production
+  tier: application
+  criticality: high
+
+metadata:
+  oncall_rotation: "meinvoice-team-oncall"
+  runbook_url: "https://docs.example.com/runbooks/meinvoice"
+  slack_channel: "#meinvoice-alerts"

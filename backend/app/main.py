@@ -57,6 +57,9 @@ async def lifespan(app: FastAPI):
     from app.services.slo_client import SloClient
     from app.alerting.engine import AlertEngine
     from app.alerting.slo_reporter import SloReporter
+    # Phase 2: Action Engine
+    from app.actions.engine import get_action_engine
+    from app.approvals.store import get_approval_tracker
 
     app.state.es_client = ElasticsearchClient()
     app.state.prometheus_client = PrometheusClient()
@@ -73,6 +76,14 @@ async def lifespan(app: FastAPI):
 
     slo_reporter = SloReporter(slo_client=app.state.slo_client)
     slo_task = asyncio.create_task(slo_reporter.start(app.state))
+
+    # Phase 2: Initialize Action Engine
+    action_engine = get_action_engine()
+    approval_tracker = get_approval_tracker()
+    approval_tracker.set_ws_manager(ws_manager)
+    app.state.action_engine = action_engine
+    app.state.approval_tracker = approval_tracker
+    logger.info("Phase 2: Action Engine initialized")
 
     if settings.AUTH_ENABLED and not settings.AUTH_SECRET:
         logger.warning("AUTH_ENABLED=true but AUTH_SECRET is empty — generate one!")

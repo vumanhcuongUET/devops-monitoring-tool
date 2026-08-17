@@ -7,6 +7,7 @@ import {
   Box,
   Bell,
   Target,
+  CheckCircle,
 } from 'lucide-react';
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { to: '/infrastructure', label: 'Infrastructure', icon: Server },
   { to: '/kubernetes', label: 'Kubernetes', icon: Box },
   { to: '/alerts', label: 'Alerts', icon: Bell },
+  { to: '/actions', label: 'Actions', icon: CheckCircle },  // Phase 2
 ];
 
 export function Sidebar() {

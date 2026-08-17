@@ -1,0 +1,111 @@
+# Default Project Configurations for Context Registry
+# This file contains default configurations for common projects.
+# Project-specific configs should be placed in the projects/ directory.
+
+# Global constraints applied to all projects
+global_constraints:
+  allowed_actions:
+    - kubectl_get
+    - kubectl_describe
+    - kubectl_logs
+    - kubectl_top
+    - helm_list
+    - helm_status
+    - argocd_app_get
+
+  requires_approval:
+    - kubectl_delete
+    - kubectl_scale
+    - kubectl_rollout
+    - kubectl_apply
+    - kubectl_exec
+    - helm_upgrade
+    - helm_install
+    - helm_uninstall
+    - argocd_app_sync
+    - argocd_app_delete
+
+  forbidden_actions:
+    - kubectl_delete_namespace
+    - kubectl_delete_node
+    - helm_uninstall_all
+
+  max_restarts_per_hour: 5
+  requires_comment_for:
+    - kubectl_delete
+    - helm_uninstall
+    - argocd_app_delete
+
+# Default cluster configuration
+default_cluster:
+  name: "default-cluster"
+  platform: "kubernetes"
+  context: ""
+
+# Example project configurations
+projects:
+  - name: "meinvoice"
+    display_name: "MeInvoice Service"
+    cluster:
+      name: "production"
+      context: "prod-cluster"
+      region: "ap-southeast-1"
+      platform: "kubernetes"
+    namespaces:
+      app: "meinvoice"
+      database: "meinvoice-db"
+      monitoring: "monitoring"
+    owners:
+      - user: "devops-team"
+        email: "devops@example.com"
+        slack: "U12345678"
+    rbac:
+      allowed_actions:
+        - kubectl_get
+        - kubectl_describe
+        - kubectl_logs
+      requires_approval:
+        - kubectl_delete
+        - kubectl_scale
+        - kubectl_rollout_restart
+      forbidden_actions:
+        - kubectl_delete_namespace
+      max_restarts_per_hour: 3
+      requires_comment_for:
+        - kubectl_delete
+    tags:
+      environment: "production"
+      criticality: "high"
+    metadata:
+      slack_channel: "meinvoice-alerts"
+      on_call_rotation: "devops-on-call"
+
+  - name: "monitoring"
+    display_name: "Monitoring Stack"
+    cluster:
+      name: "production"
+      context: "prod-cluster"
+      platform: "kubernetes"
+    namespaces:
+      app: "monitoring"
+      database: "monitoring-db"
+    owners:
+      - user: "platform-team"
+        email: "platform@example.com"
+        slack: "U87654321"
+    rbac:
+      allowed_actions:
+        - kubectl_get
+        - kubectl_describe
+      requires_approval:
+        - kubectl_delete
+        - kubectl_scale
+      forbidden_actions:
+        - kubectl_delete_prometheus
+        - kubectl_delete_grafana
+      max_restarts_per_hour: 2
+    tags:
+      environment: "production"
+      criticality: "critical"
+    metadata:
+      slack_channel: "platform-alerts"

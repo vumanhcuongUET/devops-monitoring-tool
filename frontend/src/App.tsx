@@ -7,6 +7,7 @@ import { InfrastructurePage } from './pages/InfrastructurePage'
 import { KubernetesPage } from './pages/KubernetesPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { SloPage } from './pages/SloPage'
+import { ActionsPage } from './pages/ActionsPage'  // Phase 2
 import { useAlertNotifications } from './hooks/useAlertNotifications'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
         <Route path="/kubernetes" element={<KubernetesPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/slo" element={<SloPage />} />
+        <Route path="/actions" element={<ActionsPage />} />  {/* Phase 2 */}
       </Routes>
     </AppShell>
   )

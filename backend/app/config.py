@@ -51,6 +51,24 @@ class Settings(BaseSettings):
     SLO_REPORT_HOUR: int = 9
     SLO_REPORT_TIMEZONE: str = "Asia/Ho_Chi_Minh"
 
+    # Phase 2: Action Engine & Approval Workflow
+    ACTION_EXECUTION_ENABLED: bool = True
+    ACTION_MAX_EXECUTION_TIME_SECONDS: int = 300
+
+    # Approval
+    APPROVAL_REQUIRED_FOR_ACTIONS: list[str] = ["kubectl_delete", "helm_upgrade"]
+    AUTO_APPROVE_LOW_RISK: bool = False
+
+    # Context Registry
+    PROJECTS_CONFIG_PATH: str = "projects"
+
+    # Audit
+    AUDIT_LOG_ENABLED: bool = True
+    AUDIT_LOG_MAX_ENTRIES: int = 1000
+
+    # Slack Approval
+    SLACK_APPROVAL_WEBHOOK_URL: str = ""  # Incoming webhook for button actions
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

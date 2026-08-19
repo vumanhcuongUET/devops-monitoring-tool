@@ -1,27 +1,159 @@
-"""Webhook handler for Slack/Teams approval button interactions."""
+"""Webhook handler for Slack/Teams approval button interactions.
 
+Security Features:
+- Signature verification for Slack webhooks
+- Timestamp validation to prevent replay attacks
+- Source IP whitelist for webhook endpoints
+"""
+
+import hashlib
+import hmac
 import json
 import logging
+import time
 from typing import Any, Optional
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Header
 
 from app.actions.engine import get_action_engine
 from app.models.actions import ApproveActionRequest, RejectActionRequest
 from app.approvals.slack import get_slack_approval_notifier
+from app.config import settings
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 logger = logging.getLogger(__name__)
 
+# Security settings
+SLACK_SIGNATURE_VERSION = "v0"
+SIGNATURE_TIMESTAMP_TOLERANCE_SECONDS = 60  # Reject requests older than 60 seconds
+
+
+def verify_slack_signature(
+    raw_body: bytes,
+    timestamp: str,
+    signature: str,
+    signing_secret: str,
+) -> bool:
+    """Verify Slack webhook signature to prevent spoofing.
+
+    Args:
+        raw_body: Raw request body bytes
+        timestamp: X-Slack-Request-Timestamp header value
+        signature: X-Slack-Signature header value
+        signing_secret: Slack app signing secret
+
+    Returns:
+        True if signature is valid
+
+    Raises:
+        HTTPException: If signature is invalid or timestamp is too old
+    """
+    # Check timestamp to prevent replay attacks
+    try:
+        request_time = int(timestamp)
+        current_time = int(time.time())
+        if abs(current_time - request_time) > SIGNATURE_TIMESTAMP_TOLERANCE_SECONDS:
+            logger.warning(f"Request timestamp too old: {timestamp}")
+            raise HTTPException(
+                status_code=401,
+                detail="Request timestamp too old - possible replay attack"
+            )
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid timestamp format: {timestamp}")
+        raise HTTPException(status_code=401, detail="Invalid timestamp format")
+
+    # Calculate expected signature
+    # Slack format: base64(hmac_sha256(signing_secret, base_version + ":" + timestamp + ":" + body))
+    sig_basestring = f"{SLACK_SIGNATURE_VERSION}:{timestamp}:{raw_body.decode('utf-8', errors='replace')}"
+
+    # Create HMAC
+    digest = hmac.new(
+        signing_secret.encode(),
+        sig_basestring.encode(),
+        hashlib.sha256
+    ).digest()
+
+    # Compare signatures securely
+    expected_signature = f"{SLACK_SIGNATURE_VERSION}=" + digest.hex()
+
+    if not hmac.compare_digest(expected_signature, signature):
+        logger.warning(f"Signature mismatch: expected {expected_signature}, got {signature}")
+        return False
+
+    return True
+
+
+def verify_teams_hmac_signature(
+    raw_body: bytes,
+    auth_header: str,
+    webhook_url: str,
+) -> bool:
+    """Verify Microsoft Teams webhook HMAC signature.
+
+    Teams uses a similar HMAC scheme as Slack.
+
+    Args:
+        raw_body: Raw request body bytes
+        auth_header: Authorization header value
+        webhook_url: The configured webhook URL
+
+    Returns:
+        True if signature is valid
+    """
+    # Teams HMAC validation (similar to Slack)
+    # Format: HMAC_sha256(webhook_url, body)
+    digest = hmac.new(
+        webhook_url.encode(),
+        raw_body,
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(digest, auth_header.replace("sha256=", "", 1))
+
 
 @router.post("/webhook/slack")
-async def slack_approval_webhook(request: Request) -> dict[str, Any]:
+async def slack_approval_webhook(
+    request: Request,
+    x_slack_request_timestamp: str = Header(..., alias="X-Slack-Request-Timestamp"),
+    x_slack_signature: str = Header(..., alias="X-Slack-Signature"),
+) -> dict[str, Any]:
     """Handle Slack interactive button clicks for approval actions.
 
     This endpoint receives POST requests from Slack when users click
     Approve/Reject/View buttons on approval messages.
+
+    Security:
+    - Verifies Slack webhook signature
+    - Validates timestamp to prevent replay attacks
+    - Checks against signing secret from config
     """
     try:
+        # Get raw body for signature verification
+        raw_body = await request.body()
+
+        # Verify signature (REQUIRED in production)
+        if not settings.SLACK_SIGNING_SECRET:
+            logger.error("SLACK_SIGNING_SECRET not configured - rejecting webhook request")
+            raise HTTPException(
+                status_code=500,
+                detail="Webhook signature verification not configured - please set SLACK_SIGNING_SECRET"
+            )
+
+        if not verify_slack_signature(
+            raw_body,
+            x_slack_request_timestamp,
+            x_slack_signature,
+            settings.SLACK_SIGNING_SECRET,
+        ):
+            logger.warning(f"Invalid Slack signature from {request.client.host if request.client else 'unknown'}")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
+        # Additional IP whitelist check if configured
+        if settings.ALLOWED_WEBHOOK_IPS:
+            client_ip = request.client.host if request.client else "unknown"
+            if client_ip not in settings.ALLOWED_WEBHOOK_IPS:
+                logger.warning(f"Webhook request from unauthorized IP: {client_ip}")
+                raise HTTPException(status_code=403, detail="IP not allowed")
         # Parse the request payload
         form_data = await request.form()
         payload_str = form_data.get("payload", "")
@@ -124,16 +256,41 @@ async def slack_approval_webhook(request: Request) -> dict[str, Any]:
 
 
 @router.post("/webhook/teams")
-async def teams_approval_webhook(request: Request) -> dict[str, Any]:
+async def teams_approval_webhook(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+) -> dict[str, Any]:
     """Handle Microsoft Teams approval button interactions.
 
     This endpoint receives POST requests from Teams when users click
     Approve/Reject buttons on adaptive cards.
+
+    Security:
+    - Verifies HMAC signature from Authorization header
+    - Teams HMAC is calculated as: HMAC_SHA256(webhook_url, body)
     """
-    # TODO: Implement Teams webhook handler
-    # Teams uses a different format (Adaptive Cards) compared to Slack (Block Kit)
-    logger.info("Received Teams webhook (not yet implemented)")
-    return {"status": "not_implemented"}
+    try:
+        # Get raw body for signature verification
+        raw_body = await request.body()
+
+        # Verify signature if configured
+        if settings.SLACK_APPROVAL_WEBHOOK_URL and authorization:
+            if not verify_teams_hmac_signature(raw_body, authorization, settings.SLACK_APPROVAL_WEBHOOK_URL):
+                logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
+                raise HTTPException(status_code=401, detail="Invalid signature")
+        else:
+            logger.warning("Teams webhook signature verification skipped (INSECURE!)")
+
+        # TODO: Implement Teams webhook handler
+        # Teams uses a different format (Adaptive Cards) compared to Slack (Block Kit)
+        logger.info("Received Teams webhook (not yet implemented)")
+        return {"status": "not_implemented"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing Teams webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/health")

@@ -26,7 +26,20 @@
       "Bash(python -m pytest tests/ -v --tb=short)",
       "Bash(npx -y tsc --noEmit --skipLibCheck)",
       "Bash(npx -y tsc --noEmit)",
-      "Bash(echo \"Exit code: $?\")"
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(gh auth *)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload)",
+      "Bash(docker compose up *)",
+      "Bash(python -m pytest tests/unit/test_actions/ -v --tb=short)",
+      "Bash(xargs -I{} bash -c 'echo \"=== {} ===\" && git diff HEAD --stat \"{}\"')",
+      "Bash(git checkout *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git *)",
+      "Bash(xargs -n1 basename)"
     ]
   }
 }

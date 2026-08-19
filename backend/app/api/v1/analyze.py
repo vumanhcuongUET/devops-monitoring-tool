@@ -8,6 +8,7 @@ Based on strategic roadmap: docs/chien_luoc_tong_the.md (Giai đoạn 1)
 """
 
 import asyncio
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -23,6 +24,80 @@ from app.services.llm_client import get_llm_client
 
 
 router = APIRouter(tags=["analyze"])
+
+# Input sanitization patterns for LLM prompt injection prevention
+PROMPT_INJECTION_PATTERNS = [
+    r"ignore\s+(all\s+)?(previous|above|the)\s+instructions",
+    r"disregard\s+(all\s+)?(previous|above|the)\s+instructions",
+    r"(forget|discard|clear)\s+(all\s+)?(previous|above|the)\s+instructions",
+    r"system\s*:\s*you\s+are\s+now",
+    r"\[INST\].*?\[/INST\]",
+    r"<<\s*.*?>>",
+    r"###\s*INSTRUCTION",
+    r"---\s*INSTRUCTION",
+    r"<\|.*?\|>",
+    r"act\s+as\s+(a|an)?\s*(evil|malicious|attacker)",
+]
+
+MAX_PROJECT_NAME_LENGTH = 100
+MAX_ALERT_MESSAGE_LENGTH = 1000
+
+
+def _sanitize_input(value: str, max_length: int = 500) -> str:
+    """Sanitize user input to prevent prompt injection.
+
+    Args:
+        value: Raw user input
+        max_length: Maximum allowed length
+
+    Returns:
+        Sanitized input string
+    """
+    if not value:
+        return ""
+
+    # Truncate to max length
+    value = value[:max_length]
+
+    # Remove prompt injection patterns (case-insensitive)
+    for pattern in PROMPT_INJECTION_PATTERNS:
+        value = re.sub(pattern, "", value, flags=re.IGNORECASE)
+
+    # Remove potential escape sequences
+    value = re.sub(r"\\[nrtbfv'\"\\]", "", value)
+
+    # Limit repeated characters (potential attack patterns)
+    value = re.sub(r"(.)\1{50,}", r"\1\1\1", value)
+
+    return value.strip()
+
+
+def _validate_project_name(project: str) -> bool:
+    """Validate project name contains only safe characters.
+
+    Args:
+        project: Project name to validate
+
+    Returns:
+        True if project name is safe
+
+    Raises:
+        HTTPException: If project name is invalid
+    """
+    if not project or len(project) > MAX_PROJECT_NAME_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Project name must be 1-{MAX_PROJECT_NAME_LENGTH} characters"
+        )
+
+    # Only allow alphanumeric, hyphens, underscores
+    if not re.match(r"^[a-zA-Z0-9_-]+$", project):
+        raise HTTPException(
+            status_code=400,
+            detail="Project name can only contain letters, numbers, hyphens, and underscores"
+        )
+
+    return True
 
 
 @router.post("/analyze", response_model=TriageCardResponse)
@@ -49,6 +124,30 @@ async def analyze_incident(request: Request, triage_request: TriageCardRequest):
     }
     ```
     """
+    # Validate and sanitize inputs to prevent prompt injection
+    _validate_project_name(triage_request.project)
+
+    sanitized_alert = _sanitize_input(
+        triage_request.alert_message or "",
+        MAX_ALERT_MESSAGE_LENGTH
+    )
+
+    # Sanitize incident_id if provided
+    sanitized_incident_id = _sanitize_input(
+        triage_request.incident_id or "unknown",
+        100
+    )
+
+    # Create sanitized request
+    sanitized_request = TriageCardRequest(
+        project=triage_request.project,
+        incident_id=sanitized_incident_id,
+        alert_message=sanitized_alert,
+        time_range_minutes=triage_request.time_range_minutes,
+        include_recommendations=triage_request.include_recommendations,
+        severity_threshold=triage_request.severity_threshold,
+    )
+
     # Get the monitoring clients from app state
     es_client = request.app.state.es_client
     prom_client = request.app.state.prometheus_client
@@ -66,7 +165,7 @@ async def analyze_incident(request: Request, triage_request: TriageCardRequest):
         )
 
     # Collect context data from all sources (in parallel)
-    time_delta = timedelta(minutes=triage_request.time_range_minutes)
+    time_delta = timedelta(minutes=sanitized_request.time_range_minutes)
 
     try:
         context_data = await _collect_context_data(
@@ -74,9 +173,9 @@ async def analyze_incident(request: Request, triage_request: TriageCardRequest):
             prom_client=prom_client,
             k8s_client=k8s_client,
             apm_client=apm_client,
-            project=triage_request.project,
+            project=sanitized_request.project,
             time_delta=time_delta,
-            severity_threshold=triage_request.severity_threshold,
+            severity_threshold=sanitized_request.severity_threshold,
         )
     except Exception as e:
         return TriageCardResponse(
@@ -88,7 +187,7 @@ async def analyze_incident(request: Request, triage_request: TriageCardRequest):
     # Generate Triage Card using LLM
     try:
         triage_card = await llm_client.generate_triage_card(
-            request=triage_request,
+            request=sanitized_request,
             context_data=context_data,
         )
 

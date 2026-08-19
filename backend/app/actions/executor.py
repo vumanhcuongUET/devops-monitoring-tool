@@ -5,7 +5,7 @@ import logging
 import shlex
 import subprocess
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
 from app.models.actions import CommandType, ExecutionResult
 
@@ -15,14 +15,41 @@ logger = logging.getLogger(__name__)
 class CommandExecutor:
     """Execute shell commands with safety constraints."""
 
+    # Whitelist of allowed commands
+    ALLOWED_COMMANDS = {
+        "kubectl": {
+            "allowed_flags": ["get", "describe", "logs", "apply", "delete", "create",
+                             "config", "top", "auth", "rollout", "scale", "exec"],
+            "allowed_global_flags": ["-n", "--namespace", "--context", "--kubeconfig"],
+        },
+        "helm": {
+            "allowed_flags": ["list", "install", "upgrade", "uninstall", "status", "ls",
+                             "history", "rollback", "get", "repo"],
+            "allowed_global_flags": ["-n", "--namespace", "--kubeconfig"],
+        },
+        "argocd": {
+            "allowed_flags": ["app", "repository", "project", "cluster", "account"],
+            "allowed_global_flags": [],
+        },
+    }
+
+    # Forbidden command patterns (additional layer of defense)
+    FORBIDDEN_PATTERNS = [
+        "&&",
+        ";",
+        "|",
+        "$(",
+        "`",
+        "${",
+        ">",
+        "<",
+        "2>",
+        "2>&1",
+        "&>",
+    ]
+
     def __init__(self):
         self._max_execution_time = 300  # 5 minutes default
-        self._forbidden_commands = [
-            "rm -rf",
-            "mkfs",
-            ":(){ :|:& };:",  # Fork bomb
-            "chmod 000",
-        ]
 
     async def execute(
         self,
@@ -30,23 +57,166 @@ class CommandExecutor:
         dry_run: bool = False,
         timeout_seconds: int = 300,
     ) -> ExecutionResult:
-        """Execute a command and return the result."""
-        if dry_run:
-            return await self._dry_run(command)
+        """Execute a command safely by parsing it into arguments.
 
-        # Check for forbidden commands
-        if self._is_forbidden(command):
+        WARNING: This method takes a string command but safely parses it using
+        shlex.split() to prevent shell injection. The parsed arguments are then
+        passed directly to the binary without shell interpretation.
+
+        For new code, prefer using execute_kubectl(), execute_helm(), or
+        execute_argocd() which take argument lists directly.
+        """
+        # Parse command string safely
+        try:
+            cmd_args = shlex.split(command)
+        except ValueError as e:
             return ExecutionResult(
                 success=False,
-                error_message="Command contains forbidden pattern",
+                error_message=f"Command parsing failed: {e}",
                 timestamp=datetime.now(timezone.utc),
             )
 
-        # Execute the command
+        # Validate parsed arguments
+        if not cmd_args:
+            return ExecutionResult(
+                success=False,
+                error_message="Empty command after parsing",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # Check for forbidden patterns in parsed arguments
+        for arg in cmd_args:
+            if self._is_forbidden(arg):
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Command contains forbidden pattern in argument: {arg}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+        # Execute using safe method
+        return await self._execute_safe(cmd_args, dry_run=dry_run, timeout_seconds=timeout_seconds)
+
+    def _is_forbidden(self, arg: str) -> bool:
+        """Check if a single argument contains forbidden patterns."""
+        arg_lower = arg.lower()
+        for forbidden in self.FORBIDDEN_PATTERNS:
+            if forbidden.lower() in arg_lower:
+                logger.warning(f"Argument contains forbidden pattern '{forbidden}' in: {arg[:50]}...")
+                return True
+        return False
+
+    async def execute_kubectl(
+        self,
+        args: list[str],
+        namespace: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Execute a kubectl command with proper context."""
+        # Build command as list to prevent injection
+        cmd_args = ["kubectl"]
+        if namespace:
+            cmd_args.extend(["-n", namespace])
+        cmd_args.extend(args)
+
+        return await self._execute_safe(cmd_args, dry_run=dry_run)
+
+    async def execute_helm(
+        self,
+        args: list[str],
+        namespace: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Execute a helm command."""
+        # Build command as list to prevent injection
+        cmd_args = ["helm"]
+        if namespace:
+            cmd_args.extend(["--namespace", namespace])
+        cmd_args.extend(args)
+
+        return await self._execute_safe(cmd_args, dry_run=dry_run)
+
+    async def execute_argocd(
+        self,
+        args: list[str],
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Execute an argocd command."""
+        # Build command as list to prevent injection
+        cmd_args = ["argocd"] + args
+        return await self._execute_safe(cmd_args, dry_run=dry_run)
+
+    async def _execute_safe(
+        self,
+        cmd_args: list[str],
+        dry_run: bool = False,
+        timeout_seconds: int = 300,
+    ) -> ExecutionResult:
+        """Execute command safely using subprocess with argument list.
+
+        This prevents shell injection by avoiding shell interpretation.
+        Validates that only whitelisted commands can be executed.
+        """
+        # Validate command is in whitelist
+        if not cmd_args:
+            return ExecutionResult(
+                success=False,
+                error_message="Empty command list",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        command_name = cmd_args[0]
+        if command_name not in self.ALLOWED_COMMANDS:
+            allowed = ", ".join(self.ALLOWED_COMMANDS.keys())
+            logger.error(f"Command '{command_name}' not in whitelist. Allowed: {allowed}")
+            return ExecutionResult(
+                success=False,
+                error_message=f"Command '{command_name}' is not allowed. Allowed commands: {allowed}",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # Validate flags and arguments against whitelist
+        allowed_config = self.ALLOWED_COMMANDS[command_name]
+        allowed_flags = set(allowed_config["allowed_flags"])
+        allowed_global_flags = set(allowed_config["allowed_global_flags"])
+
+        # Check each argument
+        i = 1
+        while i < len(cmd_args):
+            arg = cmd_args[i]
+
+            # Skip flag values (arguments that follow flags)
+            if arg.startswith("-") and i + 1 < len(cmd_args) and not cmd_args[i + 1].startswith("-"):
+                # This is a flag with a value, validate the flag and skip next arg
+                flag_name = arg
+                # Remove leading dashes for comparison
+                flag_key = flag_name.lstrip("-")
+                if flag_key not in allowed_flags and flag_key not in allowed_global_flags:
+                    return ExecutionResult(
+                        success=False,
+                        error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
+                        timestamp=datetime.now(timezone.utc),
+                    )
+                i += 2
+                continue
+            elif arg.startswith("-"):
+                # Flag without value (boolean flag)
+                flag_name = arg
+                flag_key = flag_name.lstrip("-")
+                if flag_key not in allowed_flags and flag_key not in allowed_global_flags:
+                    return ExecutionResult(
+                        success=False,
+                        error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
+                        timestamp=datetime.now(timezone.utc),
+                    )
+            i += 1
+
+        if dry_run:
+            return await self._dry_run_safe(cmd_args)
+
         start_time = datetime.now(timezone.utc)
         try:
-            process = await asyncio.create_subprocess_shell(
-                command,
+            process = await asyncio.create_subprocess_exec(
+                *cmd_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -69,7 +239,6 @@ class CommandExecutor:
             )
 
         except asyncio.TimeoutError:
-            # Kill the process
             try:
                 process.kill()
                 await process.wait()
@@ -92,16 +261,22 @@ class CommandExecutor:
                 timestamp=datetime.now(timezone.utc),
             )
 
-    async def _dry_run(self, command: str) -> ExecutionResult:
-        """Perform a dry run validation of the command."""
-        # For dry run, we just validate the command syntax
+    async def _dry_run_safe(self, cmd_args: list[str]) -> ExecutionResult:
+        """Perform a dry run validation of the command list."""
+        # Validate that all arguments are strings
         try:
-            # Try to parse the command
-            shlex.split(command)
+            for arg in cmd_args:
+                if not isinstance(arg, str):
+                    raise ValueError(f"Argument must be string, got {type(arg)}")
+                # Check for shell injection patterns
+                for forbidden in self.FORBIDDEN_PATTERNS:
+                    if forbidden in arg:
+                        raise ValueError(f"Argument contains forbidden pattern: {forbidden}")
+
             return ExecutionResult(
                 success=True,
                 exit_code=0,
-                stdout="[DRY RUN] Command validation passed",
+                stdout=f"[DRY RUN] Command validation passed: {' '.join(cmd_args)}",
                 stderr="",
                 duration_seconds=0.0,
                 timestamp=datetime.now(timezone.utc),
@@ -112,52 +287,6 @@ class CommandExecutor:
                 error_message=f"Command validation failed: {e}",
                 timestamp=datetime.now(timezone.utc),
             )
-
-    def _is_forbidden(self, command: str) -> bool:
-        """Check if command contains forbidden patterns."""
-        command_lower = command.lower()
-        for forbidden in self._forbidden_commands:
-            if forbidden.lower() in command_lower:
-                logger.warning(f"Command contains forbidden pattern: {forbidden}")
-                return True
-        return False
-
-    async def execute_kubectl(
-        self,
-        args: list[str],
-        namespace: Optional[str] = None,
-        dry_run: bool = False,
-    ) -> ExecutionResult:
-        """Execute a kubectl command with proper context."""
-        command = "kubectl"
-        if namespace:
-            command += f" -n {namespace}"
-        command += " " + " ".join(args)
-
-        return await self.execute(command, dry_run=dry_run)
-
-    async def execute_helm(
-        self,
-        args: list[str],
-        namespace: Optional[str] = None,
-        dry_run: bool = False,
-    ) -> ExecutionResult:
-        """Execute a helm command."""
-        command = "helm"
-        if namespace:
-            command += f" --namespace {namespace}"
-        command += " " + " ".join(args)
-
-        return await self.execute(command, dry_run=dry_run)
-
-    async def execute_argocd(
-        self,
-        args: list[str],
-        dry_run: bool = False,
-    ) -> ExecutionResult:
-        """Execute an argocd command."""
-        command = "argocd " + " ".join(args)
-        return await self.execute(command, dry_run=dry_run)
 
 
 # Singleton instance

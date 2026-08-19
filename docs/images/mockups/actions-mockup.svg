@@ -1,0 +1,156 @@
+<svg width="1200" height="700" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#0f172a"/>
+
+  <!-- Header -->
+  <rect width="100%" height="60" fill="#1e293b"/>
+  <text x="20" y="38" fill="#f1f5f9" font-family="sans-serif" font-size="18" font-weight="bold">
+    DevOps AI Agentics 2026
+  </text>
+  <circle cx="1150" cy="30" r="8" fill="#22c55e"/>
+  <text x="1135" y="34" fill="#22c55e" font-family="sans-serif" font-size="11">LIVE</text>
+
+  <!-- Sidebar Navigation -->
+  <rect x="0" y="60" width="200" height="640" fill="#1e293b"/>
+  <text x="30" y="100" fill="#94a3b8" font-family="sans-serif" font-size="14">  Overview</text>
+  <text x="30" y="140" fill="#94a3b8" font-family="sans-serif" font-size="14">  Logs</text>
+  <text x="30" y="180" fill="#94a3b8" font-family="sans-serif" font-size="14">  APM</text>
+  <text x="30" y="220" fill="#94a3b8" font-family="sans-serif" font-size="14">  Infrastructure</text>
+  <text x="30" y="260" fill="#94a3b8" font-family="sans-serif" font-size="14">  SLOs</text>
+  <text x="30" y="300" fill="#3b82f6" font-family="sans-serif" font-size="14">● Actions</text>
+  <text x="30" y="340" fill="#94a3b8" font-family="sans-serif" font-size="14">  Settings</text>
+
+  <!-- Main Content Area -->
+  <rect x="200" y="60" width="1000" height="640" fill="#0f172a"/>
+
+  <!-- Page Title -->
+  <text x="230" y="95" fill="#f1f5f9" font-family="sans-serif" font-size="24" font-weight="bold">
+    Actions Management
+  </text>
+
+  <!-- Filter Bar -->
+  <rect x="230" y="115" width="970" height="50" rx="8" fill="#1e293b"/>
+  <text x="250" y="145" fill="#94a3b8" font-family="sans-serif" font-size="12">Project:</text>
+  <rect x="310" y="130" width="150" height="30" rx="4" fill="#0f172a" stroke="#334155"/>
+  <text x="320" y="150" fill="#64748b" font-family="sans-serif" font-size="11">All projects</text>
+
+  <text x="480" y="145" fill="#94a3b8" font-family="sans-serif" font-size="12">Status:</text>
+  <rect x="530" y="130" width="120" height="30" rx="4" fill="#0f172a" stroke="#334155"/>
+  <text x="540" y="150" fill="#64748b" font-family="sans-serif" font-size="11">All status</text>
+
+  <text x="670" y="145" fill="#94a3b8" font-family="sans-serif" font-size="12">Risk:</text>
+  <rect x="710" y="130" width="120" height="30" rx="4" fill="#0f172a" stroke="#334155"/>
+  <text x="720" y="150" fill="#64748b" font-family="sans-serif" font-size="11">All levels</text>
+
+  <text x="900" y="145" fill="#94a3b8" font-family="sans-serif" font-size="12">Show:</text>
+  <rect x="945" y="130" width="80" height="30" rx="4" fill="#1e293b" stroke="#334155"/>
+  <text x="960" y="150" fill="#f1f5f9" font-family="sans-serif" font-size="11">100</text>
+
+  <!-- Stats Row -->
+  <rect x="230" y="180" width="180" height="70" rx="8" fill="#1e293b"/>
+  <text x="250" y="205" fill="#94a3b8" font-family="sans-serif" font-size="11">Total Actions</text>
+  <text x="250" y="235" fill="#f1f5f9" font-family="sans-serif" font-size="22" font-weight="bold">15</text>
+
+  <rect x="420" y="180" width="180" height="70" rx="8" fill="#1e293b"/>
+  <text x="440" y="205" fill="#f59e0b" font-family="sans-serif" font-size="11">Pending</text>
+  <text x="440" y="235" fill="#f1f5f9" font-family="sans-serif" font-size="22" font-weight="bold">5</text>
+
+  <rect x="610" y="180" width="180" height="70" rx="8" fill="#1e293b"/>
+  <text x="630" y="205" fill="#22c55e" font-family="sans-serif" font-size="11">Approved</text>
+  <text x="630" y="235" fill="#f1f5f9" font-family="sans-serif" font-size="22" font-weight="bold">3</text>
+
+  <rect x="800" y="180" width="180" height="70" rx="8" fill="#1e293b"/>
+  <text x="820" y="205" fill="#94a3b8" font-family="sans-serif" font-size="11">Executed</text>
+  <text x="820" y="235" fill="#f1f5f9" font-family="sans-serif" font-size="22" font-weight="bold">6</text>
+
+  <rect x="990" y="180" width="180" height="70" rx="8" fill="#1e293b"/>
+  <text x="1010" y="205" fill="#ef4444" font-family="sans-serif" font-size="11">Failed</text>
+  <text x="1010" y="235" fill="#f1f5f9" font-family="sans-serif" font-size="22" font-weight="bold">1</text>
+
+  <!-- Actions List Section -->
+  <text x="230" y="280" fill="#f1f5f9" font-family="sans-serif" font-size="16" font-weight="bold">
+    Recent Actions
+  </text>
+
+  <!-- Action Card 1 - PENDING HIGH -->
+  <rect x="230" y="300" width="940" height="130" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
+  <rect x="230" y="300" width="4" height="130" rx="2" fill="#f59e0b"/>
+
+  <!-- Header -->
+  <text x="250" y="325" fill="#f1f5f9" font-family="sans-serif" font-size="13" font-weight="bold">act-001</text>
+  <text x="330" y="325" fill="#f1f5f9" font-family="sans-serif" font-size="13">Scale up deployment</text>
+  <text x="250" y="345" fill="#94a3b8" font-family="sans-serif" font-size="11">mobile-app • 5 min ago</text>
+
+  <!-- Risk Badge -->
+  <rect x="850" y="310" width="70" height="22" rx="4" fill="#f59e0b" opacity="0.2"/>
+  <text x="860" y="325" fill="#f59e0b" font-family="sans-serif" font-size="10" font-weight="bold">HIGH</text>
+
+  <!-- Status Badge -->
+  <rect x="930" y="310" width="80" height="22" rx="4" fill="#f59e0b" opacity="0.2"/>
+  <text x="945" y="325" fill="#f59e0b" font-family="sans-serif" font-size="10" font-weight="bold">PENDING</text>
+
+  <!-- Command -->
+  <rect x="250" y="355" width="900" height="24" rx="4" fill="#0f172a"/>
+  <text x="260" y="371" fill="#22c55e" font-family="monospace" font-size="10">$ kubectl scale deployment/api --replicas=5 -n mobile-app</text>
+
+  <!-- Description -->
+  <text x="250" y="395" fill="#94a3b8" font-family="sans-serif" font-size="11">Scale up to handle increased load. Expected impact: Increased capacity.</text>
+
+  <!-- Action Buttons -->
+  <rect x="250" y="405" width="100" height="30" rx="6" fill="#22c55e"/>
+  <text x="285" y="424" fill="#ffffff" font-family="sans-serif" font-size="11" font-weight="bold">✓ Approve</text>
+
+  <rect x="360" y="405" width="100" height="30" rx="6" fill="#1e293b" stroke="#ef4444"/>
+  <text x="395" y="424" fill="#ef4444" font-family="sans-serif" font-size="11" font-weight="bold">✗ Reject</text>
+
+  <!-- Action Card 2 - APPROVED SAFE -->
+  <rect x="230" y="440" width="940" height="130" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="2"/>
+  <rect x="230" y="440" width="4" height="130" rx="2" fill="#22c55e"/>
+
+  <text x="250" y="465" fill="#f1f5f9" font-family="sans-serif" font-size="13" font-weight="bold">act-002</text>
+  <text x="330" y="465" fill="#f1f5f9" font-family="sans-serif" font-size="13">Check pod status</text>
+  <text x="250" y="485" fill="#94a3b8" font-family="sans-serif" font-size="11">meinvoice • 15 min ago</text>
+
+  <rect x="850" y="450" width="70" height="22" rx="4" fill="#22c55e" opacity="0.2"/>
+  <text x="865" y="465" fill="#22c55e" font-family="sans-serif" font-size="10" font-weight="bold">SAFE</text>
+
+  <rect x="930" y="450" width="80" height="22" rx="4" fill="#22c55e" opacity="0.2"/>
+  <text x="945" y="465" fill="#22c55e" font-family="sans-serif" font-size="10" font-weight="bold">APPROVED</text>
+
+  <rect x="250" y="495" width="900" height="24" rx="4" fill="#0f172a"/>
+  <text x="260" y="511" fill="#22c55e" font-family="monospace" font-size="10">$ kubectl get pods -n meinvoice</text>
+
+  <text x="250" y="535" fill="#94a3b8" font-family="sans-serif" font-size="11">Verify pod health after deployment. No impact expected.</text>
+
+  <rect x="250" y="545" width="100" height="30" rx="6" fill="#3b82f6"/>
+  <text x="280" y="564" fill="#ffffff" font-family="sans-serif" font-size="11" font-weight="bold">▶ Execute</text>
+
+  <text x="400" y="564" fill="#94a3b8" font-family="sans-serif" font-size="10">Approved by: john.doe</text>
+
+  <!-- Action Card 3 - EXECUTED -->
+  <rect x="230" y="580" width="940" height="130" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="2"/>
+  <rect x="230" y="580" width="4" height="130" rx="2" fill="#22c55e"/>
+
+  <text x="250" y="605" fill="#f1f5f9" font-family="sans-serif" font-size="13" font-weight="bold">act-003</text>
+  <text x="330" y="605" fill="#f1f5f9" font-family="sans-serif" font-size="13">Rollout restart</text>
+  <text x="250" y="625" fill="#94a3b8" font-family="sans-serif" font-size="11">erp-system • 1 hour ago</text>
+
+  <rect x="850" y="590" width="70" height="22" rx="4" fill="#22c55e" opacity="0.2"/>
+  <text x="863" y="605" fill="#22c55e" font-family="sans-serif" font-size="10" font-weight="bold">LOW</text>
+
+  <rect x="930" y="590" width="80" height="22" rx="4" fill="#22c55e" opacity="0.2"/>
+  <text x="945" y="605" fill="#22c55e" font-family="sans-serif" font-size="10" font-weight="bold">EXECUTED</text>
+
+  <rect x="250" y="635" width="900" height="24" rx="4" fill="#0f172a"/>
+  <text x="260" y="651" fill="#22c55e" font-family="monospace" font-size="10">$ kubectl rollout restart deployment/api -n erp-system</text>
+
+  <text x="250" y="675" fill="#94a3b8" font-family="sans-serif" font-size="11">Restart to clear transient issues.</text>
+
+  <text x="250" y="695" fill="#22c55e" font-family="sans-serif" font-size="10">✓ Executed successfully • Duration: 2.3s</text>
+
+  <!-- Footer -->
+  <rect x="200" y="740" width="1000" height="40" fill="#1e293b"/>
+  <text x="230" y="765" fill="#64748b" font-family="sans-serif" font-size="11">
+    Showing 15 of 15 actions • WebSocket connected • Real-time updates enabled
+  </text>
+</svg>

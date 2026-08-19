@@ -7,10 +7,13 @@ export function useWebSocket() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const connectRef = useRef<() => void>(() => {});
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isCleaningUpRef = useRef(false);
 
   const connect = useCallback(() => {
+    // Prevent new connections during cleanup
+    if (isCleaningUpRef.current) return;
+
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
 
@@ -59,21 +62,36 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setConnected(false);
-      reconnectTimer.current = setTimeout(() => connectRef.current(), 5000);
+      // Only reconnect if not cleaning up
+      if (!isCleaningUpRef.current) {
+        reconnectTimerRef.current = setTimeout(() => {
+          if (!isCleaningUpRef.current) {
+            connect();
+          }
+        }, 5000);
+      }
     };
 
     ws.onerror = () => ws.close();
   }, []);
 
   useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
-
-  useEffect(() => {
     connect();
+
     return () => {
-      wsRef.current?.close();
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      isCleaningUpRef.current = true;
+
+      // Clear reconnect timer
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+
+      // Close WebSocket
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [connect]);
 

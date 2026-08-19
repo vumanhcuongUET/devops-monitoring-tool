@@ -1,16 +1,20 @@
 import asyncio
 import logging
+import logging.config
 from contextlib import asynccontextmanager
 
+import fastapi.responses
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config import settings
 from app.api.router import api_router
 from app.api.ws.live import router as ws_router, manager as ws_manager
-from app.auth import api_key_auth, bearer_auth
+from app.auth import api_key_auth, bearer_auth, _is_valid_api_key, _is_valid_token
+from app.config import settings
+from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import RateLimitMiddleware
+from app.utils.logging import SensitiveDataFilter
 
 logger = logging.getLogger(__name__)
 
@@ -31,25 +35,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Check API key
         api_key = request.headers.get("X-API-Key")
-        if api_key:
-            from app.auth import _is_valid_api_key
-            if _is_valid_api_key(api_key):
-                return await call_next(request)
+        if api_key and _is_valid_api_key(api_key):
+            return await call_next(request)
 
         # Check Bearer token
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            from app.auth import _is_valid_token
             if _is_valid_token(token):
                 return await call_next(request)
 
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+        return fastapi.responses.JSONResponse(
+            status_code=401, content={"detail": "Unauthorized"}
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Apply sensitive data filtering to all loggers
+    root_logger = logging.getLogger()
+    root_logger.addFilter(SensitiveDataFilter())
+
+    # Import service clients (localized imports for clarity)
     from app.services.elasticsearch_client import ElasticsearchClient
     from app.services.prometheus_client import PrometheusClient
     from app.services.kubernetes_client import KubernetesClient
@@ -106,6 +113,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20)
 app.add_middleware(AuthMiddleware)
 

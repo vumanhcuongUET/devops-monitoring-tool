@@ -1,0 +1,125 @@
+---
+# Staging Operator Service Account
+# Purpose: Edit access to staging resources for safe operations
+# Environment: Staging
+# Permissions: view + modify + create (no delete on critical resources)
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-agent-staging-operator
+  namespace: ai-agents
+  labels:
+    environment: staging
+    access-level: operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-agent-staging-operator-role
+  namespace: ai-agents
+  labels:
+    environment: staging
+    access-level: operator
+rules:
+  # Core API - full access in ai-agents namespace
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - pods/status
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # No delete on PVCs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-agent-staging-operator-cluster-role
+  labels:
+    environment: staging
+    access-level: operator
+rules:
+  # Core API - read-only in other namespaces
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - configmaps
+      - persistentvolumeclaims
+      - events
+      - namespaces
+    verbs: ["get", "list", "watch"]
+
+  # Apps API - full access in all namespaces
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - deployments/scale
+      - deployments/status
+      - statefulsets
+      - statefulsets/scale
+      - statefulsets/status
+      - daemonsets
+      - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Batch API
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - jobs/status
+      - cronjobs
+      - cronjobs/status
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Autoscaling - can modify
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+      - horizontalpodautoscalers/status
+    verbs: ["get", "list", "watch", "create", "update", "patch", "scale"]
+
+  # Networking - full access
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - ingresses/status
+      - networkpolicies
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-agent-staging-operator-binding
+  labels:
+    environment: staging
+subjects:
+  - kind: ServiceAccount
+    name: ai-agent-staging-operator
+    namespace: ai-agents
+roleRef:
+  kind: ClusterRole
+  name: ai-agent-staging-operator-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-agent-staging-operator-ns-binding
+  namespace: ai-agents
+subjects:
+  - kind: ServiceAccount
+    name: ai-agent-staging-operator
+    namespace: ai-agents
+roleRef:
+  kind: Role
+  name: ai-agent-staging-operator-role
+  apiGroup: rbac.authorization.k8s.io

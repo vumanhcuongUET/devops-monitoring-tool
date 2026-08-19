@@ -9,8 +9,11 @@ from typing import Any, Optional
 from app.actions.parser import get_command_parser
 from app.actions.validator import get_command_validator, ValidationResult
 from app.actions.executor import get_command_executor
+from app.actions.environment_executor import get_executor
 from app.approvals.store import get_approval_tracker, get_approval_history
 from app.audit.logger import get_audit_logger
+from app.governance.permission_checker import get_permission_checker
+from app.governance.ai_rbac import get_ai_permission_matrix, AIPermission
 from app.models.actions import (
     Action,
     ActionStatus,
@@ -41,6 +44,8 @@ class ActionEngine:
         self.approval_history = get_approval_history()
         self.audit_logger = get_audit_logger()
         self.registry = get_registry()
+        self.permission_checker = get_permission_checker()
+        self.env_aware_executor = get_executor()
 
     async def create_action_from_recommendation(
         self,
@@ -61,10 +66,29 @@ class ActionEngine:
             project=request.project,
         )
 
-        # Determine risk level from validation
+        # Get environment from project configuration
+        project_config = self.registry.get_project(request.project)
+        environment = "production"  # Default
+        if project_config and hasattr(project_config, "tags"):
+            environment = project_config.tags.get("environment", "production")
+
+        # Check permissions using RBAC (Phase 3 integration)
+        permission_result = self.permission_checker.check_command(
+            command=command,
+            environment=environment,
+            project=request.project,
+        )
+
+        # Determine risk level from validation and permission check
         risk_level = validation.risk_level
-        if not validation.allowed:
+        if not validation.allowed or not permission_result.allowed:
             risk_level = RiskLevel.CRITICAL
+
+        # Determine if approval is required
+        requires_approval = (
+            validation.requires_approval or
+            permission_result.requires_approval
+        )
 
         # Create the action
         action = Action(
@@ -79,10 +103,12 @@ class ActionEngine:
             description=recommendation.reason,
             risk_level=risk_level,
             estimated_impact=recommendation.estimated_impact or "",
-            status=ActionStatus.PENDING if validation.requires_approval else ActionStatus.APPROVED,
+            status=ActionStatus.PENDING if requires_approval else ActionStatus.APPROVED,
             context={
                 "validation": validation.to_dict(),
                 "priority": recommendation.priority,
+                "permission_check": permission_result.to_dict(),
+                "environment": environment,
             },
         )
 
@@ -109,10 +135,15 @@ class ActionEngine:
             "details": {
                 "command": command,
                 "validation": validation.to_dict(),
+                "permission_check": permission_result.to_dict(),
             },
         })
 
-        logger.info(f"Created action {action_id} for project {request.project}")
+        logger.info(
+            f"Created action {action_id} for project {request.project} "
+            f"(env={environment}, permission={permission_result.required_permission.value}, "
+            f"allowed={permission_result.allowed})"
+        )
         return action
 
     async def approve_action(self, action_id: str, request: ApproveActionRequest) -> Action:
@@ -202,7 +233,7 @@ class ActionEngine:
         )
 
     async def execute_action(self, action_id: str, request: ExecuteActionRequest) -> Action:
-        """Execute an approved action."""
+        """Execute an approved action with RBAC permission checking."""
         # Get current state
         state = self.approval_tracker.get(action_id)
         if not state:
@@ -216,13 +247,37 @@ class ActionEngine:
         if not command:
             raise ValueError(f"Action {action_id} has no command to execute")
 
-        # Execute the command
+        # Get environment from context
+        context = state.get("context", {})
+        environment = context.get("environment", "production")
+        project = state.get("project", "")
+
+        # Final permission check before execution (Phase 3 integration)
+        permission_result = self.permission_checker.check_command(
+            command=command,
+            environment=environment,
+            project=project,
+            user=request.executed_by,
+        )
+
+        if not permission_result.allowed:
+            raise PermissionError(
+                f"Permission denied for action {action_id}: {permission_result.reason}"
+            )
+
+        # Execute the command using environment-aware executor (Phase 3 integration)
         start_time = datetime.now(timezone.utc)
         try:
-            result = await self.executor.execute(
+            # Convert environment string to enum
+            from app.actions.environment_executor import ExecutionEnvironment
+            env_enum = ExecutionEnvironment(environment)
+
+            result = await self.env_aware_executor.execute(
                 command=command,
-                dry_run=request.dry_run,
+                environment=env_enum,
+                timeout_seconds=request.timeout_seconds or 30,
             )
+
             success = result.success
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
@@ -234,7 +289,7 @@ class ActionEngine:
                 user=request.executed_by,
             )
 
-            # Log execution
+            # Log execution with permission context
             self.audit_logger.log_action_executed(
                 action_id=action_id,
                 executed_by=request.executed_by,
@@ -250,14 +305,19 @@ class ActionEngine:
                 "event": "executed" if success else "failed",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "user": request.executed_by,
+                "environment": environment,
                 "details": {
                     "success": success,
                     "duration_seconds": duration,
                     "dry_run": request.dry_run,
+                    "permission_check": permission_result.to_dict(),
                 },
             })
 
-            logger.info(f"Action {action_id} executed by {request.executed_by}: {'SUCCESS' if success else 'FAILED'}")
+            logger.info(
+                f"Action {action_id} executed by {request.executed_by} in {environment}: "
+                f"{'SUCCESS' if success else 'FAILED'}"
+            )
 
             return Action(
                 id=action_id,

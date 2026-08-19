@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: monitor-backend-pdb
+  namespace: devops-monitor
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: monitor-backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: monitor-frontend-pdb
+  namespace: devops-monitor
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: monitor-frontend

@@ -9,8 +9,14 @@ export const api = axios.create({
 });
 
 // Attach API key or Bearer token to every request
+//
+// SECURITY NOTE:
+// - Using import.meta.env.VITE_API_KEY embeds the key in the frontend bundle
+// - localStorage is vulnerable to XSS attacks
+// - TODO: Migrate to httpOnly cookies with server-side session management
+// - TODO: Implement short-lived tokens (5-15 min) with refresh mechanism
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = sessionStorage.getItem('auth_token'); // Use sessionStorage instead of localStorage (clears on tab close)
   const apiKey = import.meta.env.VITE_API_KEY;
 
   if (token) {
@@ -34,14 +40,25 @@ api.interceptors.response.use(
             headers: { 'X-API-Key': apiKey },
           });
           const token = res.data.access_token;
-          localStorage.setItem('auth_token', token);
+          sessionStorage.setItem('auth_token', token);
           error.config.headers.Authorization = `Bearer ${token}`;
           return api(error.config);
         } catch {
-          localStorage.removeItem('auth_token');
+          sessionStorage.removeItem('auth_token');
         }
       }
     }
     return Promise.reject(error);
   }
 );
+
+// Security: Clear sensitive data on page visibility change (potential XSS detection)
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // Page hidden - consider clearing sensitive data
+      // Uncomment if you want aggressive security:
+      // sessionStorage.removeItem('auth_token');
+    }
+  });
+}

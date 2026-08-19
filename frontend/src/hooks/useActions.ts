@@ -15,20 +15,30 @@ import {
   type RejectActionRequest,
   type ExecuteActionRequest,
   type Action,
+  type ActionStatus,
 } from '../api/actions';
+
+// Type for action query filters
+interface ActionFilters {
+  project?: string;
+  status?: ActionStatus;
+  limit?: number;
+  sortBy?: 'created_at' | 'updated_at' | 'risk_level';
+  sortOrder?: 'asc' | 'desc';
+}
 
 // Query keys
 export const actionKeys = {
   all: ['actions'] as const,
   lists: () => [...actionKeys.all, 'list'] as const,
-  list: (filters?: any) => [...actionKeys.lists(), filters] as const,
+  list: (filters?: ActionFilters) => [...actionKeys.lists(), filters] as const,
   details: () => [...actionKeys.all, 'detail'] as const,
   detail: (id: string) => [...actionKeys.details(), id] as const,
   stats: () => [...actionKeys.all, 'stats'] as const,
 };
 
 // Hooks
-export function useActions(project?: string, status?: string, limit = 100) {
+export function useActions(project?: string, status?: ActionStatus, limit = 100) {
   return useQuery({
     queryKey: actionKeys.list({ project, status, limit }),
     queryFn: () => fetchActions(project, status, limit),

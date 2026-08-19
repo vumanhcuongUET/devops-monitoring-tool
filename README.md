@@ -43,8 +43,11 @@ You already have Elasticsearch, Prometheus, and Kubernetes — each with its own
 See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the complete 4-phase strategic roadmap. **Phase 2 (Human-in-the-loop Actions System) is now complete!** See [docs/phase-2-actions.md](docs/phase-2-actions.md) for details.
 
 📖 **Documentation:**
+- [📚 Documentation Index](docs/INDEX.md) — Complete navigation guide for all documentation
+- [Security Review Report (Aug 2026)](docs/security-review-2026-08-20.md) — Comprehensive security assessment ✅ APPROVED FOR PRODUCTION
 - [AI Triage Cards Guide](docs/ai-triage-cards.md) — Comprehensive guide for AI-powered incident analysis
 - [Phase 2 Actions System](docs/phase-2-actions.md) — Human-in-the-loop action proposal and execution
+- [Phase 3 Governance & Skills](docs/phase-3-governance-skills.md) — RBAC, OPA policies, and skill library
 - [Alert Statistics Guide](docs/alert-statistics.md) — Prometheus alert monitoring and statistics
 - [Deployment Guide](DEPLOY.md) — Detailed setup instructions for dev and production
 - [Strategy & Roadmap](docs/chien_luoc_tong_the.md) — 4-phase implementation plan

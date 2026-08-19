@@ -6,11 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **DevOps AI Agentics 2026** — A unified DevOps monitoring platform with AI-powered observability copilot.
 
+**📚 Documentation Index**: See [docs/INDEX.md](docs/INDEX.md) for complete documentation navigation.
+
 This project combines:
 1. **DevOps Monitor** — Unified NOC-style dashboard aggregating Elasticsearch, APM, Prometheus, and Kubernetes
 2. **AI Assistant** — Claude CLI-powered monitoring assistant for natural language queries
 
 **Strategic Vision**: Building a centralized agentic platform (config-driven, guardrails, production-ready) following the 4-phase roadmap outlined in `docs/chien_luoc_tong_the.md`.
+
+**Current Status**: Phase 3 (Governance & Advanced Skills) ✅ COMPLETE — Platform production-ready with comprehensive security review approval (Aug 2026).
 
 **Stack**: Backend Python (FastAPI) + Frontend Node.js (React + TypeScript + Vite + Tailwind) + AI Assistant (Python + Claude CLI)
 
@@ -155,3 +159,54 @@ Uses default triage label vocabulary. See `docs/agents/triage-labels.md`.
 
 Single-context layout with global CONTEXT.md and docs/adr/ for architectural decisions.
 See `docs/agents/domain.md`.
+
+## Phase 3: Governance & Advanced Skills
+
+### Skills Library
+
+The platform includes **32 skills** across 7 categories:
+
+- **FinOps** (3): Cost analysis, idle resource detection, rightsizing
+- **Security** (6): Vulnerability scanning, secret detection, CIS benchmarks, misconfiguration detection, runtime monitoring, dependency confusion
+- **DevOps** (6): Deployment health, resource optimization, config drift detection, CI/CD analysis, Dockerfile best practices, K8s manifest validation
+- **Code** (6): Dependency auditing, SAST scanning, complexity analysis, test coverage analysis, duplication detection, code smell detection
+- **Capacity** (3): Capacity planning, bottleneck detection, growth prediction
+- **Monitoring** (3): Alert optimization, SLI calculation, dashboard auditing
+- **Reliability** (3): SLO tracking, SLA compliance, dependency health monitoring
+- **Compliance** (2): GDPR auditing, SOC2 auditing
+
+See `docs/skills-library-catalog.md` for complete skill documentation.
+
+### RBAC System
+
+**Environment-Based Permissions**:
+- **Development**: Full admin access (view, modify, create, delete, execute, scale, rollback, approve)
+- **Staging**: Operator access (view, modify, create, execute, scale, rollback)
+- **Production**: Restricted access (view, scale only)
+- **Production Read-Only**: View-only access
+
+**Service Accounts**:
+- `ai-dev-admin` - Full admin in development
+- `ai-staging-operator` - Operator in staging
+- `ai-prod-viewer` - Read-only in production
+- `ai-prod-operator` - Scale-only in production
+
+### OPA Integration
+
+Policy validation using Open Policy Agent:
+- `actions.rego` - Action validation policies
+- `resources.rego` - Resource protection policies
+- `time_windows.rego` - Time-based restriction policies
+
+See `docs/phase-3-governance-skills.md` for detailed implementation.
+
+### Security
+
+The platform has undergone comprehensive security review (Aug 2026) and is **APPROVED FOR PRODUCTION**:
+- Defense-in-depth architecture with 5 layers
+- Command whitelisting and validation
+- Environment-based RBAC
+- OPA policy enforcement
+- Comprehensive audit logging
+
+See `docs/security-review-2026-08-20.md` for full security assessment.

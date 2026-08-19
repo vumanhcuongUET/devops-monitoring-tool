@@ -1,5 +1,7 @@
+import base64
 import hashlib
 import hmac
+import json
 import secrets
 import time
 from datetime import datetime, timezone
@@ -65,9 +67,6 @@ def _is_valid_token(token: str) -> bool:
 
 
 def create_token(subject: str = "admin") -> str:
-    import base64
-    import json
-
     payload = base64.urlsafe_b64encode(
         json.dumps({"sub": subject, "iat": int(time.time())}).encode()
     ).rstrip(b"=").decode()
@@ -79,16 +78,12 @@ def create_token(subject: str = "admin") -> str:
 
 
 def _sign(payload: str, ts: str) -> str:
-    import base64
-
     msg = f"{payload}.{ts}".encode()
     mac = hmac.new(settings.AUTH_SECRET.encode(), msg, hashlib.sha256)
     return base64.urlsafe_b64encode(mac.digest()).rstrip(b"=").decode()
 
 
 def _b64decode(s: str) -> bytes:
-    import base64
-
     padding = 4 - len(s) % 4
     if padding != 4:
         s += "=" * padding

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -71,7 +71,7 @@ class NamespaceAlertStats(BaseModel):
 
 class ClusterAlertStats(BaseModel):
     """Alert statistics for entire cluster (all namespaces)."""
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     total_namespaces: int = Field(..., description="Number of namespaces with alerts")
     total_alerts: int = Field(default=0, description="Total alerts across all namespaces")
     total_firing: int = Field(default=0, description="Total firing alerts across all namespaces")

@@ -340,7 +340,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
                     continue
 
         # Build triage card
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return TriageCard(
             generated_at=now,
             project=project,

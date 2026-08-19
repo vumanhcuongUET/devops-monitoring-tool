@@ -40,10 +40,11 @@ You already have Elasticsearch, Prometheus, and Kubernetes — each with its own
 - **Lightweight** — No database, no agent. Just aggregates data from your existing tools
 - **Secure** — Auth, SSRF protection, rate limiting, security headers out of the box
 
-See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the complete 4-phase strategic roadmap.
+See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the complete 4-phase strategic roadmap. **Phase 2 (Human-in-the-loop Actions System) is now complete!** See [docs/phase-2-actions.md](docs/phase-2-actions.md) for details.
 
 📖 **Documentation:**
 - [AI Triage Cards Guide](docs/ai-triage-cards.md) — Comprehensive guide for AI-powered incident analysis
+- [Phase 2 Actions System](docs/phase-2-actions.md) — Human-in-the-loop action proposal and execution
 - [Alert Statistics Guide](docs/alert-statistics.md) — Prometheus alert monitoring and statistics
 - [Deployment Guide](DEPLOY.md) — Detailed setup instructions for dev and production
 - [Strategy & Roadmap](docs/chien_luoc_tong_the.md) — 4-phase implementation plan
@@ -75,6 +76,14 @@ See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the complete 
 - Identifies root causes with confidence scores
 - Provides prioritized recommendations
 - Returns structured JSON with findings and actions
+
+**Actions System** — Human-in-the-loop action proposal and execution:
+- Convert Triage Card recommendations into executable actions
+- Command parsing (kubectl, helm, argocd) and validation
+- Project-specific RBAC policies for safety
+- Approval workflow via Slack/Teams
+- Audit logging for compliance
+- Risk level assessment (SAFE to CRITICAL)
 
 **Prompt Engineering** — Config-driven system prompt optimized for DevOps incident analysis with Vietnamese output support.
 
@@ -199,12 +208,25 @@ docker compose up -d
 | `POST` | `/api/v1/analyze` | Generate AI Triage Card for incident analysis |
 | `GET` | `/api/v1/analyze/health` | Check LLM service availability |
 
-### Alert Statistics (NEW)
+### Alert Statistics
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/alerts/prometheus/stats` | Alert statistics by namespace |
 | `GET` | `/api/v1/alerts/prometheus/namespace/{ns}` | Detailed stats for one namespace |
+
+### Actions System (Phase 2)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/actions` | Create action from Triage Card recommendation |
+| `GET` | `/api/v1/actions` | List all actions with optional filtering |
+| `GET` | `/api/v1/actions/{action_id}` | Get details of a specific action |
+| `POST` | `/api/v1/actions/{action_id}/approve` | Approve an action for execution |
+| `POST` | `/api/v1/actions/{action_id}/reject` | Reject an action |
+| `POST` | `/api/v1/actions/{action_id}/execute` | Execute an approved action |
+| `POST` | `/api/v1/actions/bulk` | Create actions from all recommendations in a Triage Card |
+| `GET` | `/api/v1/actions/stats/summary` | Get summary statistics about actions |
 
 ### SLO Management
 
@@ -286,6 +308,32 @@ curl http://localhost:8000/api/v1/alerts/prometheus/namespace/meinvoice
 curl "http://localhost:8000/api/v1/alerts/prometheus/stats?namespaces=meinvoice,production"
 ```
 
+### Create and Execute Action
+
+```bash
+# 1. Create action from Triage Card recommendation
+ACTION=$(curl -s -X POST http://localhost:8000/api/v1/actions \
+  -H "X-API-Key: your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "triage_card_id": "tc-001",
+    "recommendation_id": "rec-001",
+    "project": "meinvoice"
+  }' | jq -r '.action.id')
+
+# 2. Approve action (if pending)
+curl -X POST http://localhost:8000/api/v1/actions/$ACTION/approve \
+  -H "X-API-Key: your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"approved_by": "john.doe", "comment": "Safe to proceed"}'
+
+# 3. Execute action
+curl -X POST http://localhost:8000/api/v1/actions/$ACTION/execute \
+  -H "X-API-Key: your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"executed_by": "john.doe", "dry_run": false}'
+```
+
 ---
 
 ## Configuration
@@ -308,6 +356,19 @@ All configuration is via environment variables (`.env` file or K8s ConfigMap/Sec
 | `ANTHROPIC_API_KEY` | Claude API key for Triage Cards | — |
 | `ANTHROPIC_MODEL` | Model to use | `claude-sonnet-4-20250514` |
 | `AI_MAX_TOKENS` | Max tokens for LLM response | `4096` |
+
+### Actions System (Phase 2)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SLACK_APPROVAL_WEBHOOK_URL` | Slack webhook for approval requests | — |
+| `SLACK_SIGNING_SECRET` | Slack app signing secret for webhook verification | — |
+| `TEAMS_WEBHOOK_URL` | Teams webhook URL for signature verification | — |
+| `TEAMS_SIGNING_SECRET` | Teams signing secret for HMAC verification | — |
+| `ALLOWED_WEBHOOK_IPS` | IP whitelist for webhooks (empty = allow all) | `[]` |
+| `COMMAND_EXECUTION_TIMEOUT` | Max command execution time (seconds) | `30` |
+| `MAX_COMMAND_OUTPUT_LENGTH` | Max output length to store (bytes) | `10000` |
+| `DRY_RUN_DEFAULT` | Default dry_run mode for commands | `true` |
 
 ### Kubernetes
 
@@ -356,10 +417,13 @@ See [DEPLOY.md](DEPLOY.md) for complete guide.
 
 | Feature | Implementation |
 |---------|---------------|
-| **Authentication** | HMAC-signed Bearer tokens + API key |
+| **Authentication** | HMAC-signed Bearer tokens + API key (required for all endpoints) |
+| **Webhook Verification** | Signature verification (Slack/Teams) with timestamp validation |
+| **Command Whitelist** | Only kubectl/helm/argocd with allowed flags can be executed |
 | **SSRF Protection** | Blocks internal IPs for webhooks |
-| **Rate Limiting** | 60 req/min per IP, burst protection |
-| **Container Security** | Non-root user, K8s security contexts |
+| **Rate Limiting** | 60 req/min per IP, burst protection, trusted proxy validation |
+| **Metrics Access** | Authenticated Prometheus metrics endpoint (/metrics) |
+| **Container Security** | Non-root user, K8s security contexts, read-only root filesystem |
 
 ---
 
@@ -383,11 +447,17 @@ devops_ai_agentics_2026/
 │   ├── app/
 │   │   ├── api/v1/       # REST endpoints
 │   │   ├── services/     # Data source clients
-│   │   ├── models/       # Pydantic models (Triage Card, Alerts)
+│   │   ├── models/       # Pydantic models (Triage Card, Alerts, Actions)
+│   │   ├── actions/      # Actions Engine (parser, validator, executor)
+│   │   ├── approvals/    # Approval workflow (Slack, store, webhook)
+│   │   ├── audit/        # Audit logger for compliance
+│   │   ├── registry/     # Context registry for project configs
 │   │   ├── alerting/     # Alert engine + SLO reporter
 │   │   └── config.py     # Environment configuration
 │   └── requirements.txt
 ├── frontend/              # React dashboard UI
+├── projects/              # Project-specific RBAC configs
+│   └── meinvoice.yaml    # Example project config
 ├── k8s/                   # Kubernetes manifests
 ├── docs/                  # Strategy & pilot guides
 ├── docker-compose.yml

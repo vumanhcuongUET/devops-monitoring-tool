@@ -14,6 +14,8 @@ const KubernetesPage = lazy(() => import('./pages/KubernetesPage'))
 const AlertsPage = lazy(() => import('./pages/AlertsPage'))
 const SloPage = lazy(() => import('./pages/SloPage'))
 const ActionsPage = lazy(() => import('./pages/ActionsPage'))  // Phase 2
+const SkillsPage = lazy(() => import('./pages/SkillsPage'))  // Phase 3
+const GovernanceDashboard = lazy(() => import('./pages/GovernanceDashboard'))  // Phase 3
 
 // Loading fallback for lazy-loaded components
 function PageLoader() {
@@ -40,6 +42,8 @@ function App() {
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/slo" element={<SloPage />} />
             <Route path="/actions" element={<ActionsPage />} />  {/* Phase 2 */}
+            <Route path="/skills" element={<SkillsPage />} />  {/* Phase 3 */}
+            <Route path="/governance" element={<GovernanceDashboard />} />  {/* Phase 3 */}
           </Routes>
         </Suspense>
       </AppShell>

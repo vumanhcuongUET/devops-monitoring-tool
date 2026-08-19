@@ -74,8 +74,37 @@ results = await asyncio.gather(
 - **Rejected**: Full data warehousing approach
 - **Reason**: Platform aggregates, doesn't store - keeps it lightweight
 
+### Human-in-the-loop Actions System (Phase 2)
+
+**Added:** 2026-08-17
+
+With the completion of Phase 2, the platform now includes an **Actions System** for safe, controlled execution of AI-generated remediation commands:
+
+**Components:**
+- **Actions Engine**: Orchestrates action lifecycle (create → validate → approve → execute)
+- **Command Parser**: Parses kubectl/helm/argocd commands into structured parameters
+- **Command Validator**: Validates against project-specific RBAC policies
+- **Command Executor**: Executes commands with safety constraints and dry-run mode
+- **Approval Workflow**: Tracks approval state, sends Slack/Teams notifications
+- **Audit Logger**: Logs all actions for compliance and debugging
+- **Context Registry**: Stores project-specific configurations (clusters, namespaces, owners)
+
+**Architecture Pattern:**
+```
+Triage Card → Recommendation → Action → Validation → Approval → Execution → Audit
+```
+
+**Rationale:**
+- Enables AI to move from passive analysis to active remediation
+- Human-in-the-loop ensures safety and control
+- Project-specific RBAC policies prevent unauthorized actions
+- Audit trail maintains compliance for regulated environments
+
+**Implementation Status:** ✅ Complete (Phase 2)
+
 ## Related Decisions
 
 - [ADR-002: No Database Architecture](./002-no-database-architecture.md)
 - [ADR-003: AI Integration Strategy](./003-ai-integration-strategy.md)
 - [ADR-004: Real-time Communication](./004-real-time-communication.md)
+- [ADR-005: Multi-project Support](./005-multi-project-support.md)

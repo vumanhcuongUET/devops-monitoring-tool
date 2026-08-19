@@ -268,18 +268,42 @@ async def teams_approval_webhook(
     Security:
     - Verifies HMAC signature from Authorization header
     - Teams HMAC is calculated as: HMAC_SHA256(webhook_url, body)
+    - FAILS HARD if signature verification is not configured in production
     """
     try:
         # Get raw body for signature verification
         raw_body = await request.body()
 
-        # Verify signature if configured
-        if settings.SLACK_APPROVAL_WEBHOOK_URL and authorization:
-            if not verify_teams_hmac_signature(raw_body, authorization, settings.SLACK_APPROVAL_WEBHOOK_URL):
+        # Signature verification is REQUIRED in production
+        # For development, we allow requests without verification if ENVIRONMENT != production
+        if settings.ENVIRONMENT == "production":
+            if not settings.TEAMS_WEBHOOK_URL:
+                logger.error("TEAMS_WEBHOOK_URL not configured - rejecting Teams webhook request")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Teams webhook signature verification not configured - please set TEAMS_WEBHOOK_URL"
+                )
+
+            if not authorization:
+                logger.error("Authorization header missing - rejecting Teams webhook request")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authorization header is required for Teams webhook signature verification"
+                )
+
+            if not verify_teams_hmac_signature(raw_body, authorization, settings.TEAMS_WEBHOOK_URL):
+                logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
+                raise HTTPException(status_code=401, detail="Invalid signature")
+        elif settings.TEAMS_WEBHOOK_URL and authorization:
+            # In non-production, verify if configured (optional but recommended)
+            if not verify_teams_hmac_signature(raw_body, authorization, settings.TEAMS_WEBHOOK_URL):
                 logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
                 raise HTTPException(status_code=401, detail="Invalid signature")
         else:
-            logger.warning("Teams webhook signature verification skipped (INSECURE!)")
+            logger.warning(
+                f"Teams webhook signature verification disabled (ENVIRONMENT={settings.ENVIRONMENT}). "
+                "Configure TEAMS_WEBHOOK_URL for production security."
+            )
 
         # TODO: Implement Teams webhook handler
         # Teams uses a different format (Adaptive Cards) compared to Slack (Block Kit)

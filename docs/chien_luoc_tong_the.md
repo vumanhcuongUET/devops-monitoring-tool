@@ -4,8 +4,8 @@
 | Giai đoạn | Trạng thái | Hoàn thành | Mô tả |
 |-----------|-----------|------------|-------|
 | **Phase 1** | ✅ **HOÀN THÀNH** | 2026-08 | Foundation & Observability Copilot |
-| **Phase 2** | ⏳ **PENDING** | — | Human-in-the-loop & Action Proposer |
-| **Phase 3** | ⏳ **PENDING** | — | Governance & Advanced Skills |
+| **Phase 2** | ✅ **HOÀN THÀNH** | 2026-08 | Human-in-the-loop & Action Proposer |
+| **Phase 3** | ✅ **HOÀN THÀNH** | 2026-08-19 | Governance & Advanced Skills (Skills ✅, RBAC ✅, OPA ✅, UI ✅) |
 | **Phase 4** | ⏳ **PENDING** | — | Autonomous Reliability |
 
 ---
@@ -39,24 +39,35 @@
 
 > **Documentation:** Xem [docs/ai-triage-cards.md](ai-triage-cards.md) để biết chi tiết API và ví dụ sử dụng.
 
-### **Giai đoạn 2: Human-in-the-loop &amp; Action Proposer (Tháng 3-4)**
+### **Giai đoạn 2: Human-in-the-loop &amp; Action Proposer (Tháng 3-4) ✅ HOÀN THÀNH**
 *Mục tiêu: Giảm thời gian xử lý lỗi (MTTR) bằng cách đề xuất hành động thực thi.*
 
 *   **Nhiệm vụ của Team SRE:**
-    1.  **Build Action Engine:** Phát triển module có khả năng tạo các câu lệnh CLI (kubectl, argocd, helm) hoặc tạo PR.
-    2.  **Approval Workflow:** Tích hợp hệ thống Approve qua Slack/Teams (nút bấm `[Approve]`, `[Reject]`).
-    3.  **Context Layer (The Registry):** Xây dựng hệ thống lưu trữ cấu hình dự án (YAML-based) để Agent biết: dự án này dùng cluster nào, namespace nào, ai là owner.
-    4.  **Audit Logging:** Ghi lại mọi "suy nghĩ" (Chain of Thought) và hành động của Agent để phục vụ hậu kiểm.
-*   **Output:** DevOps dự án nhận được đề xuất + lệnh chạy > Bấm nút > Agent thực thi.
+    1.  ✅ **Build Action Engine:** Phát triển module có khả năng tạo các câu lệnh CLI (kubectl, argocd, helm) hoặc tạo PR.
+    2.  ✅ **Approval Workflow:** Tích hợp hệ thống Approve qua Slack/Teams (nút bấm `[Approve]`, `[Reject]`).
+    3.  ✅ **Context Layer (The Registry):** Xây dựng hệ thống lưu trữ cấu hình dự án (YAML-based) để Agent biết: dự án này dùng cluster nào, namespace nào, ai là owner.
+    4.  ✅ **Audit Logging:** Ghi lại mọi "suy nghĩ" (Chain of Thought) và hành động của Agent để phục vụ hậu kiểm.
+    5.  ✅ **Security Hardening (2026-08-19):** Fix 3 critical security vulnerabilities:
+        - Command whitelist enforcement in executor
+        - Teams webhook signature verification
+        - Authenticated metrics endpoint
+*   **Output:** ✅ DevOps dự án nhận được đề xuất + lệnh chạy > Bấm nút > Agent thực thi.
 
-### **Giai đoạn 3: Governance &amp; Advanced Skills (Tháng 5-6)**
+> **Documentation:** Xem [docs/phase-2-actions.md](phase-2-actions.md) để biết chi tiết API và ví dụ sử dụng.
+> **Security Fixes:** Xem [docs/security-fixes-august-2026.md](security-fixes-august-2026.md) để biết chi tiết các fix bảo mật đã áp dụng.
+
+### **Giai đoạn 3: Governance &amp; Advanced Skills (Tháng 5-6) ✅ HOÀN THÀNH**
 *Mục tiêu: Mở rộng phạm vi (Scope) và thắt chặt an toàn (Security).*
 
 *   **Nhiệm vụ của Team SRE:**
-    1.  **Skill Library Expansion:** Phát triển thêm các kỹ năng chuyên sâu (FinOps - tối ưu cost, Security - audit hardening, Capacity Planning).
-    2.  **RBAC for AI:** Xây dựng cơ chế phân quyền cực kỳ nghiêm ngặt (Agent chỉ được dùng quyền `view` ở Prod, `edit` ở Stg).
-    3.  **Policy as Code:** Tích hợp OPA (Open Policy Agent) để kiểm tra xem đề xuất của Agent có vi phạm chính sách công ty không (ví dụ: không được xóa DB vào giờ cao điểm).
+    1.  ✅ **Skill Library Expansion:** Phát triển thêm các kỹ năng chuyên sâu (FinOps - tối ưu cost, Security - audit hardening, Capacity Planning).
+    2.  ✅ **RBAC for AI:** Xây dựng cơ chế phân quyền cực kỳ nghiêm ngặt (Agent chỉ được dùng quyền `view` ở Prod, `edit` ở Stg).
+    3.  ✅ **Policy as Code:** Tích hợp OPA (Open Policy Agent) để kiểm tra xem đề xuất của Agent có vi phạm chính sách công ty không (ví dụ: không được xóa DB vào giờ cao điểm).
 *   **Output:** Một nền tảng đa năng, có thể hỗ trợ từ Security đến Cost.
+
+> **Documentation:** Xem [docs/phase-3-governance-skills.md](phase-3-governance-skills.md) để biết chi tiết thiết kế và [docs/phase-3-progress-summary.md](phase-3-progress-summary.md) để xem tiến độ triển khai.
+
+> **Documentation:** Xem [docs/phase-3-governance-skills.md](phase-3-governance-skills.md) để biết chi tiết thiết kế và [docs/phase-3-implementation-plan.md](phase-3-implementation-plan.md) cho kế hoạch triển khai chi tiết.
 
 ### **Giai đoạn 4: Autonomous Reliability (Tháng 7+)**
 *Mục tiêu: Tự trị các tác vụ lặp lại, mức độ thấp.*

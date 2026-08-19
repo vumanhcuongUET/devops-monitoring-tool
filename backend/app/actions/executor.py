@@ -154,7 +154,62 @@ class CommandExecutor:
         """Execute command safely using subprocess with argument list.
 
         This prevents shell injection by avoiding shell interpretation.
+        Validates that only whitelisted commands can be executed.
         """
+        # Validate command is in whitelist
+        if not cmd_args:
+            return ExecutionResult(
+                success=False,
+                error_message="Empty command list",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        command_name = cmd_args[0]
+        if command_name not in self.ALLOWED_COMMANDS:
+            allowed = ", ".join(self.ALLOWED_COMMANDS.keys())
+            logger.error(f"Command '{command_name}' not in whitelist. Allowed: {allowed}")
+            return ExecutionResult(
+                success=False,
+                error_message=f"Command '{command_name}' is not allowed. Allowed commands: {allowed}",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # Validate flags and arguments against whitelist
+        allowed_config = self.ALLOWED_COMMANDS[command_name]
+        allowed_flags = set(allowed_config["allowed_flags"])
+        allowed_global_flags = set(allowed_config["allowed_global_flags"])
+
+        # Check each argument
+        i = 1
+        while i < len(cmd_args):
+            arg = cmd_args[i]
+
+            # Skip flag values (arguments that follow flags)
+            if arg.startswith("-") and i + 1 < len(cmd_args) and not cmd_args[i + 1].startswith("-"):
+                # This is a flag with a value, validate the flag and skip next arg
+                flag_name = arg
+                # Remove leading dashes for comparison
+                flag_key = flag_name.lstrip("-")
+                if flag_key not in allowed_flags and flag_key not in allowed_global_flags:
+                    return ExecutionResult(
+                        success=False,
+                        error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
+                        timestamp=datetime.now(timezone.utc),
+                    )
+                i += 2
+                continue
+            elif arg.startswith("-"):
+                # Flag without value (boolean flag)
+                flag_name = arg
+                flag_key = flag_name.lstrip("-")
+                if flag_key not in allowed_flags and flag_key not in allowed_global_flags:
+                    return ExecutionResult(
+                        success=False,
+                        error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
+                        timestamp=datetime.now(timezone.utc),
+                    )
+            i += 1
+
         if dry_run:
             return await self._dry_run_safe(cmd_args)
 

@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     SLACK_SIGNING_SECRET: str = ""  # Slack app signing secret for webhook verification
     ALLOWED_WEBHOOK_IPS: list[str] = []  # IP whitelist for webhooks (empty = allow all)
 
+    # Teams Approval
+    TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for signature verification
+    TEAMS_SIGNING_SECRET: str = ""  # Teams signing secret for HMAC verification
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @model_validator(mode="after")

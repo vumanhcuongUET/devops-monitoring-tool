@@ -1,0 +1,118 @@
+---
+# Production Viewer Service Account
+# Purpose: Read-only access to production resources for monitoring and analysis
+# Environment: Production
+# Permissions: view (get, list, watch) only
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-agents
+  labels:
+    name: ai-agents
+    purpose: "AI agent service accounts"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-agent-prod-viewer
+  namespace: ai-agents
+  labels:
+    environment: production
+    access-level: read-only
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-agent-prod-viewer-token
+  namespace: ai-agents
+  annotations:
+    kubernetes.io/service-account.name: ai-agent-prod-viewer
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-agent-prod-viewer-role
+  labels:
+    environment: production
+    access-level: read-only
+rules:
+  # Core API - read-only
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - services/status
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+      - persistentvolumes
+      - events
+      - namespaces
+      - nodes
+      - nodes/metrics
+      - nodes/status
+    verbs: ["get", "list", "watch"]
+
+  # Apps API - read-only
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - deployments/scale
+      - deployments/status
+      - statefulsets
+      - statefulsets/scale
+      - statefulsets/status
+      - daemonsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+
+  # Batch API - read-only
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - jobs/status
+      - cronjobs
+      - cronjobs/status
+    verbs: ["get", "list", "watch"]
+
+  # Autoscaling - read-only
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+      - horizontalpodautoscalers/status
+    verbs: ["get", "list", "watch"]
+
+  # Networking - read-only
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - ingresses/status
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+
+  # Custom resources - read-only
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+      - applications/status
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-agent-prod-viewer-binding
+  labels:
+    environment: production
+subjects:
+  - kind: ServiceAccount
+    name: ai-agent-prod-viewer
+    namespace: ai-agents
+roleRef:
+  kind: ClusterRole
+  name: ai-agent-prod-viewer-role
+  apiGroup: rbac.authorization.k8s.io

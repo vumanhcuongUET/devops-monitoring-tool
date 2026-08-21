@@ -224,11 +224,16 @@ class TestRemediationActionFactory:
     def test_get_available_actions(self):
         """Test getting available action types."""
         actions = RemediationActionFactory.get_available_actions()
-        assert len(actions) == 4
+        assert len(actions) == 7  # 4 original + 3 Phase 4A actions
+        # Original actions
         assert "delete_crashloop_pod" in actions
         assert "scale_deployment" in actions
         assert "rollback_deployment" in actions
         assert "restart_deployment" in actions
+        # Phase 4A actions
+        assert "clear_stuck_pods" in actions
+        assert "cleanup_failed_jobs" in actions
+        assert "adjust_hpa_min_replicas" in actions
 
     def test_create_invalid_action_type(self):
         """Test creating invalid action type raises error."""

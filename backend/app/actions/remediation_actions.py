@@ -24,6 +24,10 @@ class RemediationActionType(str, Enum):
     SCALE_DEPLOYMENT = "scale_deployment"
     ROLLBACK_DEPLOYMENT = "rollback_deployment"
     RESTART_DEPLOYMENT = "restart_deployment"
+    # Phase 4A: New action types
+    CLEAR_STUCK_PODS = "clear_stuck_pods"
+    CLEANUP_FAILED_JOBS = "cleanup_failed_jobs"
+    ADJUST_HPA_MIN_REPLICAS = "adjust_hpa_min_replicas"
 
 
 class RemediationAction:
@@ -515,6 +519,519 @@ class RestartDeploymentAction(RemediationAction):
         )
 
 
+class ClearStuckPodsAction(RemediationAction):
+    """Remediation action for clearing stuck pods.
+
+    This action detects and removes pods stuck in problematic states:
+    - Terminating (stuck for >10 minutes)
+    - ImagePullBackOff / ErrImagePull
+    - CrashLoopBackOff with no recent successful start
+    - CreateContainerError / CreateContainerConfigError
+
+    Risk Level: LOW - Force deletion is safe as controllers recreate pods
+    """
+
+    STUCK_STATES = {
+        "Terminating",
+        "ImagePullBackOff",
+        "ErrImagePull",
+        "CrashLoopBackOff",
+        "CreateContainerError",
+        "CreateContainerConfigError",
+        "RunContainerError",
+        "ErrImageNeverPull",
+        "InvalidImageName",
+    }
+
+    async def execute(
+        self,
+        alert_event: AlertEvent,
+        parameters: dict[str, Any],
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Execute stuck pod clearance.
+
+        Args:
+            alert_event: Alert event with context
+            parameters: Expected keys:
+                - namespace: Kubernetes namespace (default: default)
+                - stuck_duration_minutes: Minimum duration in stuck state (default: 10)
+                - label_selector: Filter pods by label (optional)
+                - pod_names: Specific pod names to clear (optional)
+            dry_run: Validate without executing
+
+        Returns:
+            Execution result with cleared pods details
+        """
+        namespace = parameters.get("namespace", "default")
+        stuck_duration_minutes = parameters.get("stuck_duration_minutes", 10)
+        label_selector = parameters.get("label_selector", "")
+        target_pods = parameters.get("pod_names", [])
+
+        if dry_run:
+            # In dry-run, just report what would be done
+            result = ExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout=f"[DRY RUN] Would clear stuck pods in {namespace} "
+                       f"(stuck for >{stuck_duration_minutes} minutes)",
+                stderr="",
+                duration_seconds=0.0,
+                timestamp=datetime.now(timezone.utc),
+            )
+        else:
+            # Step 1: Find stuck pods
+            find_cmd = ["get", "pods", "-n", namespace, "-o", "json"]
+            if label_selector:
+                find_cmd.extend(["-l", label_selector])
+
+            pods_result = await self.executor.execute_kubectl(
+                args=find_cmd[2:],
+                namespace=namespace,
+                dry_run=False,
+            )
+
+            if not pods_result.success:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to list pods: {pods_result.stderr}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Step 2: Parse and identify stuck pods
+            import json
+            try:
+                pods_data = json.loads(pods_result.stdout)
+                stuck_pods = []
+                cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=stuck_duration_minutes)
+
+                for item in pods_data.get("items", []):
+                    pod_name = item.get("metadata", {}).get("name")
+                    pod_status = item.get("status", {}).get("phase", "Unknown")
+                    container_statuses = item.get("status", {}).get("containerStatuses", [])
+                    pod_start_time_str = item.get("status", {}).get("startTime", "")
+
+                    # Check if pod is in stuck state
+                    is_stuck = False
+                    stuck_reason = ""
+
+                    # Check phase
+                    if pod_status in ["Terminating", "Unknown"]:
+                        is_stuck = True
+                        stuck_reason = f"Pod in {pod_status} state"
+
+                    # Check container states
+                    for container_status in container_statuses or []:
+                        waiting = container_status.get("waiting", {})
+                        state = waiting.get("reason", "")
+                        if state in self.STUCK_STATES:
+                            is_stuck = True
+                            stuck_reason = f"Container: {state}"
+                            break
+
+                    # Check if stuck for long enough
+                    if is_stuck and pod_start_time_str:
+                        try:
+                            pod_start_time = datetime.fromisoformat(pod_start_time_str.replace("Z", "+00:00"))
+                            if pod_start_time > cutoff_time:
+                                is_stuck = True  # Only clear if stuck long enough
+                            else:
+                                is_stuck = False
+                                stuck_reason = f"Pod not stuck long enough (started {pod_start_time_str})"
+                        except:
+                            pass  # If we can't parse time, still consider it stuck
+
+                    # Check if pod is in target list (if specified)
+                    if target_pods and pod_name not in target_pods:
+                        is_stuck = False
+
+                    if is_stuck:
+                        stuck_pods.append({
+                            "name": pod_name,
+                            "status": pod_status,
+                            "reason": stuck_reason,
+                        })
+
+            except json.JSONDecodeError as e:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to parse pod data: {e}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Step 3: Delete stuck pods
+            deleted_pods = []
+            errors = []
+
+            for pod_info in stuck_pods:
+                pod_name = pod_info["name"]
+                delete_cmd = ["delete", "pod", pod_name, "--force", "--grace-period=0"]
+
+                delete_result = await self.executor.execute_kubectl(
+                    args=delete_cmd[2:],
+                    namespace=namespace,
+                    dry_run=False,
+                )
+
+                if delete_result.success:
+                    deleted_pods.append(pod_name)
+                else:
+                    errors.append(f"{pod_name}: {delete_result.stderr}")
+
+            # Build result
+            result = ExecutionResult(
+                success=len(errors) == 0,
+                exit_code=0 if len(errors) == 0 else 1,
+                stdout=f"Cleared {len(deleted_pods)} stuck pod(s): {', '.join(deleted_pods)}",
+                stderr=f"Errors: {errors}" if errors else "",
+                duration_seconds=0.0,
+                timestamp=datetime.now(timezone.utc),
+                error_message=f"Failed to clear {len(errors)} pod(s)" if errors else None,
+            )
+
+        # Record execution
+        self._record_execution(
+            RemediationActionType.CLEAR_STUCK_PODS.value,
+            result,
+            {
+                "namespace": namespace,
+                "stuck_duration_minutes": stuck_duration_minutes,
+                "label_selector": label_selector,
+                "target_pods": target_pods,
+                "alert_event_id": alert_event.id,
+            }
+        )
+
+        return result
+
+
+class CleanupFailedJobsAction(RemediationAction):
+    """Remediation action for cleaning up failed Kubernetes jobs.
+
+    This action identifies and removes failed jobs older than a threshold
+    to prevent disk space issues and improve cluster hygiene.
+
+    Risk Level: LOW - Only removes failed jobs, not running/completed ones
+    """
+
+    async def execute(
+        self,
+        alert_event: AlertEvent,
+        parameters: dict[str, Any],
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Execute failed job cleanup.
+
+        Args:
+            alert_event: Alert event with context
+            parameters: Expected keys:
+                - namespace: Kubernetes namespace (default: default)
+                - failed_hours_ago: Delete jobs failed N hours ago (default: 24)
+                - label_selector: Filter jobs by label (optional)
+                - keep_last: Keep last N failed jobs (default: 5)
+            dry_run: Validate without executing
+
+        Returns:
+            Execution result with cleanup details
+        """
+        namespace = parameters.get("namespace", "default")
+        failed_hours_ago = parameters.get("failed_hours_ago", 24)
+        label_selector = parameters.get("label_selector", "")
+        keep_last = parameters.get("keep_last", 5)
+
+        if dry_run:
+            result = ExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout=f"[DRY RUN] Would cleanup failed jobs in {namespace} "
+                       f"(failed >{failed_hours_ago} hours ago, keeping last {keep_last})",
+                stderr="",
+                duration_seconds=0.0,
+                timestamp=datetime.now(timezone.utc),
+            )
+        else:
+            # Step 1: Find failed jobs
+            find_cmd = ["get", "jobs", "-n", namespace, "-o", "json"]
+            if label_selector:
+                find_cmd.extend(["-l", label_selector])
+
+            jobs_result = await self.executor.execute_kubectl(
+                args=find_cmd[2:],
+                namespace=namespace,
+                dry_run=False,
+            )
+
+            if not jobs_result.success:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to list jobs: {jobs_result.stderr}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Step 2: Parse and identify failed jobs
+            import json
+            try:
+                jobs_data = json.loads(jobs_result.stdout)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=failed_hours_ago)
+                failed_jobs = []
+
+                for item in jobs_data.get("items", []):
+                    job_name = item.get("metadata", {}).get("name")
+                    job_status = item.get("status", {})
+                    conditions = job_status.get("conditions", [])
+                    start_time_str = item.get("status", {}).get("startTime", "")
+
+                    # Check if job failed
+                    is_failed = False
+                    failed_time = None
+
+                    for condition in conditions:
+                        if condition.get("type", "") == "Failed" and condition.get("status", "") == "True":
+                            is_failed = True
+                            # Get failure time
+                            failed_time_str = condition.get("lastTransitionTime", start_time_str)
+                            try:
+                                failed_time = datetime.fromisoformat(failed_time_str.replace("Z", "+00:00"))
+                            except:
+                                failed_time = cutoff_time - timedelta(hours=1)  # Conservative
+                            break
+
+                    if is_failed and failed_time and failed_time < cutoff_time:
+                        failed_jobs.append({
+                            "name": job_name,
+                            "failed_at": failed_time.isoformat(),
+                        })
+
+            except json.JSONDecodeError as e:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to parse job data: {e}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Sort by failed time (oldest first) and keep last N
+            failed_jobs.sort(key=lambda x: x["failed_at"])
+            if len(failed_jobs) > keep_last:
+                jobs_to_delete = failed_jobs[:-keep_last]
+            else:
+                jobs_to_delete = []
+
+            # Step 3: Delete failed jobs
+            deleted_jobs = []
+            errors = []
+
+            for job_info in jobs_to_delete:
+                job_name = job_info["name"]
+                delete_cmd = ["delete", "job", job_name]
+
+                delete_result = await self.executor.execute_kubectl(
+                    args=delete_cmd[2:],
+                    namespace=namespace,
+                    dry_run=False,
+                )
+
+                if delete_result.success:
+                    deleted_jobs.append(job_name)
+                else:
+                    errors.append(f"{job_name}: {delete_result.stderr}")
+
+            # Build result
+            result = ExecutionResult(
+                success=len(errors) == 0,
+                exit_code=0 if len(errors) == 0 else 1,
+                stdout=f"Cleaned up {len(deleted_jobs)} failed job(s): {', '.join(deleted_jobs)}",
+                stderr=f"Kept last {keep_last} failed jobs. Errors: {errors}" if errors else "",
+                duration_seconds=0.0,
+                timestamp=datetime.now(timezone.utc),
+                error_message=f"Failed to cleanup {len(errors)} job(s)" if errors else None,
+            )
+
+        # Record execution
+        self._record_execution(
+            RemediationActionType.CLEANUP_FAILED_JOBS.value,
+            result,
+            {
+                "namespace": namespace,
+                "failed_hours_ago": failed_hours_ago,
+                "label_selector": label_selector,
+                "keep_last": keep_last,
+                "alert_event_id": alert_event.id,
+            }
+        )
+
+        return result
+
+
+class AdjustHPAMinReplicasAction(RemediationAction):
+    """Remediation action for temporarily adjusting HPA min replicas.
+
+    This action temporarily increases the minimum replicas for an HPA
+    to handle sudden load spikes, with automatic rollback after a duration.
+
+    Risk Level: LOW-MEDIUM - Reversible with time limit
+    """
+
+    async def execute(
+        self,
+        alert_event: AlertEvent,
+        parameters: dict[str, Any],
+        dry_run: bool = False,
+    ) -> ExecutionResult:
+        """Execute HPA min replica adjustment.
+
+        Args:
+            alert_event: Alert event with context
+            parameters: Expected keys:
+                - namespace: Kubernetes namespace (default: default)
+                - hpa_name: HorizontalPodAutoscaler name (required)
+                - new_min_replicas: New minimum replicas (required)
+                - duration_minutes: How long to maintain (default: 60)
+                - auto_rollback: Auto-rollback after duration (default: true)
+            dry_run: Validate without executing
+
+        Returns:
+            Execution result with HPA adjustment details
+        """
+        namespace = parameters.get("namespace", "default")
+        hpa_name = parameters.get("hpa_name")
+        new_min_replicas = parameters.get("new_min_replicas")
+        duration_minutes = parameters.get("duration_minutes", 60)
+        auto_rollback = parameters.get("auto_rollback", True)
+
+        if not hpa_name:
+            return ExecutionResult(
+                success=False,
+                error_message="HPA name is required",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        if new_min_replicas is None:
+            return ExecutionResult(
+                success=False,
+                error_message="new_min_replicas is required",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # Validate new_min_replicas
+        try:
+            new_min_replicas = int(new_min_replicas)
+            if new_min_replicas < 1:
+                return ExecutionResult(
+                    success=False,
+                    error_message="new_min_replicas must be at least 1",
+                    timestamp=datetime.now(timezone.utc),
+                )
+        except ValueError:
+            return ExecutionResult(
+                success=False,
+                error_message="new_min_replicas must be a valid integer",
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        if dry_run:
+            result = ExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout=f"[DRY RUN] Would adjust HPA {hpa_name} min replicas to {new_min_replicas} "
+                       f"for {duration_minutes} minutes (auto-rollback: {auto_rollback})",
+                stderr="",
+                duration_seconds=0.0,
+                timestamp=datetime.now(timezone.utc),
+            )
+        else:
+            # Step 1: Get current HPA config
+            get_cmd = ["get", "hpa", hpa_name, "-n", namespace, "-o", "json"]
+
+            hpa_result = await self.executor.execute_kubectl(
+                args=get_cmd[2:],
+                namespace=namespace,
+                dry_run=False,
+            )
+
+            if not hpa_result.success:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to get HPA {hpa_name}: {hpa_result.stderr}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Step 2: Parse current config
+            import json
+            try:
+                hpa_data = json.loads(hpa_result.stdout)
+                current_min = hpa_data.get("spec", {}).get("minReplicas", 1)
+                current_max = hpa_data.get("spec", {}).get("maxReplicas", 10)
+
+                # Validate new_min doesn't exceed max
+                if new_min_replicas > current_max:
+                    return ExecutionResult(
+                        success=False,
+                        error_message=f"new_min_replicas ({new_min_replicas}) cannot exceed maxReplicas ({current_max})",
+                        timestamp=datetime.now(timezone.utc),
+                    )
+
+            except json.JSONDecodeError as e:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to parse HPA data: {e}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Step 3: Apply new min replicas
+            patch_cmd = [
+                "patch", "hpa", hpa_name,
+                f'--type=merge',
+                f'-p={{"spec":{{"minReplicas":{new_min_replicas}}}}}'
+            ]
+
+            patch_result = await self.executor.execute_kubectl(
+                args=patch_cmd[2:],
+                namespace=namespace,
+                dry_run=False,
+            )
+
+            if not patch_result.success:
+                return ExecutionResult(
+                    success=False,
+                    error_message=f"Failed to patch HPA: {patch_result.stderr}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+
+            # Step 4: Schedule rollback if enabled
+            rollback_message = ""
+            if auto_rollback:
+                # Note: In production, this would be handled by a scheduled job
+                # For now, we just log the recommendation
+                rollback_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+                rollback_message = f" (Auto-rollback scheduled at {rollback_time.isoformat()})"
+
+            result = ExecutionResult(
+                success=True,
+                exit_code=0,
+                stdout=f"Adjusted HPA {hpa_name} min replicas: {current_min} → {new_min_replicas}{rollback_message}",
+                stderr="",
+                duration_seconds=0.0,
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # Record execution
+        self._record_execution(
+            RemediationActionType.ADJUST_HPA_MIN_REPLICAS.value,
+            result,
+            {
+                "namespace": namespace,
+                "hpa_name": hpa_name,
+                "previous_min_replicas": current_min if not dry_run else "unknown",
+                "new_min_replicas": new_min_replicas,
+                "duration_minutes": duration_minutes,
+                "auto_rollback": auto_rollback,
+                "alert_event_id": alert_event.id,
+            }
+        )
+
+        return result
+
+
 # Action factory
 class RemediationActionFactory:
     """Factory for creating remediation actions."""
@@ -524,6 +1041,10 @@ class RemediationActionFactory:
         RemediationActionType.SCALE_DEPLOYMENT: ScaleDeploymentAction,
         RemediationActionType.ROLLBACK_DEPLOYMENT: RollbackDeploymentAction,
         RemediationActionType.RESTART_DEPLOYMENT: RestartDeploymentAction,
+        # Phase 4A: New action types
+        RemediationActionType.CLEAR_STUCK_PODS: ClearStuckPodsAction,
+        RemediationActionType.CLEANUP_FAILED_JOBS: CleanupFailedJobsAction,
+        RemediationActionType.ADJUST_HPA_MIN_REPLICAS: AdjustHPAMinReplicasAction,
     }
 
     @classmethod

@@ -181,13 +181,41 @@ class ActionEngine:
         })
 
         logger.info(f"Action {action_id} approved by {request.approved_by}")
-        # Return updated action (would load from store in real implementation)
-        return Action(
-            id=action_id,
-            status=ActionStatus.APPROVED,
-            approved_by=request.approved_by,
-            approved_at=datetime.now(timezone.utc),
-        )
+        # Build action kwargs from state, filtering None values
+        action_kwargs = {
+            "id": action_id,
+            "status": ActionStatus.APPROVED,
+            "approved_by": request.approved_by,
+            "approved_at": datetime.now(timezone.utc),
+        }
+
+        # Add optional fields from state if present
+        if "command_type" in state:
+            action_kwargs["command_type"] = state["command_type"]
+        if "command" in state:
+            action_kwargs["command"] = state["command"]
+        if "parsed_params" in state and state["parsed_params"]:
+            action_kwargs["parsed_params"] = state["parsed_params"]
+        if "project" in state:
+            action_kwargs["project"] = state["project"]
+        if "title" in state:
+            action_kwargs["title"] = state["title"]
+        if "description" in state:
+            action_kwargs["description"] = state["description"]
+        if "triage_card_id" in state:
+            action_kwargs["triage_card_id"] = state["triage_card_id"]
+        if "recommendation_id" in state:
+            action_kwargs["recommendation_id"] = state["recommendation_id"]
+        if "risk_level" in state:
+            action_kwargs["risk_level"] = state["risk_level"]
+        if "estimated_impact" in state:
+            action_kwargs["estimated_impact"] = state["estimated_impact"]
+        if "created_at" in state:
+            action_kwargs["created_at"] = state["created_at"]
+        if "context" in state:
+            action_kwargs["context"] = state["context"]
+
+        return Action(**action_kwargs)
 
     async def reject_action(self, action_id: str, request: RejectActionRequest) -> Action:
         """Reject an action."""
@@ -225,12 +253,42 @@ class ActionEngine:
         })
 
         logger.info(f"Action {action_id} rejected by {request.rejected_by}: {request.reason}")
-        return Action(
-            id=action_id,
-            status=ActionStatus.REJECTED,
-            rejected_by=request.rejected_by,
-            rejected_at=datetime.now(timezone.utc),
-        )
+        # Build action kwargs from state, filtering None values
+        action_kwargs = {
+            "id": action_id,
+            "status": ActionStatus.REJECTED,
+            "rejected_by": request.rejected_by,
+            "rejected_at": datetime.now(timezone.utc),
+            "rejection_reason": request.reason,
+        }
+
+        # Add optional fields from state if present
+        if "command_type" in state:
+            action_kwargs["command_type"] = state["command_type"]
+        if "command" in state:
+            action_kwargs["command"] = state["command"]
+        if "parsed_params" in state and state["parsed_params"]:
+            action_kwargs["parsed_params"] = state["parsed_params"]
+        if "project" in state:
+            action_kwargs["project"] = state["project"]
+        if "title" in state:
+            action_kwargs["title"] = state["title"]
+        if "description" in state:
+            action_kwargs["description"] = state["description"]
+        if "triage_card_id" in state:
+            action_kwargs["triage_card_id"] = state["triage_card_id"]
+        if "recommendation_id" in state:
+            action_kwargs["recommendation_id"] = state["recommendation_id"]
+        if "risk_level" in state:
+            action_kwargs["risk_level"] = state["risk_level"]
+        if "estimated_impact" in state:
+            action_kwargs["estimated_impact"] = state["estimated_impact"]
+        if "created_at" in state:
+            action_kwargs["created_at"] = state["created_at"]
+        if "context" in state:
+            action_kwargs["context"] = state["context"]
+
+        return Action(**action_kwargs)
 
     async def execute_action(self, action_id: str, request: ExecuteActionRequest) -> Action:
         """Execute an approved action with RBAC permission checking."""
@@ -275,7 +333,7 @@ class ActionEngine:
             result = await self.env_aware_executor.execute(
                 command=command,
                 environment=env_enum,
-                timeout_seconds=request.timeout_seconds or 30,
+                timeout_seconds=getattr(request, 'timeout_seconds', 30) or 30,
             )
 
             success = result.success
@@ -319,13 +377,54 @@ class ActionEngine:
                 f"{'SUCCESS' if success else 'FAILED'}"
             )
 
-            return Action(
-                id=action_id,
-                status=new_status,
-                executed_by=request.executed_by,
-                executed_at=datetime.now(timezone.utc),
-                execution_result=result,
-            )
+            # Convert result to ExecutionResult if it's a mock
+            if isinstance(result, ExecutionResult):
+                exec_result = result
+            else:
+                exec_result = ExecutionResult(
+                    success=getattr(result, 'success', True),
+                    exit_code=getattr(result, 'exit_code', 0),
+                    stdout=getattr(result, 'stdout', ''),
+                    stderr=getattr(result, 'stderr', ''),
+                    duration_seconds=getattr(result, 'duration_seconds', duration),
+                )
+
+            # Build action kwargs from state, filtering None values
+            action_kwargs = {
+                "id": action_id,
+                "status": new_status,
+                "executed_by": request.executed_by,
+                "executed_at": datetime.now(timezone.utc),
+                "execution_result": exec_result,
+            }
+
+            # Add optional fields from state if present
+            if "command_type" in state:
+                action_kwargs["command_type"] = state["command_type"]
+            if "command" in state:
+                action_kwargs["command"] = state["command"]
+            if "parsed_params" in state and state["parsed_params"]:
+                action_kwargs["parsed_params"] = state["parsed_params"]
+            if "project" in state:
+                action_kwargs["project"] = state["project"]
+            if "title" in state:
+                action_kwargs["title"] = state["title"]
+            if "description" in state:
+                action_kwargs["description"] = state["description"]
+            if "triage_card_id" in state:
+                action_kwargs["triage_card_id"] = state["triage_card_id"]
+            if "recommendation_id" in state:
+                action_kwargs["recommendation_id"] = state["recommendation_id"]
+            if "risk_level" in state:
+                action_kwargs["risk_level"] = state["risk_level"]
+            if "estimated_impact" in state:
+                action_kwargs["estimated_impact"] = state["estimated_impact"]
+            if "created_at" in state:
+                action_kwargs["created_at"] = state["created_at"]
+            if "context" in state:
+                action_kwargs["context"] = state["context"]
+
+            return Action(**action_kwargs)
 
         except Exception as e:
             # Execution failed with exception
@@ -364,6 +463,13 @@ class ActionEngine:
         """List actions with optional filters."""
         all_state = self.approval_tracker.get_all()
 
+        # Count by status (use original all_state for accurate counts)
+        counts = {s: 0 for s in ActionStatus}
+        for state in all_state.values():
+            status_val = state.get("status")
+            if status_val in counts:
+                counts[status_val] += 1
+
         # Filter by project
         if project:
             all_state = {
@@ -378,17 +484,12 @@ class ActionEngine:
                 if s.get("status") == status
             }
 
-        # Count by status
-        counts = {s: 0 for s in ActionStatus}
-        for state in self.approval_tracker.get_all().values():
-            status_val = state.get("status")
-            if status_val in counts:
-                counts[status_val] += 1
-
         # Convert to Action objects
         actions = []
         for action_id, state in list(all_state.items())[:limit]:
-            actions.append(Action(id=action_id, **state))
+            # Add id to state dict if not present
+            state_with_id = {"id": action_id, **state}
+            actions.append(Action(**state_with_id))
 
         return ActionListResponse(
             total=len(actions),

@@ -12,6 +12,7 @@ from app.api.v1.actions import router as actions_router  # Phase 2
 from app.api.v1.skills import router as skills_router  # Phase 3
 from app.api.v1.governance import router as governance_router  # Phase 3
 from app.api.v1.metrics import router as metrics_router  # Observability
+from app.api.v1.autonomous import router as autonomous_router  # Phase 4
 from app.approvals.webhook import router as approvals_webhook_router  # Phase 2
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -27,6 +28,7 @@ v1_router.include_router(actions_router)  # Phase 2
 v1_router.include_router(skills_router)  # Phase 3
 v1_router.include_router(governance_router)  # Phase 3
 v1_router.include_router(metrics_router)  # Observability
+v1_router.include_router(autonomous_router)  # Phase 4
 
 api_router = APIRouter()
 api_router.include_router(v1_router)

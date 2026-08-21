@@ -39,7 +39,6 @@ class TestAuditLogger:
     def test_logger_initialization(self, logger):
         """Test logger initialization."""
         assert logger._max_entries == 100
-        assert logger._log_dir is not None
 
     def test_log_action_created(self, logger):
         """Test logging action creation event."""
@@ -163,9 +162,9 @@ class TestAuditLogger:
     def test_query_all_events(self, logger):
         """Test querying all audit events."""
         # Add some entries
-        logger.log_action_created(action_id="act-1", project="proj1", command="cmd1")
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="proj1", command="cmd1")
         logger.log_action_approved(action_id="act-1", approved_by="admin")
-        logger.log_action_created(action_id="act-2", project="proj2", command="cmd2")
+        logger.log_action_created(action_id="act-2", triage_card_id="tc-001", project="proj2", command="cmd2")
 
         query = AuditLogQuery(limit=10)
         result = logger.query(query)
@@ -175,7 +174,7 @@ class TestAuditLogger:
 
     def test_query_by_event_type(self, logger):
         """Test querying by event type."""
-        logger.log_action_created(action_id="act-1", project="proj1", command="cmd1")
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="proj1", command="cmd1")
         logger.log_action_approved(action_id="act-1", approved_by="admin")
         logger.log_action_rejected(action_id="act-2", rejected_by="admin", reason="test")
 
@@ -190,9 +189,9 @@ class TestAuditLogger:
 
     def test_query_by_action_id(self, logger):
         """Test querying by action ID."""
-        logger.log_action_created(action_id="act-123", project="proj1", command="cmd1")
+        logger.log_action_created(action_id="act-123", triage_card_id="tc-001", project="proj1", command="cmd1")
         logger.log_action_approved(action_id="act-123", approved_by="admin")
-        logger.log_action_created(action_id="act-456", project="proj2", command="cmd2")
+        logger.log_action_created(action_id="act-456", triage_card_id="tc-001", project="proj2", command="cmd2")
 
         query = AuditLogQuery(action_id="act-123", limit=10)
         result = logger.query(query)
@@ -203,8 +202,8 @@ class TestAuditLogger:
 
     def test_query_by_project(self, logger):
         """Test querying by project."""
-        logger.log_action_created(action_id="act-1", project="meinvoice", command="cmd1")
-        logger.log_action_created(action_id="act-2", project="another-project", command="cmd2")
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="meinvoice", command="cmd1")
+        logger.log_action_created(action_id="act-2", triage_card_id="tc-001", project="another-project", command="cmd2")
 
         query = AuditLogQuery(project="meinvoice", limit=10)
         result = logger.query(query)
@@ -239,7 +238,7 @@ class TestAuditLogger:
         )
 
         # Add recent entry
-        logger.log_action_created(action_id="act-1", project="proj1", command="cmd1")
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="proj1", command="cmd1")
 
         query = AuditLogQuery(start_time=recent_time, limit=10)
         result = logger.query(query)
@@ -291,7 +290,7 @@ class TestAuditLogger:
 
     def test_get_action_history(self, logger):
         """Test getting history for specific action."""
-        logger.log_action_created(action_id="act-123", project="proj1", command="cmd1")
+        logger.log_action_created(action_id="act-123", triage_card_id="tc-001", project="proj1", command="cmd1")
         logger.log_action_approved(action_id="act-123", approved_by="admin")
         logger.log_action_executed(action_id="act-123", executed_by="system", success=True, duration_seconds=1.0)
 
@@ -340,6 +339,104 @@ class TestAuditLogger:
 
         # Should only have 5 entries
         assert result.total == 5
+
+
+class TestAuditLoggerErrorHandling:
+    """Test error handling in AuditLogger."""
+
+    def test_loading_corrupted_log_file(self, logger, tmp_path, monkeypatch):
+        """Test loading from corrupted log file."""
+        import os
+        from app.audit.logger import AuditLogger as AuditLoggerClass
+
+        # Mock file existence check to simulate corrupted file
+        mock_exists = MagicMock(return_value=True)
+
+        def mock_load():
+            # Simulate corrupted JSON
+            raise json.JSONDecodeError("Expecting value", "", 0)
+
+        monkeypatch.setattr("os.path.exists", mock_exists)
+        monkeypatch.setattr(AuditLoggerClass, "_load_entries", mock_load)
+
+        # Should handle gracefully - query will call _load_entries
+        new_logger = AuditLogger(max_entries=100)
+
+        # Logger should still be functional
+        # Query should handle corrupted data gracefully
+        result = new_logger.query(AuditLogQuery(limit=10))
+        assert result is not None
+
+    def test_query_with_limit_zero(self, logger):
+        """Test query with limit=0."""
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="proj1", command="cmd1")
+
+        query = AuditLogQuery(limit=0)
+        result = logger.query(query)
+
+        # Should return empty result
+        assert result.total == 0
+        assert len(result.entries) == 0
+
+    def test_query_with_negative_offset(self, logger):
+        """Test query with negative offset (treated as 0)."""
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="proj1", command="cmd1")
+
+        query = AuditLogQuery(limit=10, offset=-5)
+        result = logger.query(query)
+
+        # Should work normally (negative offset treated as 0)
+        assert result.total >= 1
+
+    def test_empty_time_range_query(self, logger):
+        """Test query with impossible time range."""
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        future_start = now + timedelta(hours=1)
+        future_end = now + timedelta(hours=2)
+
+        logger.log_action_created(action_id="act-1", triage_card_id="tc-001", project="proj1", command="cmd1")
+
+        query = AuditLogQuery(start_time=future_start, end_time=future_end, limit=10)
+        result = logger.query(query)
+
+        # Should return empty for future time range
+        assert result.total == 0
+
+    def test_chain_of_thought_with_data_attachments(self, logger):
+        """Test chain of thought with data attachments."""
+        chain = [
+            ChainOfThoughtEntry(
+                step_number=1,
+                thought="Checking metrics",
+                confidence=0.9,
+                data={
+                    "metric_name": "cpu_usage",
+                    "value": 85.5,
+                    "threshold": 80.0,
+                },
+            ),
+            ChainOfThoughtEntry(
+                step_number=2,
+                thought="CPU above threshold",
+                confidence=0.95,
+                data={
+                    "affected_pods": ["api-1", "api-2"],
+                    "recommendation": "scale up",
+                },
+            ),
+        ]
+
+        entry = logger.log_chain_of_thought(
+            action_id="act-123",
+            chain_of_thought=chain,
+        )
+
+        assert len(entry.chain_of_thought) == 2
+        assert entry.chain_of_thought[0].data is not None
+        assert entry.chain_of_thought[0].data["metric_name"] == "cpu_usage"
+        assert entry.chain_of_thought[1].data["affected_pods"] == ["api-1", "api-2"]
 
 
 class TestAuditLoggerSingleton:

@@ -323,7 +323,7 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
                 risk_level="high",
                 commands=[
                     "# Review pod security contexts",
-                    "kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{"\\t"}{.spec.securityContext}{"\\n"}{end}'",
+                    'kubectl get pods -A -o jsonpath=\'{range .items[*]}{.metadata.name}{"\\t"}{.spec.securityContext}{"\\n"}{end}\'',
                     "# Check RBAC bindings",
                     "kubectl get clusterrolebindings -o yaml",
                     "# Audit privileged containers",

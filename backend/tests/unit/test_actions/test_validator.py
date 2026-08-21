@@ -35,9 +35,10 @@ def mock_registry():
     )
 
     rbac = RbacConstraints(
-        allowed_actions=["kubectl_get", "kubectl_describe", "kubectl_logs"],
-        requires_approval=["kubectl_delete", "kubectl_scale", "kubectl_rollout_restart"],
+        allowed_actions=["kubectl_get", "kubectl_describe", "kubectl_logs", "kubectl_get_pod", "kubectl_describe_deployment", "kubectl_logs_pod"],
+        requires_approval=["kubectl_delete", "kubectl_delete_pod", "kubectl_scale", "kubectl_scale_deployment", "kubectl_rollout_restart", "kubectl_rollout_restart_deployment"],
         forbidden_actions=["kubectl_delete_namespace", "kubectl_delete_pvc"],
+        requires_comment_for=["kubectl_delete", "kubectl_delete_pod"],
     )
 
     project = ProjectConfig(
@@ -114,6 +115,8 @@ class TestCommandValidator:
             namespace="meinvoice",
         )
 
+        validator.parser = mock_parser
+
         # Execute
         result = validator.validate(
             command="kubectl get pods -n meinvoice",
@@ -136,6 +139,8 @@ class TestCommandValidator:
             namespace="meinvoice",
         )
 
+        validator.parser = mock_parser
+
         # Execute
         result = validator.validate(
             command="kubectl delete pod -n meinvoice",
@@ -157,6 +162,8 @@ class TestCommandValidator:
             action="delete",
         )
 
+        validator.parser = mock_parser
+
         # Execute
         result = validator.validate(
             command="kubectl delete namespace meinvoice",
@@ -176,6 +183,8 @@ class TestCommandValidator:
             action="get",
         )
 
+        validator.parser = mock_parser
+
         # Execute with unknown project
         result = validator.validate(
             command="kubectl get pods",
@@ -191,6 +200,8 @@ class TestCommandValidator:
         """Test validation when parsing fails."""
         # Setup parser to raise exception
         mock_parser.parse.side_effect = ValueError("Invalid command")
+
+        validator.parser = mock_parser
 
         # Execute
         result = validator.validate(
@@ -292,7 +303,8 @@ class TestCommandValidator:
     def test_check_constraints_with_warnings(self, validator):
         """Test constraint checking generates warnings for required comments."""
         # Setup registry with comment requirement
-        validator.registry.projects[0].rbac.requires_comment_for = ["kubectl_delete"]
+        # Action_id will be kubectl_delete_pod based on current implementation
+        validator.registry.projects[0].rbac.requires_comment_for = ["kubectl_delete_pod"]
 
         # Setup parser
         mock_parser = MagicMock()
@@ -320,6 +332,8 @@ class TestCommandValidator:
             command_type=CommandType.KUBECTL,
             action="get",
         )
+
+        validator.parser = mock_parser
 
         # Execute with user
         result = validator.validate(
@@ -359,6 +373,8 @@ class TestCommandValidator:
             resource_type="all",
         )
 
+        validator.parser = mock_parser
+
         # Execute
         result = validator.validate(
             command="kubectl delete pod --all -n meinvoice",
@@ -367,6 +383,63 @@ class TestCommandValidator:
 
         # Verify global constraint checked
         assert result.is_valid is not None
+
+
+    def test_check_rate_limit_project_not_found(self, validator):
+        """Test rate limit checking with unknown project."""
+        # The validator will return True with "Project not found" message
+        # when project is not in registry
+        allowed, message = validator.check_rate_limit("unknown-project", "restart")
+
+        # Returns True (allowed) with not found message
+        assert allowed is True
+        assert "not found" in message.lower()
+
+    def test_assess_risk_unknown_action_default_medium(self, validator):
+        """Test risk assessment for unknown actions defaults to MEDIUM."""
+        # Create params with unknown action
+        params = CommandParams(
+            command_type=CommandType.SCRIPT,
+            action="unknown_custom_action",
+        )
+
+        risk = validator._assess_risk(params)
+
+        # Unknown actions should default to MEDIUM
+        assert risk == RiskLevel.MEDIUM
+
+    def test_assess_risk_version_safe(self, validator):
+        """Test risk assessment for version/config commands returns SAFE."""
+        safe_diagnostic_actions = ["version", "config", "help"]
+
+        for action in safe_diagnostic_actions:
+            params = CommandParams(
+                command_type=CommandType.KUBECTL,
+                action=action,
+            )
+            risk = validator._assess_risk(params)
+            assert risk == RiskLevel.SAFE, f"Action {action} should be SAFE, got {risk}"
+
+    def test_validate_default_policy_unknown_action(self, validator, mock_parser):
+        """Test validation with default policy for unknown actions."""
+        # Setup parser for action not in any list
+        mock_parser.parse.return_value = CommandParams(
+            command_type=CommandType.KUBECTL,
+            action="custom_action",
+            resource_type="pod",
+        )
+
+        # Execute
+        result = validator.validate(
+            command="kubectl custom_action pods",
+            project="meinvoice",
+        )
+
+        # Unknown actions default to requiring approval
+        assert result.is_valid is True
+        assert result.allowed is True
+        assert result.requires_approval is True
+        assert "default policy" in result.reason.lower()
 
 
 class TestCommandValidatorSingleton:

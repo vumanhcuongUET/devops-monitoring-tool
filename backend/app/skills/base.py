@@ -268,4 +268,9 @@ class SkillValidationError(Exception):
         """
         self.skill_id = skill_id
         self.parameter = parameter
-        super().__init__(skill_id, f"Invalid parameter '{parameter}': {message}")
+        self.message = f"Invalid parameter '{parameter}': {message}"
+        super().__init__(self.message)
+
+    def __str__(self) -> str:
+        """Return formatted error message."""
+        return f"[{self.skill_id}] {self.message}"

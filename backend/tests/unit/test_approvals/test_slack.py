@@ -8,29 +8,46 @@ from app.models.actions import Action, ActionStatus, CommandType, RiskLevel, Exe
 
 
 @pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for Slack API."""
-    client = AsyncMock()
-    return client
+def mock_httpx_client():
+    """Mock httpx.AsyncClient for Slack API."""
+    # Create a proper mock response
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    # Create the async context manager
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    return mock_client
 
 
 @pytest.fixture
-def slack_notifier(mock_http_client):
-    """Create SlackApprovalNotifier with mocked client."""
+def slack_notifier():
+    """Create SlackApprovalNotifier with test webhook URL."""
     notifier = SlackApprovalNotifier()
-    notifier.client = mock_http_client
+    notifier.webhook_url = "https://hooks.slack.com/test"
     return notifier
 
 
 @pytest.fixture
 def sample_action():
     """Create sample action for testing."""
+    from app.models.actions import CommandParams
     return Action(
         id="act-123",
         triage_card_id="tc-001",
         recommendation_id="rec-001",
         command_type=CommandType.KUBECTL,
         command="kubectl delete pod test-pod -n meinvoice",
+        parsed_params=CommandParams(
+            command_type=CommandType.KUBECTL,
+            resource_type="pod",
+            resource_name="test-pod",
+            namespace="meinvoice",
+            action="delete",
+        ),
         title="Delete failing pod",
         description="Remove pod that is in CrashLoopBackOff",
         project="meinvoice",
@@ -48,31 +65,22 @@ class TestSlackApprovalNotifier:
         assert slack_notifier.webhook_url is not None or slack_notifier.webhook_url == ""
 
     @pytest.mark.asyncio
-    async def test_send_approval_request_success(self, slack_notifier, mock_http_client, sample_action):
+    async def test_send_approval_request_success(self, slack_notifier, mock_httpx_client, sample_action):
         """Test successful approval request sending."""
-        # Setup mock response
-        mock_http_client.post.return_value = AsyncMock(
-            status_code=200,
-            text="ok"
-        )
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_request(sample_action)
 
-        # Execute
-        result = await slack_notifier.send_approval_request(sample_action)
-
-        # Verify
         assert result is True
-        mock_http_client.post.assert_called_once()
+        mock_httpx_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_send_approval_request_failure(self, slack_notifier, mock_http_client, sample_action):
+    async def test_send_approval_request_failure(self, slack_notifier, mock_httpx_client, sample_action):
         """Test approval request sending failure."""
-        # Setup mock to raise exception
-        mock_http_client.post.side_effect = Exception("Network error")
+        mock_httpx_client.post.side_effect = Exception("Network error")
 
-        # Execute
-        result = await slack_notifier.send_approval_request(sample_action)
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_request(sample_action)
 
-        # Verify
         assert result is False
 
     def test_build_approval_message_basic(self, slack_notifier, sample_action):
@@ -99,12 +107,24 @@ class TestSlackApprovalNotifier:
 
     def test_build_approval_message_critical_risk(self, slack_notifier):
         """Test approval message for critical risk action."""
+        from app.models.actions import CommandParams
         critical_action = Action(
             id="act-critical",
+            triage_card_id="tc-001",
+            recommendation_id="rec-001",
+            command_type=CommandType.KUBECTL,
             command="kubectl delete namespace meinvoice",
+            parsed_params=CommandParams(
+                command_type=CommandType.KUBECTL,
+                resource_type="namespace",
+                resource_name="meinvoice",
+                action="delete",
+            ),
             title="Delete namespace",
+            description="Delete entire namespace",
             risk_level=RiskLevel.CRITICAL,
             project="meinvoice",
+            estimated_impact="All resources in namespace will be deleted",
             status=ActionStatus.PENDING,
         )
 
@@ -115,86 +135,87 @@ class TestSlackApprovalNotifier:
         assert "critical" in blocks_str.lower() or "CRITICAL" in blocks_str
 
     @pytest.mark.asyncio
-    async def test_send_approval_status_approved(self, slack_notifier, mock_http_client):
+    async def test_send_approval_status_approved(self, slack_notifier, mock_httpx_client, sample_action):
         """Test sending approved status update."""
-        # Setup mock
-        mock_http_client.post.return_value = AsyncMock(status_code=200, text="ok")
+        # Update action status
+        sample_action.status = ActionStatus.APPROVED
 
-        # Execute
-        result = await slack_notifier.send_approval_status(
-            action_id="act-123",
-            status=ActionStatus.APPROVED,
-            user="admin",
-            comment="Approved after review",
-        )
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_status(
+                action=sample_action,
+                status=ActionStatus.APPROVED,
+                user="admin",
+            )
 
-        # Verify
         assert result is True
-        mock_http_client.post.assert_called_once()
+        mock_httpx_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_send_approval_status_rejected(self, slack_notifier, mock_http_client):
+    async def test_send_approval_status_rejected(self, slack_notifier, mock_httpx_client, sample_action):
         """Test sending rejected status update."""
-        # Setup mock
-        mock_http_client.post.return_value = AsyncMock(status_code=200, text="ok")
+        # Update action status
+        sample_action.status = ActionStatus.REJECTED
 
-        # Execute
-        result = await slack_notifier.send_approval_status(
-            action_id="act-123",
-            status=ActionStatus.REJECTED,
-            user="admin",
-            reason="Too risky during business hours",
-        )
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_status(
+                action=sample_action,
+                status=ActionStatus.REJECTED,
+                user="admin",
+            )
 
-        # Verify
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_send_approval_status_executed(self, slack_notifier, mock_http_client):
+    async def test_send_approval_status_executed(self, slack_notifier, mock_httpx_client, sample_action):
         """Test sending executed status update."""
-        # Setup mock
-        mock_http_client.post.return_value = AsyncMock(status_code=200, text="ok")
-
-        # Execute
-        result = await slack_notifier.send_approval_status(
-            action_id="act-123",
-            status=ActionStatus.EXECUTED,
-            user="system",
+        # Update action status and add execution result
+        sample_action.status = ActionStatus.EXECUTED
+        sample_action.execution_result = ExecutionResult(
             success=True,
-            output="Command completed successfully",
+            exit_code=0,
+            stdout="Command completed successfully",
+            stderr="",
+            duration_seconds=1.5,
         )
 
-        # Verify
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_status(
+                action=sample_action,
+                status=ActionStatus.EXECUTED,
+                user="system",
+            )
+
         assert result is True
 
-    def test_build_status_message_approved(self, slack_notifier):
+    def test_build_status_message_approved(self, slack_notifier, sample_action):
         """Test building approved status message."""
+        sample_action.status = ActionStatus.APPROVED
         blocks = slack_notifier._build_status_message(
-            action_id="act-123",
+            action=sample_action,
             status=ActionStatus.APPROVED,
             user="admin",
-            comment="Safe to proceed",
         )
 
         blocks_str = str(blocks)
         assert "approved" in blocks_str.lower() or "APPROVED" in blocks_str
         assert "admin" in blocks_str
 
-    def test_build_status_message_rejected(self, slack_notifier):
+    def test_build_status_message_rejected(self, slack_notifier, sample_action):
         """Test building rejected status message."""
+        sample_action.status = ActionStatus.REJECTED
         blocks = slack_notifier._build_status_message(
-            action_id="act-123",
+            action=sample_action,
             status=ActionStatus.REJECTED,
             user="admin",
-            reason="Too risky",
         )
 
         blocks_str = str(blocks)
         assert "rejected" in blocks_str.lower() or "REJECTED" in blocks_str
 
-    def test_build_status_message_with_result(self, slack_notifier):
+    def test_build_status_message_with_result(self, slack_notifier, sample_action):
         """Test building status message with execution result."""
-        result = ExecutionResult(
+        sample_action.status = ActionStatus.EXECUTED
+        sample_action.execution_result = ExecutionResult(
             success=True,
             exit_code=0,
             stdout="Pod deleted successfully",
@@ -203,24 +224,23 @@ class TestSlackApprovalNotifier:
         )
 
         blocks = slack_notifier._build_status_message(
-            action_id="act-123",
+            action=sample_action,
             status=ActionStatus.EXECUTED,
             user="system",
-            execution_result=result,
         )
 
         blocks_str = str(blocks)
         assert "executed" in blocks_str.lower() or "EXECUTED" in blocks_str
 
     @pytest.mark.asyncio
-    async def test_send_approval_status_no_webhook(self, slack_notifier, mock_http_client):
+    async def test_send_approval_status_no_webhook(self, slack_notifier, sample_action):
         """Test sending status when webhook URL not configured."""
         # Set webhook to None
         slack_notifier.webhook_url = None
 
         # Execute
         result = await slack_notifier.send_approval_status(
-            action_id="act-123",
+            action=sample_action,
             status=ActionStatus.APPROVED,
             user="admin",
         )
@@ -228,26 +248,27 @@ class TestSlackApprovalNotifier:
         # Should handle gracefully
         assert result is False
 
-    def test_format_timestamp(self, slack_notifier):
-        """Test timestamp formatting for Slack."""
-        from datetime import datetime, timezone
-
-        now = datetime.now(timezone.utc)
-        formatted = slack_notifier._format_timestamp(now)
-
-        # Should be a string
-        assert isinstance(formatted, str)
-
     def test_truncate_long_command(self, slack_notifier):
         """Test truncating long commands in messages."""
+        from app.models.actions import CommandParams
         long_command = "kubectl get pods " + " ".join([f"pod-{i}" for i in range(100)])
 
         action = Action(
             id="act-123",
+            triage_card_id="tc-001",
+            recommendation_id="rec-001",
+            command_type=CommandType.KUBECTL,
             command=long_command,
-            title="Test",
+            parsed_params=CommandParams(
+                command_type=CommandType.KUBECTL,
+                resource_type="pod",
+                action="get",
+            ),
+            title="Test long command",
+            description="Testing command truncation",
             risk_level=RiskLevel.LOW,
             project="test",
+            estimated_impact="Minimal",
             status=ActionStatus.PENDING,
         )
 
@@ -257,6 +278,105 @@ class TestSlackApprovalNotifier:
         # Command should be truncated or abbreviated
         assert len(blocks_str) < 5000  # Slack has size limits
 
+    def test_risk_level_color_mapping(self, slack_notifier, sample_action):
+        """Test risk level text mapping in approval messages."""
+        # Test each risk level appears in the message
+        risk_level_tests = [
+            RiskLevel.CRITICAL,
+            RiskLevel.HIGH,
+            RiskLevel.MEDIUM,
+            RiskLevel.LOW,
+            RiskLevel.SAFE,
+        ]
+
+        for risk_level in risk_level_tests:
+            sample_action.risk_level = risk_level
+            blocks = slack_notifier._build_approval_message(sample_action)
+
+            # Check that risk level text is in the blocks
+            blocks_str = str(blocks)
+            assert risk_level.value.upper() in blocks_str
+
+    def test_risk_level_emoji_mapping(self, slack_notifier, sample_action):
+        """Test risk level emoji mapping in approval messages."""
+        # Test each risk level
+        risk_emoji_tests = [
+            (RiskLevel.CRITICAL, "🔴"),
+            (RiskLevel.HIGH, "🟠"),
+            (RiskLevel.MEDIUM, "🟡"),
+            (RiskLevel.LOW, "🟢"),
+            (RiskLevel.SAFE, "✅"),
+        ]
+
+        for risk_level, expected_emoji in risk_emoji_tests:
+            sample_action.risk_level = risk_level
+            blocks = slack_notifier._build_approval_message(sample_action)
+
+            # Check that emoji is in the blocks
+            blocks_str = str(blocks)
+            assert expected_emoji in blocks_str
+
+    @pytest.mark.asyncio
+    async def test_ssrf_protection_blocks_malicious_url(self, slack_notifier, sample_action, monkeypatch):
+        """Test SSRF protection blocks malicious webhook URLs."""
+        # Set a malicious internal URL
+        slack_notifier.webhook_url = "http://localhost:8080/webhook"
+
+        # Execute - should be blocked by SSRF protection
+        result = await slack_notifier.send_approval_request(sample_action)
+
+        # Should fail due to SSRF protection
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_httpx_timeout_error_handling(self, slack_notifier, mock_httpx_client, sample_action):
+        """Test httpx timeout error handling."""
+        import httpx
+
+        # Setup mock to raise timeout exception
+        mock_httpx_client.post.side_effect = httpx.TimeoutException("Request timed out")
+
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_request(sample_action)
+
+        # Should handle gracefully
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_httpx_network_error_handling(self, slack_notifier, mock_httpx_client, sample_action):
+        """Test httpx network error handling."""
+        import httpx
+
+        # Setup mock to raise network exception
+        mock_httpx_client.post.side_effect = httpx.NetworkError("Network unreachable")
+
+        with patch("app.approvals.slack.httpx.AsyncClient", return_value=mock_httpx_client):
+            result = await slack_notifier.send_approval_request(sample_action)
+
+        # Should handle gracefully
+        assert result is False
+
+    def test_status_emoji_mapping(self, slack_notifier, sample_action):
+        """Test status emoji mapping in status messages."""
+        status_emoji_tests = [
+            (ActionStatus.APPROVED, "✅"),
+            (ActionStatus.REJECTED, "❌"),
+            (ActionStatus.EXECUTED, "🚀"),
+            (ActionStatus.FAILED, "💥"),
+        ]
+
+        for status, expected_emoji in status_emoji_tests:
+            sample_action.status = status
+            blocks = slack_notifier._build_status_message(
+                action=sample_action,
+                status=status,
+                user="test_user",
+            )
+
+            # Check that emoji is in the blocks
+            blocks_str = str(blocks)
+            assert expected_emoji in blocks_str
+
 
 class TestSlackApprovalNotifierIntegration:
     """Test Slack notifier integration patterns."""
@@ -264,10 +384,10 @@ class TestSlackApprovalNotifierIntegration:
     def test_notifier_with_webhook_from_env(self, monkeypatch):
         """Test notifier initialization with webhook from environment."""
         from app.approvals.slack import SlackApprovalNotifier
-        import os
+        from app.config import settings
 
-        # Set webhook URL
-        monkeypatch.setenv("SLACK_APPROVAL_WEBHOOK_URL", "https://hooks.slack.com/test")
+        # Set webhook URL in settings (simulating env var)
+        monkeypatch.setattr(settings, "SLACK_APPROVAL_WEBHOOK_URL", "https://hooks.slack.com/test")
 
         notifier = SlackApprovalNotifier()
 

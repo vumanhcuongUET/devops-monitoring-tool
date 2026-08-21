@@ -11,7 +11,25 @@ from app.actions.environment_executor import (
     get_executor,
 )
 
+# Phase 4: Autonomous Reliability
+from app.actions.remediation_actions import (
+    RemediationAction,
+    DeleteCrashLoopPodAction,
+    ScaleDeploymentAction,
+    RollbackDeploymentAction,
+    RestartDeploymentAction,
+    RemediationActionType,
+    RemediationActionFactory,
+)
+from app.actions.autonomous_executor import (
+    AutonomousExecutor,
+    get_autonomous_executor,
+    RateLimiter,
+    SafetyChecker,
+)
+
 __all__ = [
+    # Phase 2
     "get_action_engine",
     "get_command_parser",
     "get_command_validator",
@@ -20,4 +38,16 @@ __all__ = [
     "ExecutionEnvironment",
     "ExecutionResult",
     "get_executor",
+    # Phase 4
+    "RemediationAction",
+    "DeleteCrashLoopPodAction",
+    "ScaleDeploymentAction",
+    "RollbackDeploymentAction",
+    "RestartDeploymentAction",
+    "RemediationActionType",
+    "RemediationActionFactory",
+    "AutonomousExecutor",
+    "get_autonomous_executor",
+    "RateLimiter",
+    "SafetyChecker",
 ]

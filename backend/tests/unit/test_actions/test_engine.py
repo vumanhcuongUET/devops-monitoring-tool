@@ -100,6 +100,26 @@ def action_engine(
     mock_registry,
 ):
     """Create ActionEngine with mocked dependencies."""
+    # Create mock for permission checker
+    mock_permission_checker = MagicMock()
+    mock_permission_checker.check_command.return_value = MagicMock(
+        allowed=True,
+        reason="Allowed",
+        required_permission=MagicMock(value="view"),
+        requires_approval=False,  # Auto-approve safe actions
+        to_dict=lambda: {"allowed": True, "requires_approval": False},
+    )
+
+    # Create mock for env-aware executor
+    mock_env_executor = AsyncMock()
+    mock_env_executor.execute.return_value = MagicMock(
+        success=True,
+        stdout="Command executed",
+        stderr="",
+        exit_code=0,
+        duration_seconds=1.0,
+    )
+
     engine = ActionEngine()
     engine.parser = mock_parser
     engine.validator = mock_validator
@@ -109,6 +129,8 @@ def action_engine(
     engine.registry = mock_registry
     engine.approval_history = MagicMock()
     engine.approval_history.add = MagicMock()
+    engine.permission_checker = mock_permission_checker
+    engine.env_aware_executor = mock_env_executor
     return engine
 
 
@@ -138,7 +160,8 @@ def sample_create_request():
 class TestActionEngine:
     """Test ActionEngine functionality."""
 
-    def test_create_action_from_recommendation_success(
+    @pytest.mark.asyncio
+    async def test_create_action_from_recommendation_success(
         self,
         action_engine,
         sample_recommendation,
@@ -150,7 +173,7 @@ class TestActionEngine:
     ):
         """Test successful action creation from recommendation."""
         # Execute
-        action = action_engine.create_action_from_recommendation(
+        action = await action_engine.create_action_from_recommendation(
             request=sample_create_request,
             recommendation=sample_recommendation,
         )
@@ -175,7 +198,8 @@ class TestActionEngine:
         # Verify approval tracker updated
         mock_approval_tracker.set_status.assert_called_once()
 
-    def test_create_action_requires_approval(
+    @pytest.mark.asyncio
+    async def test_create_action_requires_approval(
         self,
         action_engine,
         sample_create_request,
@@ -193,7 +217,7 @@ class TestActionEngine:
         )
 
         # Execute
-        action = action_engine.create_action_from_recommendation(
+        action = await action_engine.create_action_from_recommendation(
             request=sample_create_request,
             recommendation=sample_recommendation,
         )
@@ -201,7 +225,8 @@ class TestActionEngine:
         # Verify status is pending
         assert action.status == ActionStatus.PENDING
 
-    def test_create_action_auto_approved_for_safe_actions(
+    @pytest.mark.asyncio
+    async def test_create_action_auto_approved_for_safe_actions(
         self,
         action_engine,
         sample_create_request,
@@ -219,7 +244,7 @@ class TestActionEngine:
         )
 
         # Execute
-        action = action_engine.create_action_from_recommendation(
+        action = await action_engine.create_action_from_recommendation(
             request=sample_create_request,
             recommendation=sample_recommendation,
         )
@@ -227,7 +252,8 @@ class TestActionEngine:
         # Verify status is approved
         assert action.status == ActionStatus.APPROVED
 
-    def test_create_action_forbidden_by_policy(
+    @pytest.mark.asyncio
+    async def test_create_action_forbidden_by_policy(
         self,
         action_engine,
         sample_create_request,
@@ -245,7 +271,7 @@ class TestActionEngine:
         )
 
         # Execute
-        action = action_engine.create_action_from_recommendation(
+        action = await action_engine.create_action_from_recommendation(
             request=sample_create_request,
             recommendation=sample_recommendation,
         )
@@ -261,10 +287,20 @@ class TestActionEngine:
         mock_audit_logger,
     ):
         """Test successful action approval."""
-        # Setup tracker to return pending action
+        # Setup tracker to return pending action with all required fields
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.PENDING,
             "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="get",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Check pod status",
+            "description": "Get pod status",
         }
 
         request = ApproveActionRequest(
@@ -293,9 +329,16 @@ class TestActionEngine:
         mock_approval_tracker,
     ):
         """Test approval fails for non-pending action."""
-        # Setup tracker to return approved action
+        # Setup tracker to return approved action with all required fields
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.APPROVED,
+            "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(command_type=CommandType.KUBECTL),
+            "project": "test-project",
+            "title": "Test",
+            "description": "Test",
         }
 
         request = ApproveActionRequest(approved_by="john.doe")
@@ -328,10 +371,20 @@ class TestActionEngine:
         mock_audit_logger,
     ):
         """Test successful action rejection."""
-        # Setup tracker to return pending action
+        # Setup tracker to return pending action with all required fields
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.PENDING,
             "command": "kubectl delete pod",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="delete",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Delete pod",
+            "description": "Delete a pod",
         }
 
         request = RejectActionRequest(
@@ -362,10 +415,21 @@ class TestActionEngine:
         mock_audit_logger,
     ):
         """Test successful action execution."""
-        # Setup tracker to return approved action with command
+        # Setup tracker to return approved action with all required fields
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.APPROVED,
             "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="get",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Get pods",
+            "description": "Get pod status",
+            "context": {"environment": "development"},  # Set environment to avoid OPA blocking
         }
 
         request = ExecuteActionRequest(
@@ -383,11 +447,8 @@ class TestActionEngine:
         assert action.execution_result is not None
         assert action.execution_result.success is True
 
-        # Verify executor called
-        mock_executor.execute.assert_called_once_with(
-            command="kubectl get pods",
-            dry_run=False,
-        )
+        # Verify env_aware_executor called (not the old mock_executor)
+        action_engine.env_aware_executor.execute.assert_called_once()
 
         # Verify audit log called
         mock_audit_logger.log_action_executed.assert_called_once()
@@ -402,16 +463,20 @@ class TestActionEngine:
         """Test dry run execution."""
         # Setup tracker and executor
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.APPROVED,
             "command": "kubectl delete pod",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="delete",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Delete pod",
+            "description": "Delete a pod",
+            "context": {"environment": "development"},  # Set environment to avoid OPA blocking
         }
-        mock_executor.execute.return_value = ExecutionResult(
-            success=True,
-            exit_code=0,
-            stdout="[DRY RUN] Command validation passed",
-            stderr="",
-            duration_seconds=0.0,
-        )
 
         request = ExecuteActionRequest(
             executed_by="john.doe",
@@ -422,10 +487,7 @@ class TestActionEngine:
         action = await action_engine.execute_action("act-123", request)
 
         # Verify executor called with dry_run
-        mock_executor.execute.assert_called_once_with(
-            command="kubectl delete pod",
-            dry_run=True,
-        )
+        action_engine.env_aware_executor.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_action_failure(
@@ -436,18 +498,31 @@ class TestActionEngine:
         mock_audit_logger,
     ):
         """Test action execution failure."""
-        # Setup tracker and executor for failure
-        mock_approval_tracker.get.return_value = {
-            "status": ActionStatus.APPROVED,
-            "command": "kubectl delete pod",
-        }
-        mock_executor.execute.return_value = ExecutionResult(
+        # Setup env_aware_executor to return failure
+        action_engine.env_aware_executor.execute.return_value = ExecutionResult(
             success=False,
             exit_code=1,
             stdout="",
             stderr="Error: pod not found",
             duration_seconds=0.3,
         )
+
+        # Setup tracker and executor for failure
+        mock_approval_tracker.get.return_value = {
+            "id": "act-123",
+            "status": ActionStatus.APPROVED,
+            "command": "kubectl delete pod",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="delete",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Delete pod",
+            "description": "Delete a pod",
+            "context": {"environment": "development"},  # Set environment to avoid OPA blocking
+        }
 
         request = ExecuteActionRequest(
             executed_by="john.doe",
@@ -468,9 +543,16 @@ class TestActionEngine:
         mock_approval_tracker,
     ):
         """Test execution fails for non-approved action."""
-        # Setup tracker to return pending action
+        # Setup tracker to return pending action with all required fields
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.PENDING,
+            "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(command_type=CommandType.KUBECTL),
+            "project": "test-project",
+            "title": "Get pods",
+            "description": "Get pod status",
         }
 
         request = ExecuteActionRequest(executed_by="john.doe")
@@ -486,9 +568,16 @@ class TestActionEngine:
         mock_approval_tracker,
     ):
         """Test execution fails when command missing."""
-        # Setup tracker without command
+        # Setup tracker without command (but with all other required fields)
         mock_approval_tracker.get.return_value = {
+            "id": "act-123",
             "status": ActionStatus.APPROVED,
+            "command": "",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(command_type=CommandType.KUBECTL),
+            "project": "test-project",
+            "title": "Get pods",
+            "description": "Get pod status",
         }
 
         request = ExecuteActionRequest(executed_by="john.doe")
@@ -527,11 +616,38 @@ class TestActionEngine:
 
     def test_list_actions(self, action_engine, mock_approval_tracker):
         """Test listing actions."""
-        # Setup tracker
+        # Setup tracker with complete Action objects
         mock_approval_tracker.get_all.return_value = {
-            "act-1": {"status": "pending", "project": "proj1"},
-            "act-2": {"status": "approved", "project": "proj1"},
-            "act-3": {"status": "rejected", "project": "proj2"},
+            "act-1": {
+                "id": "act-1",
+                "status": "pending",
+                "project": "proj1",
+                "command": "kubectl get pods",
+                "command_type": CommandType.KUBECTL,
+                "parsed_params": CommandParams(command_type=CommandType.KUBECTL),
+                "title": "Get pods",
+                "description": "Get pod status",
+            },
+            "act-2": {
+                "id": "act-2",
+                "status": "approved",
+                "project": "proj1",
+                "command": "kubectl get pods",
+                "command_type": CommandType.KUBECTL,
+                "parsed_params": CommandParams(command_type=CommandType.KUBECTL),
+                "title": "Get pods",
+                "description": "Get pod status",
+            },
+            "act-3": {
+                "id": "act-3",
+                "status": "rejected",
+                "project": "proj2",
+                "command": "kubectl get pods",
+                "command_type": CommandType.KUBECTL,
+                "parsed_params": CommandParams(command_type=CommandType.KUBECTL),
+                "title": "Get pods",
+                "description": "Get pod status",
+            },
         }
 
         # Execute

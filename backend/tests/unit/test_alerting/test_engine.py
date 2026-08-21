@@ -29,9 +29,9 @@ class TestAlertEngine:
             "k8s": MagicMock()
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         assert engine is not None
-        assert engine.clients == mock_clients
+        # clients attribute removed in new implementation
 
     @pytest.mark.asyncio
     async def test_check_all_rules_with_no_rules(self):
@@ -44,7 +44,7 @@ class TestAlertEngine:
             "k8s": MagicMock()
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         engine._check_all = AsyncMock(return_value=[])
 
         result = await engine._check_all()
@@ -62,7 +62,7 @@ class TestAlertEngine:
             "k8s": MagicMock()
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         engine._fire = AsyncMock(return_value={
             "rule_id": "test-rule-001",
             "state": "firing",
@@ -88,7 +88,7 @@ class TestAlertEngine:
             "k8s": MagicMock()
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         engine._resolve = AsyncMock(return_value={
             "rule_id": "test-rule-001",
             "state": "resolved",
@@ -110,7 +110,7 @@ class TestAlertEngine:
             "k8s": MagicMock()
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         engine._notify = AsyncMock(return_value=True)
 
         result = await engine._notify(
@@ -131,7 +131,7 @@ class TestAlertEngine:
             "k8s": MagicMock()
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         engine.start = AsyncMock(return_value=None)
 
         await engine.start()
@@ -149,7 +149,7 @@ class TestAlertEngine:
             "k8s": AsyncMock(return_value=[])
         }
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
         engine._check_all = AsyncMock(return_value=[])
 
         result = await engine._check_all()
@@ -170,7 +170,7 @@ class TestAlertEngine:
         # Mock ES client to return error count
         mock_clients["es"].get_error_count = AsyncMock(return_value=100)
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
 
         rule = {
             "id": "es-rule-001",
@@ -201,7 +201,7 @@ class TestAlertEngine:
             "data": {"alerts": [{"alertname": "HighCPU", "state": "firing"}]}
         })
 
-        engine = AlertEngine(clients=mock_clients)
+        engine = AlertEngine()
 
         rule = {
             "id": "prom-rule-001",

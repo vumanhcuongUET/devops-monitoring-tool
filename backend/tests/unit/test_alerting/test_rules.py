@@ -8,9 +8,13 @@ Tests the alert rules functionality including:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
-import yaml
 import json
+import tempfile
+import os
+from unittest.mock import patch, MagicMock
+
+from app.alerting.rules import load_rules, save_rules, DEFAULT_RULES_FILE, RULES_FILE
+from app.models.alerts import AlertRule, AlertSeverity
 
 
 @pytest.mark.unit
@@ -18,183 +22,143 @@ import json
 class TestAlertRules:
     """Test suite for alert rules management."""
 
-    @pytest.mark.asyncio
-    async def test_load_rules_from_yaml(self):
+    def test_load_rules_from_default_yaml(self):
         """Test that load_rules loads rules from default YAML file."""
-        from app.alerting.rules import load_rules
-
-        mock_yaml_content = """
-        - id: test-rule-001
-          name: Test Rule
-          enabled: true
-          source: elasticsearch
-          conditions:
-            - type: error_count
-              threshold: 100
-          actions:
-            - type: slack
-              webhook: https://hooks.slack.com/test
-        """
+        # Mock default YAML file
+        mock_yaml_data = {
+            "rules": [
+                {
+                    "id": "test-rule-001",
+                    "name": "Test Rule",
+                    "enabled": True,
+                    "source": "elasticsearch",
+                    "metric": "error_count",
+                    "condition": "gt",
+                    "threshold": 100.0,
+                    "duration_seconds": 300,
+                    "severity": "warning"
+                }
+            ]
+        }
 
         with patch("pathlib.Path.exists", return_value=True):
-            with patch("pathlib.Path.read_text", return_value=mock_yaml_content):
+            with patch("yaml.safe_load", return_value=mock_yaml_data):
                 rules = load_rules()
 
                 assert len(rules) == 1
-                assert rules[0]["id"] == "test-rule-001"
-                assert rules[0]["enabled"] is True
+                assert rules[0].id == "test-rule-001"
+                assert rules[0].name == "Test Rule"
+                assert rules[0].source == "elasticsearch"
+                assert isinstance(rules[0], AlertRule)
 
-    @pytest.mark.asyncio
-    async def test_load_rules_from_custom_json(self):
-        """Test that load_rules can load from custom JSON file."""
-        from app.alerting.rules import load_rules
-
-        mock_json_content = [
+    def test_load_rules_from_custom_json(self):
+        """Test that load_rules loads from JSON file when it exists."""
+        mock_json_rules = [
             {
                 "id": "json-rule-001",
                 "name": "JSON Rule",
                 "enabled": True,
                 "source": "prometheus",
-                "conditions": [
-                    {"type": "alert_firing", "alertname": "HighCPU"}
-                ],
-                "actions": [
-                    {"type": "email", "to": ["admin@test.com"]}
-                ]
+                "metric": "cpu_usage",
+                "condition": "gt",
+                "threshold": 80.0,
+                "severity": "warning"
             }
         ]
 
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("json.load", return_value=mock_json_content):
-                with patch("builtins.open", MagicMock()):
-                    rules = load_rules(custom_path="/custom/rules.json")
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", MagicMock()):
+                with patch("json.load", return_value=mock_json_rules):
+                    rules = load_rules()
 
                     assert len(rules) == 1
-                    assert rules[0]["id"] == "json-rule-001"
-                    assert rules[0]["source"] == "prometheus"
+                    assert rules[0].id == "json-rule-001"
+                    assert rules[0].source == "prometheus"
 
-    @pytest.mark.asyncio
-    async def test_save_rules_to_json(self):
+    def test_save_rules_to_json(self):
         """Test that save_rules persists rules to JSON file."""
-        from app.alerting.rules import save_rules
-
         rules = [
-            {
-                "id": "saved-rule-001",
-                "name": "Saved Rule",
-                "enabled": True,
-                "source": "elasticsearch",
-                "conditions": [],
-                "actions": []
-            }
+            AlertRule(
+                id="saved-rule-001",
+                name="Saved Rule",
+                enabled=True,
+                source="elasticsearch",
+                metric="error_count",
+                condition="gt",
+                threshold=50.0
+            )
         ]
 
-        mock_file = MagicMock()
+        with patch("os.makedirs"):
+            with patch("builtins.open", MagicMock()):
+                with patch("json.dump") as mock_dump:
+                    save_rules(rules)
 
-        with patch("builtins.open", return_value=mock_file):
-            with patch("json.dump") as mock_dump:
-                result = save_rules(rules)
+                    # Verify json.dump was called
+                    mock_dump.assert_called_once()
+                    # Check that rules were converted to dicts
+                    call_args = mock_dump.call_args
+                    dumped_rules = call_args[0][0]
+                    assert len(dumped_rules) == 1
+                    assert dumped_rules[0]["id"] == "saved-rule-001"
 
-                mock_dump.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_load_rules_merges_default_and_custom(self):
-        """Test that load_rules merges default and custom rules."""
-        from app.alerting.rules import load_rules
-
-        # Mock default rules
-        default_rules = [
-            {
-                "id": "default-rule-001",
-                "name": "Default Rule",
-                "enabled": True,
-                "source": "elasticsearch"
-            }
-        ]
-
-        # Mock custom rules
-        custom_rules = [
-            {
-                "id": "custom-rule-001",
-                "name": "Custom Rule",
-                "enabled": True,
-                "source": "prometheus"
-            }
-        ]
-
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("yaml.safe_load", return_value=default_rules):
-                with patch("json.load", return_value=custom_rules):
-                    with patch("builtins.open", MagicMock()):
-                        rules = load_rules()
-
-                        # Should have both rules
-                        assert len(rules) == 2
-
-    @pytest.mark.asyncio
-    async def test_load_rules_with_empty_file(self):
-        """Test that load_rules handles empty rule files."""
-        from app.alerting.rules import load_rules
-
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("yaml.safe_load", return_value=[]):
+    def test_load_rules_with_empty_file(self):
+        """Test that load_rules returns empty list when no rules file."""
+        with patch("os.path.exists", return_value=False):
+            with patch("pathlib.Path.exists", return_value=False):
                 rules = load_rules()
 
                 assert rules == []
 
-    @pytest.mark.asyncio
-    async def test_save_rules_creates_directory_if_not_exists(self):
+    def test_save_rules_creates_directory_if_not_exists(self):
         """Test that save_rules creates data directory if needed."""
-        from app.alerting.rules import save_rules
+        rules = [
+            AlertRule(id="test", name="Test", enabled=True, source="elasticsearch")
+        ]
 
-        rules = [{"id": "test", "enabled": True}]
-
-        mock_path = MagicMock()
-
-        with patch("pathlib.Path.mkdir"):
+        with patch("os.makedirs") as mock_makedirs:
             with patch("builtins.open", MagicMock()):
                 with patch("json.dump"):
                     save_rules(rules)
 
-    @pytest.mark.asyncio
-    async def test_load_rules_validates_rule_structure(self):
-        """Test that load_rules validates required rule fields."""
-        from app.alerting.rules import load_rules
+                    # Verify directory creation was attempted
+                    mock_makedirs.assert_called_once()
 
-        # Invalid rule missing required fields
-        invalid_rules = [
-            {
-                "id": "invalid-rule-001"
-                # Missing: name, enabled, source, conditions
-            }
-        ]
-
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("yaml.safe_load", return_value=invalid_rules):
-                rules = load_rules()
-
-                # Should still load but may need validation elsewhere
-                assert len(rules) == 1
-
-    @pytest.mark.asyncio
-    async def test_save_rules_pretty_prints_json(self):
-        """Test that save_rules formats JSON with indentation."""
-        from app.alerting.rules import save_rules
-
+    def test_save_rules_uses_model_dump(self):
+        """Test that save_rules uses model_dump for Pydantic v2."""
         rules = [
-            {
-                "id": "test-rule-001",
-                "name": "Test Rule",
-                "enabled": True
-            }
+            AlertRule(
+                id="test-rule-001",
+                name="Test Rule",
+                enabled=True,
+                source="prometheus",
+                metric="cpu",
+                condition="gt",
+                threshold=90.0,
+                severity=AlertSeverity.CRITICAL
+            )
         ]
 
-        mock_file = MagicMock()
+        with patch("os.makedirs"):
+            with patch("builtins.open", MagicMock()):
+                with patch("json.dump") as mock_dump:
+                    save_rules(rules)
 
-        with patch("builtins.open", return_value=mock_file):
-            with patch("json.dump") as mock_dump:
-                save_rules(rules, indent=2)
+                    # Verify json.dump was called with dict representation
+                    call_args = mock_dump.call_args
+                    dumped_rules = call_args[0][0]
+                    assert isinstance(dumped_rules, list)
+                    assert isinstance(dumped_rules[0], dict)
+                    assert dumped_rules[0]["severity"] == AlertSeverity.CRITICAL
 
-                # Verify indentation parameter was passed
-                call_args = mock_dump.call_args
-                assert call_args.kwargs.get("indent") == 2
+    def test_alert_rule_model_defaults(self):
+        """Test AlertRule model has correct defaults."""
+        rule = AlertRule(id="test")
+
+        assert rule.id == "test"
+        assert rule.enabled is True
+        assert rule.condition == "gt"
+        assert rule.duration_seconds == 60
+        assert rule.severity == AlertSeverity.WARNING
+        assert rule.notify_slack is True
+        assert rule.notify_email is False

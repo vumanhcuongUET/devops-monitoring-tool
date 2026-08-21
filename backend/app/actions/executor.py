@@ -177,7 +177,11 @@ class CommandExecutor:
         # Validate flags and arguments against whitelist
         allowed_config = self.ALLOWED_COMMANDS[command_name]
         allowed_flags = set(allowed_config["allowed_flags"])
-        allowed_global_flags = set(allowed_config["allowed_global_flags"])
+        # Normalize global flags: store both with and without dashes
+        allowed_global_flags = set()
+        for flag in allowed_config["allowed_global_flags"]:
+            allowed_global_flags.add(flag)
+            allowed_global_flags.add(flag.lstrip("-"))
 
         # Check each argument
         i = 1
@@ -190,7 +194,7 @@ class CommandExecutor:
                 flag_name = arg
                 # Remove leading dashes for comparison
                 flag_key = flag_name.lstrip("-")
-                if flag_key not in allowed_flags and flag_key not in allowed_global_flags:
+                if flag_key not in allowed_flags and flag_key not in allowed_global_flags and flag_name not in allowed_global_flags:
                     return ExecutionResult(
                         success=False,
                         error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
@@ -202,7 +206,7 @@ class CommandExecutor:
                 # Flag without value (boolean flag)
                 flag_name = arg
                 flag_key = flag_name.lstrip("-")
-                if flag_key not in allowed_flags and flag_key not in allowed_global_flags:
+                if flag_key not in allowed_flags and flag_key not in allowed_global_flags and flag_name not in allowed_global_flags:
                     return ExecutionResult(
                         success=False,
                         error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",

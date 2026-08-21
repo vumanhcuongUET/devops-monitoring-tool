@@ -2,11 +2,11 @@
 
 from app.approvals.store import get_approval_tracker, get_approval_history
 from app.approvals.webhook import router as approvals_webhook_router
-from app.approvals.slack import SlackApprovalClient
+from app.approvals.slack import SlackApprovalNotifier
 
 __all__ = [
     "get_approval_tracker",
     "get_approval_history",
     "approvals_webhook_router",
-    "SlackApprovalClient",
+    "SlackApprovalNotifier",
 ]

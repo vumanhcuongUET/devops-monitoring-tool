@@ -429,3 +429,28 @@ class CapacityPlannerSkill(BaseSkill):
                 errors.append("growth_rate must be between -100 and 100")
 
         return len(errors) == 0, errors
+
+
+    async def get_recommendations(
+        self,
+        analysis_id: str,
+        project: str,
+    ) -> list[Recommendation]:
+        """Get recommendations based on analysis results.
+
+        Args:
+            analysis_id: ID of previous analysis result
+            project: Project/service name
+
+        Returns:
+            List of recommendations
+        """
+        from app.skills.registry import get_skill_registry
+
+        registry = get_skill_registry()
+        result = registry.get_result(analysis_id)
+
+        if not result or not result.success:
+            return []
+
+        return result.recommendations or []

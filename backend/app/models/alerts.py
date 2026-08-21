@@ -21,6 +21,13 @@ class AlertRule(BaseModel):
     notify_email: bool = False
     notify_webhook: bool = False
     labels: dict[str, str] = {}
+    # Phase 4: Autonomous Remediation
+    autonomous_action: Optional[dict] = Field(
+        None,
+        description="Autonomous remediation configuration. "
+        "Structure: {enabled, action_type, auto_approve, max_executions_per_hour, "
+        "require_confirmation_for_risk, parameters}"
+    )
 
 
 class AlertEvent(BaseModel):

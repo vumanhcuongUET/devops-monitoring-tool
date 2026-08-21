@@ -82,8 +82,9 @@ class TestBaseSkill:
 
     def test_skill_initialization_invalid_config(self):
         """Test skill initialization with invalid config."""
+        from pydantic_core import ValidationError
         config = SkillConfig(timeout_seconds=0)  # Invalid
-        with pytest.raises(ValueError, match="timeout_seconds"):
+        with pytest.raises(ValidationError, match="timeout_seconds"):
             MockSkill(config=config)
 
     def test_get_metadata(self):

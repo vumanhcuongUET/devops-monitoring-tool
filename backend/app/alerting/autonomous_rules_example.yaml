@@ -1,0 +1,117 @@
+# Example Alert Rules with Autonomous Remediation
+# Phase 4: Autonomous Reliability
+
+# CrashLoopBackOff Pod Remediation
+- id: crashloop-pod-detection
+  name: CrashLoopBackOff Pod Detected
+  source: kubernetes
+  metric: pods_crashloop
+  condition: gt
+  threshold: 0
+  duration_seconds: 60
+  severity: warning
+  enabled: true
+  notify_slack: true
+  labels:
+    environment: development
+    project: example
+    restart_threshold: 5
+  # Phase 4: Autonomous Remediation Configuration
+  autonomous_action:
+    enabled: true
+    action_type: delete_crashloop_pod
+    auto_approve: true
+    max_executions_per_hour: 3
+    require_confirmation_for_risk: high
+    dry_run: false  # Set to true for testing
+    parameters:
+      namespace: default
+      restart_threshold: 5
+      # Optional: specific pod name (if not set, auto-detects all crashloop pods)
+      # pod_name: "specific-pod-name"
+      # Optional: label selector to filter pods
+      # label_selector: "app=backend"
+
+# High CPU Usage with Auto-scaling
+- id: high-cpu-usage
+  name: High CPU Usage
+  source: prometheus
+  metric: cpu_percent
+  condition: gt
+  threshold: 85
+  duration_seconds: 300
+  severity: warning
+  enabled: true
+  notify_slack: true
+  labels:
+    environment: development
+    project: example
+    deployment: my-app
+  autonomous_action:
+    enabled: true
+    action_type: scale_deployment
+    auto_approve: true
+    max_executions_per_hour: 2
+    require_confirmation_for_risk: medium
+    dry_run: true  # Test before enabling
+    parameters:
+      namespace: default
+      deployment: my-app
+      replicas: "+2"  # Scale up by 2
+      min_replicas: 1
+      max_replicas: 10
+
+# High Memory Usage with Auto-scaling
+- id: high-memory-usage
+  name: High Memory Usage
+  source: prometheus
+  metric: memory_percent
+  condition: gt
+  threshold: 85
+  duration_seconds: 300
+  severity: warning
+  enabled: true
+  notify_slack: true
+  labels:
+    environment: development
+    project: example
+    deployment: my-app
+  autonomous_action:
+    enabled: false  # Disabled by default, enable when ready
+    action_type: scale_deployment
+    auto_approve: true
+    max_executions_per_hour: 2
+    dry_run: true
+    parameters:
+      namespace: default
+      deployment: my-app
+      replicas: "+1"
+      min_replicas: 1
+      max_replicas: 10
+
+# APM Error Rate with Auto-rollback
+- id: high-apm-error-rate
+  name: High APM Error Rate
+  source: apm
+  metric: error_rate_percent
+  condition: gt
+  threshold: 10
+  duration_seconds: 180
+  severity: critical
+  enabled: true
+  notify_slack: true
+  notify_email: true
+  labels:
+    environment: staging
+    project: example
+    deployment: my-app
+  autonomous_action:
+    enabled: false  # Rollback is risky, keep disabled initially
+    action_type: rollback_deployment
+    auto_approve: false  # Requires approval even if enabled
+    max_executions_per_hour: 1
+    require_confirmation_for_risk: low
+    dry_run: true
+    parameters:
+      namespace: default
+      deployment: my-app

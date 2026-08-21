@@ -1,7 +1,7 @@
 """
 Unit tests for Alert Notifiers.
 
-Tests the notifier functionality including:
+Tests the notification functionality including:
 - Slack notifications
 - Email notifications
 - Webhook notifications
@@ -11,6 +11,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
+from app.alerting.notifiers import SlackNotifier, EmailNotifier, WebhookNotifier
+
 
 @pytest.mark.unit
 @pytest.mark.alerting
@@ -19,181 +21,190 @@ class TestNotifiers:
 
     @pytest.mark.asyncio
     async def test_slack_notifier_sends_message(self):
-        """Test that SlackNotifier sends a message to webhook."""
-        from app.alerting.notifiers import SlackNotifier
+        """Test Slack notifier sends message successfully."""
+        with patch("app.alerting.notifiers.settings.SLACK_WEBHOOK_URL", "https://hooks.slack.com/test"):
+            notifier = SlackNotifier()
 
-        mock_http_client = AsyncMock()
-        mock_http_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+            event = {
+                "rule_name": "Test Alert",
+                "severity": "warning",
+                "status": "firing",
+                "value": 100,
+                "threshold": 80,
+                "message": "Test message"
+            }
 
-        notifier = SlackNotifier(webhook_url="https://hooks.slack.com/test")
+            with patch("app.alerting.notifiers.is_url_allowed", return_value=True):
+                # Mock the httpx.AsyncClient context manager
+                mock_response = MagicMock()
+                mock_response.status_code = 200
 
-        result = await notifier.send(
-            message="Test alert message",
-            severity="warning"
-        )
+                with patch("httpx.AsyncClient") as mock_client_cls:
+                    mock_client_instance = MagicMock()
+                    mock_client_instance.post = AsyncMock(return_value=mock_response)
+                    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                    mock_client_instance.__aexit__ = AsyncMock()
+                    mock_client_cls.return_value = mock_client_instance
 
-        assert result is True
+                    result = await notifier.send(event)
+
+                    assert result is True
 
     @pytest.mark.asyncio
     async def test_slack_notifier_handles_failure(self):
-        """Test that SlackNotifier handles webhook failures."""
-        from app.alerting.notifiers import SlackNotifier
+        """Test Slack notifier handles send failure."""
+        with patch("app.alerting.notifiers.settings.SLACK_WEBHOOK_URL", "https://hooks.slack.com/test"):
+            notifier = SlackNotifier()
 
-        mock_http_client = AsyncMock()
-        mock_http_client.post = AsyncMock(
-            side_effect=httpx.RequestError("Connection failed")
-        )
+            event = {"rule_name": "Test", "severity": "warning"}
 
-        notifier = SlackNotifier(webhook_url="https://hooks.slack.com/test")
+            with patch("app.alerting.notifiers.is_url_allowed", return_value=True):
+                with patch("httpx.AsyncClient") as mock_client_cls:
+                    async def raise_error(*args, **kwargs):
+                        raise Exception("Network error")
 
-        with pytest.raises(httpx.RequestError):
-            await notifier.send(
-                message="Test alert message",
-                severity="critical"
-            )
+                    mock_client = MagicMock()
+                    mock_client.post = raise_error
+
+                    # Mock context manager properly
+                    mock_client_cm = MagicMock()
+                    mock_client_cm.__aenter__.return_value = mock_client
+                    mock_client_cm.__aexit__.return_value = None
+
+                    mock_client_cls.return_value = mock_client_cm
+
+                    result = await notifier.send(event)
+
+                    assert result is False
 
     @pytest.mark.asyncio
     async def test_email_notifier_sends_email(self):
-        """Test that EmailNotifier sends an email."""
-        from app.alerting.notifiers import EmailNotifier
+        """Test EmailNotifier sends email successfully."""
+        with patch("app.alerting.notifiers.settings.SMTP_HOST", "smtp.test.com"):
+            with patch("app.alerting.notifiers.settings.ALERT_EMAIL_TO", ["admin@test.com"]):
+                notifier = EmailNotifier()
 
-        mock_smtp = MagicMock()
-        with patch("smtplib.SMTP", return_value=mock_smtp):
-            notifier = EmailNotifier(
-                smtp_host="smtp.test.com",
-                smtp_port=587,
-                username="test@test.com",
-                password="testpass"
-            )
+                event = {
+                    "rule_name": "Test Alert",
+                    "status": "firing",
+                    "severity": "critical",
+                    "value": 95,
+                    "threshold": 90,
+                    "message": "High CPU usage"
+                }
 
-            result = await notifier.send(
-                to=["recipient@test.com"],
-                subject="Test Alert",
-                message="Test alert message"
-            )
+                with patch("smtplib.SMTP") as mock_smtp:
+                    mock_server = MagicMock()
+                    mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+                    mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
 
-            # Verify SMTP methods were called
-            mock_smtp.sendmail.assert_called_once()
+                    result = await notifier.send(event)
+
+                    assert result is True
+                    mock_server.sendmail.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_webhook_notifier_sends_post_request(self):
-        """Test that WebhookNotifier sends POST request."""
-        from app.alerting.notifiers import WebhookNotifier
+        """Test WebhookNotifier sends POST request."""
+        with patch("app.alerting.notifiers.settings.ALERT_WEBHOOK_URL", "https://webhook.test.com"):
+            notifier = WebhookNotifier()
 
-        mock_http_client = AsyncMock()
-        mock_http_client.post = AsyncMock(
-            return_value=MagicMock(status_code=200, text="OK")
-        )
+            event = {"rule_name": "Test", "severity": "warning"}
 
-        notifier = WebhookNotifier(
-            webhook_url="https://example.com/webhook",
-            http_client=mock_http_client
-        )
+            with patch("app.alerting.notifiers.is_url_allowed", return_value=True):
+                with patch("httpx.AsyncClient") as mock_client_cls:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
 
-        result = await notifier.send(
-            alert_data={
-                "rule_id": "test-rule-001",
-                "severity": "critical",
-                "message": "Test alert"
-            }
-        )
+                    mock_client_instance = MagicMock()
+                    mock_client_instance.post = AsyncMock(return_value=mock_response)
+                    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                    mock_client_instance.__aexit__ = AsyncMock()
+                    mock_client_cls.return_value = mock_client_instance
 
-        assert result is True
+                    result = await notifier.send(event)
+
+                    assert result is True
 
     @pytest.mark.asyncio
-    async def test_webhook_notifier_with_custom_headers(self):
-        """Test that WebhookNotifier sends custom headers."""
-        from app.alerting.notifiers import WebhookNotifier
+    async def test_webhook_notifier_handles_failure(self):
+        """Test WebhookNotifier handles failure gracefully."""
+        with patch("app.alerting.notifiers.settings.ALERT_WEBHOOK_URL", "https://webhook.test.com"):
+            notifier = WebhookNotifier()
 
-        mock_http_client = AsyncMock()
-        mock_http_client.post = AsyncMock(
-            return_value=MagicMock(status_code=200)
-        )
+            event = {"rule_name": "Test"}
 
-        notifier = WebhookNotifier(
-            webhook_url="https://example.com/webhook",
-            headers={"X-Custom-Header": "test-value"},
-            http_client=mock_http_client
-        )
+            with patch("app.alerting.notifiers.is_url_allowed", return_value=True):
+                with patch("httpx.AsyncClient") as mock_client_cls:
+                    async def raise_error(*args, **kwargs):
+                        raise Exception("HTTP error")
 
-        await notifier.send(alert_data={"test": "data"})
+                    mock_client = MagicMock()
+                    mock_client.post = raise_error
 
-        # Verify post was called
-        mock_http_client.post.assert_called_once()
+                    # Mock context manager properly
+                    mock_client_cm = MagicMock()
+                    mock_client_cm.__aenter__.return_value = mock_client
+                    mock_client_cm.__aexit__.return_value = None
+
+                    mock_client_cls.return_value = mock_client_cm
+
+                    result = await notifier.send(event)
+
+                    assert result is False
+
+    @pytest.mark.asyncio
+    async def test_slack_notifier_with_no_webhook_url(self):
+        """Test SlackNotifier returns False when no webhook URL configured."""
+        with patch("app.alerting.notifiers.settings.SLACK_WEBHOOK_URL", None):
+            notifier = SlackNotifier()
+            result = await notifier.send({"rule_name": "Test"})
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_email_notifier_with_no_smtp_config(self):
+        """Test EmailNotifier returns False when SMTP not configured."""
+        with patch("app.alerting.notifiers.settings.SMTP_HOST", None):
+            notifier = EmailNotifier()
+            result = await notifier.send({"rule_name": "Test"})
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_webhook_notifier_with_no_url(self):
+        """Test WebhookNotifier returns False when no URL configured."""
+        with patch("app.alerting.notifiers.settings.ALERT_WEBHOOK_URL", None):
+            notifier = WebhookNotifier()
+            result = await notifier.send({"rule_name": "Test"})
+            assert result is False
 
     @pytest.mark.asyncio
     async def test_slack_notifier_with_block_kit_format(self):
-        """Test that SlackNotifier can send Block Kit formatted messages."""
-        from app.alerting.notifiers import SlackNotifier
+        """Test SlackNotifier formats message with Block Kit."""
+        with patch("app.alerting.notifiers.settings.SLACK_WEBHOOK_URL", "https://hooks.slack.com/test"):
+            notifier = SlackNotifier()
 
-        mock_http_client = AsyncMock()
-        mock_http_client.post = AsyncMock(
-            return_value=MagicMock(status_code=200)
-        )
-
-        notifier = SlackNotifier(
-            webhook_url="https://hooks.slack.com/test",
-            http_client=mock_http_client
-        )
-
-        blocks = [
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "Test alert"}
+            event = {
+                "rule_name": "Critical Alert",
+                "severity": "critical",
+                "status": "firing",
+                "value": 99,
+                "threshold": 80,
+                "message": "System overload"
             }
-        ]
 
-        result = await notifier.send(
-            message="Test alert",
-            blocks=blocks
-        )
+            with patch("app.alerting.notifiers.is_url_allowed", return_value=True):
+                with patch("httpx.AsyncClient") as mock_client_cls:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
 
-        assert result is True
+                    mock_client_instance = MagicMock()
+                    mock_client_instance.post = AsyncMock(return_value=mock_response)
+                    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                    mock_client_instance.__aexit__ = AsyncMock()
+                    mock_client_cls.return_value = mock_client_instance
 
-    @pytest.mark.asyncio
-    async def test_email_notifier_with_multiple_recipients(self):
-        """Test that EmailNotifier can send to multiple recipients."""
-        from app.alerting.notifiers import EmailNotifier
+                    result = await notifier.send(event)
 
-        mock_smtp = MagicMock()
-        with patch("smtplib.SMTP", return_value=mock_smtp):
-            notifier = EmailNotifier(
-                smtp_host="smtp.test.com",
-                smtp_port=587,
-                username="test@test.com",
-                password="testpass"
-            )
-
-            await notifier.send(
-                to=["recipient1@test.com", "recipient2@test.com"],
-                subject="Test Alert",
-                message="Test alert message"
-            )
-
-            # Verify sendmail was called with multiple recipients
-            mock_smtp.sendmail.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_webhook_notifier_with_retries(self):
-        """Test that WebhookNotifier retries on failure."""
-        from app.alerting.notifiers import WebhookNotifier
-
-        mock_http_client = AsyncMock()
-        # First call fails, second succeeds
-        mock_http_client.post = AsyncMock(
-            side_effect=[
-                httpx.RequestError("Network error"),
-                MagicMock(status_code=200)
-            ]
-        )
-
-        notifier = WebhookNotifier(
-            webhook_url="https://example.com/webhook",
-            max_retries=2,
-            http_client=mock_http_client
-        )
-
-        result = await notifier.send(alert_data={"test": "data"})
-
-        # Should eventually succeed
-        assert result is True
+                    assert result is True
+                    # Verify the call was made
+                    mock_client_instance.post.assert_called_once()

@@ -7,6 +7,7 @@ from app.alerting.rules import load_rules
 from app.alerting.state import AlertStateTracker, AlertHistory
 from app.alerting.notifiers import SlackNotifier, EmailNotifier, WebhookNotifier
 from app.config import settings
+from app.actions.autonomous_executor import get_autonomous_executor
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,81 @@ class AlertEngine:
         if self._ws_manager:
             await self._ws_manager.broadcast({"type": "alert_fired", "data": event})
 
+        # Phase 4: Trigger autonomous remediation if configured
+        if rule.autonomous_action and rule.autonomous_action.get("enabled"):
+            await self._trigger_autonomous_remediation(rule, event)
+
+    async def _trigger_autonomous_remediation(self, rule, event: dict):
+        """Trigger autonomous remediation action.
+
+        Args:
+            rule: Alert rule that triggered
+            event: Alert event data
+        """
+        try:
+            from app.models.alerts import AlertEvent
+            from app.config import settings
+
+            # Create AlertEvent model
+            alert_event = AlertEvent(
+                id=event["id"],
+                rule_id=rule.id,
+                rule_name=rule.name,
+                severity=rule.severity,
+                status=event["status"],
+                value=event["value"],
+                threshold=rule.threshold,
+                message=event["message"],
+                timestamp=event["timestamp"],
+            )
+
+            # Get environment from labels or default
+            environment = rule.labels.get("environment", settings.ENVIRONMENT)
+
+            # Get autonomous executor and execute action
+            autonomous_executor = get_autonomous_executor()
+            result = await autonomous_executor.execute_autonomous_action(
+                alert_rule=rule,
+                alert_event=alert_event,
+                environment=environment,
+                dry_run=rule.autonomous_action.get("dry_run", False),
+            )
+
+            if result.success:
+                logger.info(
+                    f"Autonomous remediation executed successfully: "
+                    f"{rule.autonomous_action.get('action_type')} for {rule.name}"
+                )
+                # Broadcast success via WebSocket
+                if self._ws_manager:
+                    await self._ws_manager.broadcast({
+                        "type": "autonomous_action_executed",
+                        "data": {
+                            "alert_event_id": event["id"],
+                            "action_type": rule.autonomous_action.get("action_type"),
+                            "success": True,
+                            "message": result.stdout or "Action completed",
+                        }
+                    })
+            else:
+                logger.warning(
+                    f"Autonomous remediation failed: {result.error_message}"
+                )
+                # Broadcast failure via WebSocket
+                if self._ws_manager:
+                    await self._ws_manager.broadcast({
+                        "type": "autonomous_action_failed",
+                        "data": {
+                            "alert_event_id": event["id"],
+                            "action_type": rule.autonomous_action.get("action_type"),
+                            "success": False,
+                            "error": result.error_message,
+                        }
+                    })
+
+        except Exception as e:
+            logger.error(f"Failed to trigger autonomous remediation: {e}")
+
     async def _resolve(self, rule, value: float):
         self.state_tracker.set_resolved(rule.id)
         event = {
@@ -147,6 +223,20 @@ class AlertEngine:
         if rule.metric == "pods_failed":
             pods = await k8s.list_pods()
             return float(sum(1 for p in pods if p["status"] in ("Failed", "Unknown")))
+        if rule.metric == "pods_crashloop":
+            # Enhanced: Detect CrashLoopBackOff by restart count
+            pods = await k8s.list_pods()
+            restart_threshold = rule.labels.get("restart_threshold", 5)
+            crashloop_count = sum(
+                1 for p in pods
+                if p.get("restarts", 0) >= restart_threshold
+                or p["status"] in ("CrashLoopBackOff", "Error")
+            )
+            return float(crashloop_count)
+        if rule.metric == "pod_restart_count":
+            # Total restart count across all pods
+            pods = await k8s.list_pods()
+            return float(sum(p.get("restarts", 0) for p in pods))
         if rule.metric == "deployments_unavailable":
             deps = await k8s.list_deployments()
             return float(sum(1 for d in deps if d["available"] < d["replicas"]))

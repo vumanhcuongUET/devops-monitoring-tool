@@ -15,7 +15,8 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Request, HTTPException, Header
 
-from app.actions.engine import get_action_engine
+# Lazy import to avoid circular import with actions/engine
+# from app.actions.engine import get_action_engine
 from app.models.actions import ApproveActionRequest, RejectActionRequest
 from app.approvals.slack import get_slack_approval_notifier
 from app.config import settings
@@ -177,6 +178,8 @@ async def slack_approval_webhook(
         # Process the action based on button clicked
         action_type = payload.get("actions", [{}])[0].get("action_id", "")
 
+        # Lazy import to avoid circular import
+        from app.actions.engine import get_action_engine
         engine = get_action_engine()
         slack_notifier = get_slack_approval_notifier()
 
@@ -250,6 +253,9 @@ async def slack_approval_webhook(
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Slack payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid payload format")
+    except HTTPException:
+        # Re-raise HTTP exceptions with original status code
+        raise
     except Exception as e:
         logger.error(f"Error processing Slack webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))

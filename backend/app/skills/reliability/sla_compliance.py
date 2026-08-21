@@ -297,7 +297,7 @@ class SLAComplianceSkill(BaseSkill):
         if not current_compliance["latency"]["compliant"]:
             risks.append({
                 "type": "latency_sla_breach",
-                description="Latency SLA not being met",
+                "description": "Latency SLA not being met",
                 "severity": "medium",
             })
 
@@ -372,3 +372,28 @@ class SLAComplianceSkill(BaseSkill):
         """
         # No specific validation required
         return True, []
+
+
+    async def get_recommendations(
+        self,
+        analysis_id: str,
+        project: str,
+    ) -> list[Recommendation]:
+        """Get recommendations based on analysis results.
+
+        Args:
+            analysis_id: ID of previous analysis result
+            project: Project/service name
+
+        Returns:
+            List of recommendations
+        """
+        from app.skills.registry import get_skill_registry
+
+        registry = get_skill_registry()
+        result = registry.get_result(analysis_id)
+
+        if not result or not result.success:
+            return []
+
+        return result.recommendations or []

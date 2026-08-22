@@ -6,6 +6,9 @@ from app.skills.security.kube_bench import KubeBenchSkill
 from app.skills.security.misconfiguration_detector import MisconfigurationDetectorSkill
 from app.skills.security.dependency_confusion import DependencyConfusionSkill
 from app.skills.security.runtime_monitor import SecurityRuntimeMonitorSkill
+from app.skills.security.csp_analyzer import CSPAnalyzerSkill
+from app.skills.security.header_validator import HeaderValidatorSkill
+from app.skills.security.secret_exposure_scanner import SecretExposureScannerSkill
 
 __all__ = [
     "VulnerabilityScannerSkill",
@@ -14,4 +17,7 @@ __all__ = [
     "MisconfigurationDetectorSkill",
     "DependencyConfusionSkill",
     "SecurityRuntimeMonitorSkill",
+    "CSPAnalyzerSkill",
+    "HeaderValidatorSkill",
+    "SecretExposureScannerSkill",
 ]

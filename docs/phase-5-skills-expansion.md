@@ -2,11 +2,11 @@
 
 ## Overview
 
-Phase 5 introduces 13 operational components. To maximize their effectiveness, we propose adding **11 new skills** across 4 categories specifically designed to support Phase 5 objectives.
+Phase 5 introduces 13 operational components. To maximize their effectiveness, we propose adding **12 new skills** across 4 categories specifically designed to support Phase 5 objectives.
 
 **Current Skills**: 32 (Phase 3)
-**Proposed New Skills**: 11
-**Total After Phase 5**: 43 skills
+**Proposed New Skills**: 12
+**Total After Phase 5**: 44 skills
 
 ---
 
@@ -337,7 +337,7 @@ Phase 5 introduces 13 operational components. To maximize their effectiveness, w
 
 | Category | Phase 3 | Phase 5 New | Phase 5 Total |
 |----------|---------|--------------|---------------|
-| **Observability** | 3 | +4 | 7 |
+| **Observability** | 3 | +5 | 8 |
 | **Security** | 6 | +3 | 9 |
 | **Reliability** | 3 | +2 | 5 |
 | **Performance** | 0 | +2 | 2 |
@@ -345,8 +345,9 @@ Phase 5 introduces 13 operational components. To maximize their effectiveness, w
 | **Code** | 6 | 0 | 6 |
 | **FinOps** | 3 | 0 | 3 |
 | **Capacity** | 3 | 0 | 3 |
+| **Monitoring** | 3 | 0 | 3 |
 | **Compliance** | 2 | 0 | 2 |
-| **TOTAL** | **32** | **+11** | **43** |
+| **TOTAL** | **32** | **+12** | **44** |
 
 ---
 

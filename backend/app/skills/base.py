@@ -19,6 +19,8 @@ class SkillCategory(str, Enum):
     INCIDENT = "incident"
     RELIABILITY = "reliability"
     COMPLIANCE = "compliance"
+    OBSERVABILITY = "observability"  # Phase 5: Observability skills
+    PERFORMANCE = "performance"      # Phase 5: Performance skills
 
 
 class SkillPriority(str, Enum):

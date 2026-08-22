@@ -389,6 +389,7 @@ def discover_skills() -> None:
     import pkgutil
 
     from app.skills import finops, security, capacity, devops, code
+    from app.skills import observability, reliability, performance
 
     # Map category to module
     category_modules = {
@@ -397,6 +398,9 @@ def discover_skills() -> None:
         SkillCategory.CAPACITY: capacity,
         SkillCategory.DEVOPS: devops,
         SkillCategory.CODE: code,
+        SkillCategory.OBSERVABILITY: observability,
+        SkillCategory.RELIABILITY: reliability,
+        SkillCategory.PERFORMANCE: performance,
     }
 
     for category, module in category_modules.items():
@@ -515,7 +519,47 @@ def _initialize_registry():
         registry.register(GDPRAuditorSkill)
         registry.register(SOC2AuditorSkill)
 
-        logger.info("Skill registry initialized with all built-in skills")
+        # Register Phase 5: Observability skills
+        from app.skills.observability import (
+            MetricsAnalyzerSkill,
+            TracingAnalyzerSkill,
+            DashboardAuditorSkill,
+            AnomalyDetectorSkill,
+            SLOTrackerSkill as ObservabilitySLOTrackerSkill,
+        )
+        registry.register(MetricsAnalyzerSkill)
+        registry.register(TracingAnalyzerSkill)
+        registry.register(DashboardAuditorSkill)
+        registry.register(AnomalyDetectorSkill)
+        registry.register(ObservabilitySLOTrackerSkill)
+
+        # Register Phase 5: Security skills
+        from app.skills.security import (
+            CSPAnalyzerSkill,
+            HeaderValidatorSkill,
+            SecretExposureScannerSkill,
+        )
+        registry.register(CSPAnalyzerSkill)
+        registry.register(HeaderValidatorSkill)
+        registry.register(SecretExposureScannerSkill)
+
+        # Register Phase 5: Reliability skills
+        from app.skills.reliability import (
+            ScalingAnalyzerSkill,
+            DLQMonitorSkill,
+        )
+        registry.register(ScalingAnalyzerSkill)
+        registry.register(DLQMonitorSkill)
+
+        # Register Phase 5: Performance skills
+        from app.skills.performance import (
+            LoadTestAnalyzerSkill,
+            CircuitBreakerHealthSkill,
+        )
+        registry.register(LoadTestAnalyzerSkill)
+        registry.register(CircuitBreakerHealthSkill)
+
+        logger.info("Skill registry initialized with all built-in skills (44 total)")
 
     except ImportError as e:
         logger.warning(f"Failed to initialize some skills: {e}")

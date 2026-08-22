@@ -697,7 +697,175 @@
 
 ---
 
-## 9. COMPLIANCE SKILLS
+## 10. OBSERVABILITY SKILLS (Phase 5)
+
+### 10.1 Metrics & Tracing
+
+#### `observability_metrics_analyzer`
+**Mô tả**: Analyze Prometheus metrics for performance insights
+**Input**: Time range, metric patterns
+**Output**: Top slowest endpoints, error rate trends, resource utilization, SLO violations
+**Data Sources**: Prometheus API, `/api/v1/metrics`
+**Actions**:
+- Query rate, latency, error metrics
+- Calculate p50, p95, p99 percentiles
+- Identify SLO violations
+- Recommend alert thresholds
+
+#### `observability_tracing_analyzer`
+**Mô tả**: Analyze distributed traces to identify bottlenecks
+**Input**: Trace ID, service name, time range
+**Output**: Critical path analysis, slow service identification, timeout detection
+**Data Sources**: OpenTelemetry traces, Jaeger/OTLP collector
+**Actions**:
+- Query traces by service or operation
+- Calculate span durations
+- Visualize call graph
+- Identify dependency health issues
+
+#### `observability_dashboard_auditor`
+**Mô tả**: Audit Grafana dashboards for coverage and quality
+**Input**: Project/namespace scope
+**Output**: Missing dashboards, duplicate detection, coverage report
+**Data Sources**: Grafana API, dashboard definitions
+**Actions**:
+- List all dashboards
+- Check data source connectivity
+- Identify stale dashboards (no queries in 30d)
+- Recommend standard dashboard templates
+
+#### `observability_anomaly_detector`
+**Mô tả**: Detect anomalies in time-series metrics
+**Input**: Metric name, time window, sensitivity
+**Output**: Anomaly timeline, severity score, correlated events, root causes
+**Data Sources**: Prometheus metrics, historical baselines
+**Actions**:
+- Compare current vs baseline
+- Statistical analysis (z-score, IQR)
+- Identify sudden spikes/drops
+- Cross-metric correlation
+
+### 10.2 Observability Operations
+
+#### `observability_slo_tracker`
+**Mô tả**: Track SLO compliance and error budgets
+**Input**: SLO config, time range
+**Output**: SLO status, error budget remaining, breach probability
+**Data Sources**: SLO configs, metrics
+**Actions**:
+- Calculate SLO compliance
+- Track error budget remaining
+- Alert on budget exhaustion
+- Generate SLO reports
+
+---
+
+## 11. SECURITY SKILLS (Phase 5 Expansion)
+
+### 11.1 Advanced Security Analysis
+
+#### `security_csp_analyzer`
+**Mô tả**: Analyze and recommend Content Security Policy improvements
+**Input**: URL or deployment config, environment
+**Output**: Current CSP analysis, unsafe directives report, migration path to strict CSP
+**Data Sources**: Security headers, current CSP configuration
+**Actions**:
+- Parse current CSP headers
+- Detect `unsafe-inline`, `unsafe-eval`
+- Identify report-only violations
+- Generate production-ready CSP
+
+#### `security_secret_exposure_scanner`
+**Mô tả**: Advanced secret detection (enhancement over Phase 3)
+**Input**: Target (repo, image, cluster), scan depth
+**Output**: Exposed secrets report, secret risk score, rotation recommendations
+**Data Sources**: Git history, container images, K8s YAML, CI/CD variables
+**Actions**:
+- Scan git history for secrets
+- Check image manifests
+- Analyze K8s resources
+- Generate rotation commands
+
+#### `security_header_validator`
+**Mô tả**: Validate security headers across all endpoints
+**Input**: Base URL or endpoint list
+**Output**: Missing headers, misconfigured headers, compliance score (A-F)
+**Data Sources**: HTTP response headers, security middleware config
+**Actions**:
+- Check CSP, HSTS, X-Frame-Options, etc.
+- Verify best practices
+- Generate compliance score
+- Recommend header configurations
+
+---
+
+## 12. RELIABILITY SKILLS (Phase 5 Expansion)
+
+### 12.1 Scaling & Resilience
+
+#### `reliability_scaling_analyzer`
+**Mô tả**: Analyze HPA and scaling effectiveness
+**Input**: Deployment name, time range
+**Output**: Scaling event timeline, effectiveness score, cost optimization
+**Data Sources**: HPA metrics, deployment metrics, Prometheus metrics
+**Actions**:
+- Query HPA status and metrics
+- Analyze scaling patterns
+- Compare actual vs target replicas
+- Calculate cost of over-provisioning
+
+#### `reliability_dlq_monitor`
+**Mô tả**: Monitor and analyze Dead Letter Queue
+**Input**: Time range, action type filter
+**Output**: DLQ size trend, top failure reasons, retry success rate
+**Data Sources**: DLQ API, failed action logs
+**Actions**:
+- Query DLQ statistics
+- Categorize failure types
+- Identify retry patterns
+- Suggest prevention strategies
+
+#### `reliability_circuit_breaker_health`
+**Mô tả**: Monitor circuit breaker states and health
+**Input**: Service name, time range
+**Output**: Circuit state history, trip frequency, recovery time analysis
+**Data Sources**: Circuit breaker metrics, service health metrics
+**Actions**:
+- Query circuit breaker states
+- Analyze trip patterns
+- Calculate MTTR (Mean Time To Recovery)
+- Suggest threshold adjustments
+
+---
+
+## 13. PERFORMANCE SKILLS (Phase 5 - New Category)
+
+### 13.1 Load Testing & Profiling
+
+#### `performance_load_test_analyzer`
+**Mô tả**: Analyze load test results and establish baselines
+**Input**: Load test report file, baseline comparison
+**Output**: Performance report card, regression detection, bottleneck identification
+**Data Sources**: Locust/k6 results, historical performance data
+**Actions**:
+- Parse load test results
+- Compare against baselines
+- Identify performance degradation
+- Generate performance report
+
+#### `performance_profiling_analyzer`
+**Mô tả**: Profile code for performance issues and bottlenecks
+**Input**: Repository, profiling data
+**Output**: Performance bottlenecks, optimization targets, hotspots
+**Actions**:
+- Analyze profiling results
+- Identify slow functions
+- Suggest optimization strategies
+- Generate flame graphs
+
+---
+
+## 14. COMPLIANCE SKILLS
 
 ### 9.1 Regulatory Compliance
 
@@ -732,6 +900,27 @@
 
 ---
 
+## Skills Matrix Summary
+
+### Phase 3 vs Phase 5
+
+| Category | Phase 3 | Phase 5 New | Phase 5 Total |
+|----------|---------|--------------|---------------|
+| **Observability** | 3 | +5 | 8 |
+| **Security** | 6 | +3 | 9 |
+| **Reliability** | 3 | +2 | 5 |
+| **Performance** | 0 | +2 | 2 |
+| **DevOps** | 6 | 0 | 6 |
+| **Code** | 5 | 0 | 5 |
+| **FinOps** | 3 | 0 | 3 |
+| **Capacity** | 3 | 0 | 3 |
+| **Monitoring** | 3 | 0 | 3 |
+| **Incident** | 3 | 0 | 3 |
+| **Compliance** | 2 | 0 | 2 |
+| **TOTAL** | **32** | **+12** | **44** |
+
+---
+
 ## Skill Priority Matrix
 
 ### High Priority (Phase 3A - Weeks 1-4)
@@ -759,33 +948,71 @@
 - `incident_*` skills
 - Advanced finops skills
 
+### Phase 5 Priority (Observability & Reliability)
+- `observability_metrics_analyzer`
+- `observability_tracing_analyzer`
+- `reliability_scaling_analyzer`
+- `performance_load_test_analyzer`
+- `security_csp_analyzer`
+- `security_header_validator`
+- `observability_anomaly_detector`
+- `reliability_dlq_monitor`
+- `reliability_circuit_breaker_health`
+- `observability_dashboard_auditor`
+- `performance_profiling_analyzer`
+- `security_secret_exposure_scanner`
+- `observability_slo_tracker`
+
 ---
 
 ## Skill Implementation Order
 
-### Sprint 1 (Weeks 1-2): Core Security & Cost
+### Phase 3 - Sprint 1 (Weeks 1-2): Core Security & Cost
 1. `security_vulnerability_scanner`
 2. `security_secret_scanner`
 3. `finops_cost_analyzer`
 4. `finops_idle_resources`
 
-### Sprint 2 (Weeks 3-4): DevOps Fundamentals
+### Phase 3 - Sprint 2 (Weeks 3-4): DevOps Fundamentals
 5. `devops_deployment_health_check`
 6. `devops_resource_optimizer`
 7. `devops_config_drift_detector`
 8. `code_dependency_audit`
 
-### Sprint 3 (Weeks 5-6): Advanced Security & FinOps
+### Phase 3 - Sprint 3 (Weeks 5-6): Advanced Security & FinOps
 9. `security_kube_bench`
 10. `security_misconfiguration_detector`
 11. `finops_rightsizing`
 12. `capacity_planner`
 
-### Sprint 4 (Weeks 7-8): Monitoring & Reliability
+### Phase 3 - Sprint 4 (Weeks 7-8): Monitoring & Reliability
 13. `monitoring_alert_optimizer`
 14. `reliability_slo_tracker`
 15. `devops_hpa_analyzer`
 16. `monitoring_sli_calculator`
+
+### Phase 5 - Sprint 1 (Weeks 1-2): Observability Skills
+17. `observability_metrics_analyzer` - Support Prometheus metrics
+18. `observability_tracing_analyzer` - Support OpenTelemetry
+19. `observability_slo_tracker` - Enhanced SLO tracking
+
+### Phase 5 - Sprint 2 (Weeks 3): Security Skills
+20. `security_csp_analyzer` - Support CSP enhancement
+21. `security_header_validator` - Validate security headers
+22. `security_secret_exposure_scanner` - Enhanced secret scanning
+
+### Phase 5 - Sprint 3 (Weeks 4-5): Reliability Skills
+23. `reliability_scaling_analyzer` - Support HPA
+24. `reliability_dlq_monitor` - Support DLQ
+25. `reliability_circuit_breaker_health` - Circuit breaker monitoring
+
+### Phase 5 - Sprint 4 (Weeks 6): Performance Skills
+26. `performance_load_test_analyzer` - Support load testing
+27. `performance_profiling_analyzer` - Code profiling support
+
+### Phase 5 - Sprint 5 (Weeks 7-8): Advanced Observability
+28. `observability_dashboard_auditor` - Dashboard coverage
+29. `observability_anomaly_detector` - Anomaly detection
 
 ---
 

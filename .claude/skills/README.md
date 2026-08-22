@@ -184,6 +184,27 @@ The directory also contains project-specific development skills:
 
 ---
 
-**Last Updated**: 2026-08-18
-**Version**: 1.0.0
+## 🌟 Phase 5 Skills (New - 2026-08-22)
+
+### Observability & Performance Skills
+
+14. **`observability.md`** - Metrics, traces, dashboards, anomaly detection
+15. **`perf.md`** - Performance analysis, load testing, profiling
+16. **`k8s.md`** - Kubernetes & GitOps operations (HPA, ServiceMonitor, manifests)
+17. **`reliability.md`** - Scaling analysis, DLQ monitoring, circuit breakers
+18. **`security.md`** - CSP analysis, security headers, secret scanning
+
+These skills add specialized capabilities for:
+- ✅ Kubernetes operations and GitOps workflows
+- ✅ Performance profiling and bottleneck detection
+- ✅ Observability metrics and distributed tracing
+- ✅ Reliability analysis (HPA, DLQ, circuit breakers)
+- ✅ Advanced security analysis (CSP, headers, secrets)
+
+**Total Skills**: 18 (11 security/DevOps + 7 development + 5 Phase 5)
+
+---
+
+**Last Updated**: 2026-08-22
+**Version**: 1.1.0
 **Maintainer**: DevOps Team

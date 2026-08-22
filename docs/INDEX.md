@@ -40,6 +40,9 @@
 - [Phase 4 Implementation Summary](phase-4-implementation-summary.md) - 14 autonomous remediation actions
 - [Phase 4 Expansion Plan](phase-4-expansion-plan.md) - Complete action catalog
 
+### Phase 5: Observability & Operational Excellence ⏳
+- [Phase 5 Plan](phase-5-observability-reliability.md) - Observability, security hardening, CI/CD
+
 ---
 
 ## 🔒 Security & Governance
@@ -97,6 +100,7 @@ Documentation for AI agent workflows and operations:
 | **Phase 2** | ✅ Complete | Human-in-the-loop Actions System |
 | **Phase 3** | ✅ Complete | Governance & Advanced Skills |
 | **Phase 4** | ✅ Complete | Autonomous Reliability (14 actions) |
+| **Phase 5** | ⏳ Planning | Observability & Operational Excellence |
 | **Security Review** | ✅ Approved | Production-ready (Aug 2026) |
 
 ---

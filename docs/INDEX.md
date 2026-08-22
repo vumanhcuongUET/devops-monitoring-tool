@@ -42,6 +42,7 @@
 
 ### Phase 5: Observability & Operational Excellence ⏳
 - [Phase 5 Plan](phase-5-observability-reliability.md) - Observability, security hardening, CI/CD
+- [Skills Expansion Proposal](phase-5-skills-expansion.md) - 11 new skills proposal (43 total)
 
 ---
 

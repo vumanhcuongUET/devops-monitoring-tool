@@ -39,7 +39,12 @@
       "Bash(git log *)",
       "Bash(git branch *)",
       "Bash(git *)",
-      "Bash(xargs -n1 basename)"
+      "Bash(xargs -n1 basename)",
+      "Bash(python -m app.services.baseline_measurement)",
+      "Bash(python -m pytest app/services/__tests__/test_token_optimizer.py -v --tb=short)",
+      "Bash(python -m pytest app/services/__tests__/test_anomaly_detector_enhanced.py -v)",
+      "Bash(python -m pytest app/services/__tests__/test_token_optimizer.py -v)",
+      "Bash(python *)"
     ]
   }
 }

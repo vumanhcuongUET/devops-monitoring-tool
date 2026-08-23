@@ -64,6 +64,20 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"  # Default model (Sonnet 4)
     AI_MAX_TOKENS: int = 4096  # Max tokens for LLM response
 
+    # Phase 6: AI Input Optimization
+    OPTIMIZATION_ENABLED: bool = True  # Enable token optimization
+    OPTIMIZATION_DEFAULT_BUDGET: int = 2000  # Default token budget
+    OPTIMIZATION_FALLBACK_ON_ERROR: bool = True  # Fallback to baseline on error
+    OPTIMIZATION_ANOMALY_CPU_HIGH: float = 80.0  # CPU threshold for anomaly
+    OPTIMIZATION_ANOMALY_CPU_LOW: float = 20.0
+    OPTIMIZATION_ANOMALY_MEMORY_HIGH: float = 85.0
+    OPTIMIZATION_ANOMALY_DISK_HIGH: float = 90.0
+    OPTIMIZATION_LOG_SAMPLING_CRITICAL: int = 5  # Critical log quota
+    OPTIMIZATION_LOG_SAMPLING_ERROR: int = 10  # Error log quota
+    OPTIMIZATION_LOG_SAMPLING_WARNING: int = 10  # Warning log quota
+    OPTIMIZATION_LOG_SAMPLING_INFO: int = 5  # Info log quota
+    OPTIMIZATION_MAX_RESULTS_PER_SOURCE: int = 20  # Max results per data source
+
     # SLO Reporting
     SLO_REPORT_ENABLED: bool = True
     SLO_REPORT_HOUR: int = 9

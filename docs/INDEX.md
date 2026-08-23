@@ -1,7 +1,7 @@
 # DevOps AI Agentics 2026 - Documentation Index
 
-**Last Updated**: 2026-08-22
-**Current Phase**: Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 5 🔄 IN PROGRESS
+**Last Updated**: 2026-08-23
+**Current Phase**: Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 5 ✅ COMPLETE | Phase 6 📋 PLANNING
 
 ---
 
@@ -44,6 +44,31 @@
 - [Phase 5 Plan](phase-5-observability-reliability.md) - Observability, security hardening, CI/CD
 - [Skills Expansion Proposal](phase-5-skills-expansion.md) - 12 new skills proposal (44 total)
 - [Skills Summary](phase-5-skills-summary.md) - Claude Code skills documentation
+
+### Phase 6: AI Input Optimization & Cost Efficiency 📋 PLANNING
+- [Phase 6 Complete Plan](phase-6-complete-plan.md) - **MASTER PLAN** - All 20 days across 4 sprints
+- [Phase 6 Implementation Plan](phase-6-implementation-plan.md) - Detailed 4-week sprint plan with daily tasks
+
+**Sprint 1: Foundation & Core Optimization (Days 1-5)**
+- [Sprint 1 Daily Plans](phase-6-sprint1-daily-plans.md) - Sprint 1 overview
+- [Day 1 Summary](phase-6-sprint1-day1-summary.md) - Setup & baseline measurement ✅ COMPLETE
+- [Day 2 Detailed Plan](phase-6-day2-detailed-plan.md) - Anomaly detection refinement
+- [Day 3 Detailed Plan](phase-6-day3-detailed-plan.md) - Smart sampling enhancement
+- [Day 4 Detailed Plan](phase-6-day4-detailed-plan.md) - Time series compression
+- [Day 5 Detailed Plan](phase-6-day5-detailed-plan.md) - Core integration & Sprint 1 completion
+
+**Sprint 2: Quality Assurance & Validation (Days 6-10)**
+- [Sprint 2 Overview](phase-6-sprint2-overview.md) - Quality gates, A/B testing
+- [Sprint 2 Days 7-10](phase-6-sprint2-days7-10.md) - Days 7-10 combined plan
+- [Day 6 Detailed Plan](phase-6-day6-detailed-plan.md) - Accuracy validator implementation
+
+**Sprint 3: Intelligence & Adaptation (Days 11-15)**
+- [Sprint 3 Overview](phase-6-sprint3-overview.md) - Advanced intelligence features
+- [Sprint 3 Days 11-15](phase-6-sprint3-days11-15.md) - Days 11-15 combined plan
+
+**Sprint 4: Analytics & Production Rollout (Days 16-20)**
+- [Sprint 4 Overview](phase-6-sprint4-overview.md) - Production deployment
+- [Sprint 4 Days 16-20](phase-6-sprint4-days16-20.md) - Days 16-20 combined plan
 
 ---
 
@@ -102,7 +127,8 @@ Documentation for AI agent workflows and operations:
 | **Phase 2** | ✅ Complete | Human-in-the-loop Actions System |
 | **Phase 3** | ✅ Complete | Governance & Advanced Skills (32 skills) |
 | **Phase 4** | ✅ Complete | Autonomous Reliability (14 actions) |
-| **Phase 5** | 🔄 In Progress | Observability & Operational Excellence (45 skills) |
+| **Phase 5** | ✅ Complete | Observability & Operational Excellence (44 skills) |
+| **Phase 6** | 🔄 In Progress (Day 2) | AI Input Optimization & Cost Efficiency (20 days, 4 sprints) |
 | **Security Review** | ✅ Approved | Production-ready (Aug 2026) |
 
 ---

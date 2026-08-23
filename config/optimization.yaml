@@ -1,0 +1,53 @@
+# Phase 6 Optimization Configuration
+# Token optimization settings for AI input optimization
+
+optimization:
+  enabled: true
+  fallback_on_error: true
+  default_budget: 2000
+
+  # Anomaly detection thresholds
+  anomaly_detection:
+    enabled: true
+    cpu_high: 80.0
+    cpu_low: 20.0
+    memory_high: 85.0
+    disk_high: 90.0
+    error_rate_high: 5.0
+
+  # Smart sampling quotas
+  smart_sampling:
+    enabled: true
+    critical: 5
+    error: 10
+    warning: 10
+    info: 5
+
+  # Time series compression
+  time_series_compression:
+    enabled: true
+    include_percentiles: true
+    include_trend: true
+    include_minmax: true
+
+  # Relevance filtering
+  relevance_filtering:
+    enabled: true
+    min_relevance_score: 0.3
+    max_results_per_source: 20
+
+  # Quality validation
+  quality:
+    validate_accuracy: true
+    min_recall: 0.90
+    min_precision: 0.85
+    ab_test_enabled: true
+    ab_test_ratio: 0.1
+
+  # Token budgets by severity
+  budgets:
+    critical: 3000
+    high: 2500
+    medium: 2000
+    low: 1500
+    info: 1000

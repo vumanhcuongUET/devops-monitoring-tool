@@ -3,11 +3,24 @@ Time Series Compressor Service - Compress time-series data to key statistics.
 
 This module converts raw time-series data into percentile-based summaries,
 reducing token usage by ~90% while preserving trends and outliers.
+
+Phase 6: AI Input Optimization & Cost Efficiency
+Enhanced for Day 4: Advanced trend detection and compression
 """
 
 from typing import Any, List, Dict, Optional
 from dataclasses import dataclass
+from enum import Enum
 import numpy as np
+
+
+class Trend(str, Enum):
+    """Trend states (NEW for Day 4)."""
+    INCREASING = "increasing"
+    DECREASING = "decreasing"
+    STABLE = "stable"
+    VOLATILE = "volatile"
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -267,3 +280,132 @@ class TimeSeriesCompressor:
         parts.append(f"volatility={'high' if stats.std > stats.mean * 0.3 else 'low'}")
 
         return " ".join(parts)
+
+    # ========== Day 4: Enhanced Trend Detection & Compression ==========
+
+    def detect_trend(
+        self,
+        values: List[float],
+        window_size: int = 5
+    ) -> str:
+        """
+        Detect trend using moving average (NEW for Day 4).
+
+        Algorithm:
+        1. Calculate moving average
+        2. Compare first vs last MA
+        3. Check volatility (std/mean ratio)
+        4. Classify trend
+
+        Args:
+            values: List of numeric values
+            window_size: Moving average window
+
+        Returns:
+            Trend state: 'increasing', 'decreasing', 'stable', 'volatile', 'unknown'
+        """
+        if len(values) < window_size:
+            return Trend.UNKNOWN.value
+
+        try:
+            # Convert to numpy array
+            arr = np.array(values)
+
+            # Calculate moving averages
+            ma_values = []
+            for i in range(len(arr) - window_size + 1):
+                window = arr[i:i + window_size]
+                ma_values.append(np.mean(window))
+
+            if len(ma_values) < 2:
+                return Trend.UNKNOWN.value
+
+            # Calculate volatility
+            std = np.std(ma_values)
+            mean = np.mean(ma_values)
+
+            if mean > 0:
+                volatility_ratio = std / mean
+            else:
+                volatility_ratio = float('inf') if std > 0 else 0
+
+            # High volatility → volatile trend
+            if volatility_ratio > 0.3:
+                return Trend.VOLATILE.value
+
+            # Compare first and last moving averages
+            first_ma = ma_values[0]
+            last_ma = ma_values[-1]
+
+            # Calculate percent change
+            if first_ma > 0:
+                change_pct = (last_ma - first_ma) / abs(first_ma)
+            else:
+                change_pct = 0
+
+            # Classify trend
+            if change_pct > 0.1:  # >10% increase
+                return Trend.INCREASING.value
+            elif change_pct < -0.1:  # >10% decrease
+                return Trend.DECREASING.value
+            else:
+                return Trend.STABLE.value
+        except Exception:
+            return Trend.UNKNOWN.value
+
+    def compress_values(self, values: List[float], metric_name: str = "metric") -> dict:
+        """
+        Compress values to key statistics (NEW for Day 4).
+
+        Returns:
+            {
+                "metric": str,
+                "current": float,
+                "p50": float,
+                "p90": float,
+                "p95": float,
+                "p99": float,
+                "min": float,
+                "max": float,
+                "trend": str,
+                "volatility": float,
+                "sample_count": int
+            }
+        """
+        if not values:
+            return self._empty_result(metric_name)
+
+        try:
+            arr = np.array(values)
+
+            return {
+                "metric": metric_name,
+                "current": float(arr[-1]) if len(arr) > 0 else 0.0,
+                "p50": float(np.percentile(arr, 50)),
+                "p90": float(np.percentile(arr, 90)),
+                "p95": float(np.percentile(arr, 95)),
+                "p99": float(np.percentile(arr, 99)),
+                "min": float(np.min(arr)),
+                "max": float(np.max(arr)),
+                "trend": self.detect_trend(values),
+                "volatility": float(np.std(arr)) if len(arr) > 1 else 0.0,
+                "sample_count": len(arr)
+            }
+        except Exception:
+            return self._empty_result(metric_name)
+
+    def _empty_result(self, metric_name: str) -> dict:
+        """Return empty result structure (NEW for Day 4)."""
+        return {
+            "metric": metric_name,
+            "current": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "trend": Trend.UNKNOWN.value,
+            "volatility": 0.0,
+            "sample_count": 0
+        }

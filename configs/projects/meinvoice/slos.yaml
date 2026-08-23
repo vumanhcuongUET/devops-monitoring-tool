@@ -1,0 +1,128 @@
+# MeInvoice SLO Configurations
+
+slos:
+  - slo_name: api_availability
+    service: meinvoice-api
+    description: "API availability SLO - percentage of successful requests"
+    objectives:
+      - name: successful_requests
+        target: 99.9
+        window:
+          duration: 30d
+          rolling: true
+    error_budget:
+      enabled: true
+      alert_threshold: 10
+    sli:
+      source: elasticsearch
+      query: |
+        {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                {"range": {"@timestamp": {"gte": "now-30d"}}},
+                {"term": {"service.name": "meinvoice-api"}}
+              ]
+            }
+          },
+          "aggs": {
+            "total": {"value_count": {"field": "transaction.id"}},
+            "errors": {
+              "filter": {
+                "term": {"transaction.result": "failure"}
+              }
+            }
+          }
+        }
+    metadata:
+      owner: "API Team"
+      team: "Platform"
+      tags:
+        - availability
+        - critical
+
+  - slo_name: api_latency
+    service: meinvoice-api
+    description: "API latency SLO - P95 response time"
+    objectives:
+      - name: p95_latency_target
+        target: 95
+        window:
+          duration: 7d
+          rolling: true
+    sli:
+      source: elasticsearch
+      query: |
+        {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                {"range": {"@timestamp": {"gte": "now-7d"}}},
+                {"term": {"service.name": "meinvoice-api"}}
+              ]
+            }
+          },
+          "aggs": {
+            "latency_percentiles": {
+              "percentiles": {
+                "field": "transaction.duration.value",
+                "percents": [95.0]
+              }
+            }
+          }
+        }
+    metadata:
+      owner: "API Team"
+      team: "Platform"
+      tags:
+        - latency
+        - performance
+
+  - slo_name: billing_process_availability
+    service: meinvoice-billing
+    description: "Billing process availability - percentage of successful billing runs"
+    objectives:
+      - name: billing_success_rate
+        target: 99.95
+        window:
+          duration: 30d
+          rolling: true
+    error_budget:
+      enabled: true
+      alert_threshold: 5
+    sli:
+      source: prometheus
+      query: |
+        (rate(billing_jobs_total{status="success"}[30d]) /
+         rate(billing_jobs_total[30d])) * 100
+    metadata:
+      owner: "Billing Team"
+      team: "Finance"
+      tags:
+        - billing
+        - critical
+        - financial
+
+  - slo_name: database_query_latency
+    service: meinvoice-db
+    description: "Database query latency - P95 query time"
+    objectives:
+      - name: query_p95_latency
+        target: 90
+        window:
+          duration: 7d
+          rolling: true
+    sli:
+      source: prometheus
+      query: |
+        histogram_quantile(0.95,
+          rate(db_query_duration_seconds_bucket{service="meinvoice"}[7d])
+        ) * 1000
+    metadata:
+      owner: "Database Team"
+      team: "Platform"
+      tags:
+        - database
+        - latency

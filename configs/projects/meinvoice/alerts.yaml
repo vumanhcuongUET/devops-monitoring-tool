@@ -1,0 +1,76 @@
+# MeInvoice Alert Rules
+
+alerts:
+  - name: high_error_rate
+    description: "Alert when error rate exceeds 1%"
+    enabled: true
+    severity: critical
+    condition:
+      metric: 'rate(http_requests_total{status=~"5.."}[5m])'
+      threshold: 0.01
+      operator: '>'
+      duration: 5m
+    actions:
+      - type: slack
+        target: "#meinvoice-alerts"
+      - type: pagerduty
+        target: "meincident-oncall"
+    cooldown: 15m
+
+  - name: high_latency_p95
+    description: "Alert when P95 latency exceeds 2 seconds"
+    enabled: true
+    severity: high
+    condition:
+      metric: 'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))'
+      threshold: 2.0
+      operator: '>'
+      duration: 10m
+    actions:
+      - type: slack
+        target: "#meinvoice-alerts"
+    cooldown: 30m
+
+  - name: pod_crash_looping
+    description: "Alert when pods are crash looping"
+    enabled: true
+    severity: critical
+    condition:
+      metric: 'kube_pod_container_status_restarts_total{namespace="meinvoice-prod"}'
+      threshold: 5
+      operator: '>'
+      duration: 5m
+    actions:
+      - type: pagerduty
+        target: "platform-oncall"
+      - type: slack
+        target: "#platform-alerts"
+    cooldown: 10m
+
+  - name: disk_space_low
+    description: "Alert when disk space exceeds 80%"
+    enabled: true
+    severity: warning
+    condition:
+      metric: '(1 - node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100'
+      threshold: 80
+      operator: '>'
+      duration: 5m
+    actions:
+      - type: slack
+        target: "#meinvoice-alerts"
+    cooldown: 1h
+
+  - name: memory_usage_high
+    description: "Alert when memory usage exceeds 90%"
+    enabled: true
+    severity: high
+    condition:
+      metric: 'container_memory_usage_bytes / container_spec_memory_limit_bytes * 100'
+      threshold: 90
+      operator: '>'
+      duration: 5m
+    actions:
+      - type: slack
+        target: "#meinvoice-alerts"
+    cooldown: 30m

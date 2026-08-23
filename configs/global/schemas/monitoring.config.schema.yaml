@@ -1,0 +1,104 @@
+# Monitoring Configuration Schema
+type: object
+properties:
+  metrics:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      port:
+        type: integer
+        minimum: 1024
+        maximum: 65535
+        default: 9090
+        description: Prometheus metrics port
+      path:
+        type: string
+        default: /metrics
+        description: Metrics endpoint path
+
+  tracing:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: false
+      provider:
+        type: string
+        enum:
+          - jaeger
+          - zipkin
+          - otel
+        description: Tracing backend provider
+      endpoint:
+        type: string
+        format: uri
+        description: Tracing collector endpoint
+      sample_rate:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.1
+        description: Sampling rate (0-1)
+
+  logging:
+    type: object
+    properties:
+      level:
+        type: string
+        enum:
+          - DEBUG
+          - INFO
+          - WARNING
+          - ERROR
+          - CRITICAL
+        default: INFO
+      format:
+        type: string
+        enum:
+          - json
+          - text
+        default: json
+      output:
+        type: string
+        enum:
+          - stdout
+          - file
+          - both
+        default: stdout
+      file_path:
+        type: string
+        description: Log file path (if output is file or both)
+
+  profiling:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: false
+      port:
+        type: integer
+        minimum: 1024
+        maximum: 65535
+        description: Profiling port
+
+  dashboards:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      grafana:
+        type: object
+        properties:
+          url:
+            type: string
+            format: uri
+          api_key:
+            type: string
+          dashboards:
+            type: array
+            items:
+              type: string
+            description: List of dashboard IDs to sync

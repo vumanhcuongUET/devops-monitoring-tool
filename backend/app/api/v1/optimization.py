@@ -1,282 +1,355 @@
 """
-Optimization API - Endpoints for optimization metrics and control.
+Optimization API Endpoints - Phase 7 Sprint 3
 
-Provides REST API for tracking optimization performance and tuning parameters.
+Purpose: Expose optimization features via REST API
 
-Phase 6: AI Input Optimization - Sprint 4
+Endpoints:
+- GET /api/v1/optimization/profiler/stats - Get query profiler statistics
+- GET /api/v1/optimization/profiler/recent - Get recent query profiles
+- DELETE /api/v1/optimization/profiler/reset - Reset profiler statistics
+- GET /api/v1/optimization/pools/stats - Get connection pool statistics
+- GET /api/v1/optimization/pools/health - Get connection pool health
+- GET /api/v1/optimization/patterns/list - List available query patterns
+- POST /api/v1/optimization/patterns/get - Get a specific query pattern
+- GET /api/v1/optimization/rate-limiter/stats - Get rate limiter statistics
 """
 
-from fastapi import APIRouter, HTTPException, status
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+import logging
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel, Field
 
-from app.analytics.token_tracker import TokenTracker
-from app.quality.ab_tester import ABTester, get_ab_tester
-from app.quality.accuracy_validator import get_accuracy_validator
+from app.optimization import (
+    QueryOptimizer,
+    QueryPatternLibrary,
+    ConnectionPoolManager,
+    RateLimiter
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/optimization", tags=["optimization"])
+
+# Global instances (injected at startup)
+query_optimizer: Optional[QueryOptimizer] = None
+pool_manager: Optional[ConnectionPoolManager] = None
+rate_limiter: Optional[RateLimiter] = None
 
 
-router = APIRouter(prefix="/api/v1/optimization", tags=["optimization"])
+def set_optimization_instances(
+    q_optimizer: QueryOptimizer,
+    p_manager: ConnectionPoolManager,
+    r_limiter: RateLimiter
+):
+    """Inject optimization instances at startup."""
+    global query_optimizer, pool_manager, rate_limiter
+    query_optimizer = q_optimizer
+    pool_manager = p_manager
+    rate_limiter = r_limiter
 
 
-# Request/Response Models
-class OptimizationStatsResponse(BaseModel):
-    """Response model for optimization statistics."""
-    total_optimizations: int
-    avg_reduction_pct: float
-    total_tokens_saved: int
-    avg_processing_time_ms: float
-    fallback_rate: float
-    by_incident_type: Dict[str, Any]
-    by_severity: Dict[str, Any]
-    recent_sample: list
+# Pydantic Models
+
+class ProfilerStatsResponse(BaseModel):
+    """Response model for profiler statistics."""
+    total_queries: int
+    cache_hits: int
+    total_time_ms: float
+    total_results: int
+    avg_time_ms: float
+    avg_results: float
+    cache_hit_rate: float
 
 
-class AccuracyMetricsResponse(BaseModel):
-    """Response model for accuracy metrics."""
-    avg_recall: float
-    avg_precision: float
-    avg_severity_accuracy: float
-    total_validations: int
+class QueryProfileResponse(BaseModel):
+    """Response model for a query profile."""
+    query_type: str
+    source: str
+    function_name: str
+    execution_time_ms: float
+    result_count: int
+    cache_hit: bool
+    chunk_count: int
+    timestamp: str
 
 
-class ABTestStatsResponse(BaseModel):
-    """Response model for A/B test statistics."""
-    total_tests: int
-    baseline_wins: int
-    optimized_wins: int
-    win_rate_optimized: float
-    avg_token_reduction_pct: float
-    avg_processing_time_diff_ms: float
-    avg_finding_recall: float
-    avg_finding_precision: float
+class PoolStatsResponse(BaseModel):
+    """Response model for pool statistics."""
+    pool_name: str
+    pool_type: str
+    total_connections: int
+    active_connections: int
+    idle_connections: int
+    waiting_requests: int
+    utilization_percent: float
+    avg_acquire_time_ms: float
 
 
-class TuningRequest(BaseModel):
-    """Request model for parameter tuning."""
-    anomaly_cpu_high: Optional[float] = None
-    anomaly_memory_high: Optional[float] = None
-    log_sampling_critical: Optional[int] = None
-    log_sampling_error: Optional[int] = None
-    min_relevance_score: Optional[float] = None
-    max_results_per_source: Optional[int] = None
+class PoolHealthResponse(BaseModel):
+    """Response model for pool health."""
+    total_pools: int
+    healthy_pools: int
+    pools: Dict[str, Dict[str, Any]]
 
 
-class TuningResponse(BaseModel):
-    """Response model for parameter tuning."""
-    success: bool
-    message: str
-    updated_params: Dict[str, Any]
+class PatternListResponse(BaseModel):
+    """Response model for pattern list."""
+    patterns: Dict[str, List[str]]
+    total_patterns: int
 
 
-# Initialize components
-token_tracker = TokenTracker()
-ab_tester: Optional[ABTester] = None
+class PatternGetRequest(BaseModel):
+    """Request model for getting a pattern."""
+    category: str = Field(..., description="Pattern category (error, performance, resource, etc.)")
+    pattern_name: str = Field(..., description="Pattern name")
+    kwargs: Dict[str, Any] = Field(default={}, description="Pattern arguments")
 
 
-@router.get("/stats", response_model=OptimizationStatsResponse)
-async def get_optimization_stats(
-    limit: int = 100,
-    hours: int = 24
-) -> OptimizationStatsResponse:
+class RateLimiterStatsResponse(BaseModel):
+    """Response model for rate limiter statistics."""
+    total_requests: int
+    allowed_requests: int
+    rejected_requests: int
+    rejection_rate: float
+    endpoint_stats: Dict[str, Dict[str, int]]
+    active_buckets: int
+
+
+# Endpoints
+
+@router.get("/profiler/stats", response_model=ProfilerStatsResponse)
+async def get_profiler_stats():
     """
-    Get optimization statistics.
+    Get query profiler statistics.
 
-    Args:
-        limit: Maximum number of recent samples to return
-        hours: Time window in hours (default: 24)
-
-    Returns:
-        Optimization statistics including token savings, processing time, etc.
+    Returns aggregated statistics about query performance including
+    execution times, cache hit rates, and result counts.
     """
-    since = datetime.now() - timedelta(hours=hours)
-    stats = token_tracker.get_stats(limit=limit, since=since)
+    if not query_optimizer:
+        raise HTTPException(status_code=503, detail="Query optimizer not initialized")
 
-    return OptimizationStatsResponse(**stats)
+    stats = query_optimizer.get_profiler_stats()
+
+    return ProfilerStatsResponse(
+        total_queries=stats.get("total_queries", 0),
+        cache_hits=stats.get("cache_hits", 0),
+        total_time_ms=stats.get("total_time_ms", 0),
+        total_results=stats.get("total_results", 0),
+        avg_time_ms=stats.get("avg_time_ms", 0),
+        avg_results=stats.get("avg_results", 0),
+        cache_hit_rate=stats.get("cache_hit_rate", 0)
+    )
 
 
-@router.get("/accuracy", response_model=AccuracyMetricsResponse)
-async def get_accuracy_metrics() -> AccuracyMetricsResponse:
+@router.get("/profiler/recent", response_model=List[QueryProfileResponse])
+async def get_recent_profiles(
+    limit: int = Query(10, ge=1, le=100, description="Number of recent profiles to return")
+):
     """
-    Get accuracy metrics from validation history.
+    Get recent query profiles.
 
-    Returns:
-        Average recall, precision, and severity accuracy
+    Returns the most recent query executions with detailed
+    performance information.
     """
-    validator = get_accuracy_validator()
-    metrics = validator.get_aggregate_metrics()
+    if not query_optimizer:
+        raise HTTPException(status_code=503, detail="Query optimizer not initialized")
 
-    return AccuracyMetricsResponse(**metrics)
+    profiles = query_optimizer.profiler.get_recent_profiles(limit)
+
+    return [
+        QueryProfileResponse(
+            query_type=p["query_type"],
+            source=p["source"],
+            function_name=p["function_name"],
+            execution_time_ms=p["execution_time_ms"],
+            result_count=p["result_count"],
+            cache_hit=p["cache_hit"],
+            chunk_count=p.get("chunk_count", 1),
+            timestamp=p["timestamp"]
+        )
+        for p in profiles
+    ]
 
 
-@router.get("/ab-testing", response_model=ABTestStatsResponse)
-async def get_ab_test_stats() -> ABTestStatsResponse:
+@router.delete("/profiler/reset")
+async def reset_profiler():
     """
-    Get A/B testing statistics.
+    Reset profiler statistics.
 
-    Returns:
-        A/B test results including win rates and performance metrics
+    Clears all accumulated profiler statistics.
     """
-    global ab_tester
-    if ab_tester is None:
-        ab_tester = get_ab_tester()
+    if not query_optimizer:
+        raise HTTPException(status_code=503, detail="Query optimizer not initialized")
 
-    stats = ab_tester.get_statistics()
-
-    return ABTestStatsResponse(**stats)
-
-
-@router.get("/strategies")
-async def get_active_strategies() -> Dict[str, Any]:
-    """
-    Get active optimization strategies.
-
-    Returns:
-        List of enabled strategies and their configuration
-    """
-    from app.config import settings
+    query_optimizer.reset_profiler()
 
     return {
-        "strategies": {
-            "anomaly_detection": {
-                "enabled": True,
-                "priority": 1,
-                "description": "Filter metrics based on anomaly detection"
-            },
-            "smart_sampling": {
-                "enabled": True,
-                "priority": 2,
-                "description": "Intelligently sample logs based on relevance"
-            },
-            "time_series_compression": {
-                "enabled": True,
-                "priority": 3,
-                "description": "Compress time-series data with percentiles"
-            },
-            "relevance_filtering": {
-                "enabled": True,
-                "priority": 4,
-                "description": "Filter data sources by incident relevance"
-            }
-        },
-        "feature_flags": {
-            "ab_testing_enabled": settings.OPTIMIZATION_AB_TESTING if hasattr(settings, 'OPTIMIZATION_AB_TESTING') else False,
-            "relevance_scoring_enabled": settings.OPTIMIZATION_RELEVANCE_SCORING if hasattr(settings, 'OPTIMIZATION_RELEVANCE_SCORING') else False,
-            "dynamic_budgeting_enabled": settings.OPTIMIZATION_DYNAMIC_BUDGETING if hasattr(settings, 'OPTIMIZATION_DYNAMIC_BUDGETING') else False
-        }
+        "status": "reset",
+        "message": "Profiler statistics reset successfully",
+        "timestamp": datetime.now().isoformat()
     }
 
 
-@router.post("/tune", response_model=TuningResponse)
-async def tune_parameters(request: TuningRequest) -> TuningResponse:
+@router.get("/pools/stats", response_model=Dict[str, PoolStatsResponse])
+async def get_pool_stats():
     """
-    Tune optimization parameters dynamically.
+    Get connection pool statistics.
 
-    Args:
-        request: Parameter tuning request
-
-    Returns:
-        Success status and updated parameters
+    Returns statistics for all connection pools including
+    utilization, active connections, and acquire times.
     """
-    try:
-        import yaml
-        from pathlib import Path
+    if not pool_manager:
+        raise HTTPException(status_code=503, detail="Pool manager not initialized")
 
-        config_path = Path("config/optimization.yaml")
-
-        # Read current config
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-
-        # Update parameters
-        updated = {}
-        if request.anomaly_cpu_high is not None:
-            config['strategies']['anomaly_detection']['thresholds']['cpu']['high'] = request.anomaly_cpu_high
-            updated['anomaly_cpu_high'] = request.anomaly_cpu_high
-
-        if request.anomaly_memory_high is not None:
-            config['strategies']['anomaly_detection']['thresholds']['memory']['high'] = request.anomaly_memory_high
-            updated['anomaly_memory_high'] = request.anomaly_memory_high
-
-        if request.log_sampling_critical is not None:
-            config['strategies']['smart_sampling']['quotas']['critical'] = request.log_sampling_critical
-            updated['log_sampling_critical'] = request.log_sampling_critical
-
-        if request.log_sampling_error is not None:
-            config['strategies']['smart_sampling']['quotas']['error'] = request.log_sampling_error
-            updated['log_sampling_error'] = request.log_sampling_error
-
-        if request.min_relevance_score is not None:
-            config['strategies']['relevance_filtering']['min_relevance_score'] = request.min_relevance_score
-            updated['min_relevance_score'] = request.min_relevance_score
-
-        if request.max_results_per_source is not None:
-            config['strategies']['smart_sampling']['max_results_per_source'] = request.max_results_per_source
-            updated['max_results_per_source'] = request.max_results_per_source
-
-        # Write updated config
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f)
-
-        return TuningResponse(
-            success=True,
-            message=f"Updated {len(updated)} parameters",
-            updated_params=updated
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to tune parameters: {e}")
-        return TuningResponse(
-            success=False,
-            message=str(e),
-            updated_params={}
-        )
-
-
-@router.get("/quality-gates")
-async def get_quality_gates() -> Dict[str, Any]:
-    """
-    Get current quality gate thresholds.
-
-    Returns:
-        Quality gate configuration and status
-    """
-    from app.config import settings
+    all_stats = pool_manager.get_all_stats()
 
     return {
-        "quality_gates": {
-            "finding_recall_min": 0.90,
-            "finding_precision_min": 0.85,
-            "severity_accuracy_min": 0.95,
-            "token_reduction_min": 0.50,
-            "processing_time_max_ms": 3000
-        },
-        "enforcement": {
-            "enforce_thresholds": settings.OPTIMIZATION_ENFORCE_GATES if hasattr(settings, 'OPTIMIZATION_ENFORCE_GATES') else False
+        name: PoolStatsResponse(
+            pool_name=stats["pool_name"],
+            pool_type=stats["pool_type"],
+            total_connections=stats["total_connections"],
+            active_connections=stats["active_connections"],
+            idle_connections=stats["idle_connections"],
+            waiting_requests=stats["waiting_requests"],
+            utilization_percent=stats["utilization_percent"],
+            avg_acquire_time_ms=stats["avg_acquire_time_ms"]
+        )
+        for name, stats in all_stats.items()
+    }
+
+
+@router.get("/pools/health", response_model=PoolHealthResponse)
+async def get_pool_health():
+    """
+    Get connection pool health status.
+
+    Returns health information for all managed connection pools.
+    """
+    if not pool_manager:
+        raise HTTPException(status_code=503, detail="Pool manager not initialized")
+
+    health = await pool_manager.health_check()
+
+    return PoolHealthResponse(
+        total_pools=health["total_pools"],
+        healthy_pools=health["healthy_pools"],
+        pools=health["pools"]
+    )
+
+
+@router.get("/patterns/list", response_model=PatternListResponse)
+async def list_patterns(
+    category: Optional[str] = Query(None, description="Filter by category")
+):
+    """
+    List available query patterns.
+
+    Returns a list of all available query patterns organized by category.
+    """
+    patterns = QueryPatternLibrary.list_patterns(category)
+
+    total = sum(len(v) for v in patterns.values()) if patterns else 0
+
+    return PatternListResponse(
+        patterns=patterns,
+        total_patterns=total
+    )
+
+
+@router.post("/patterns/get")
+async def get_pattern(request: PatternGetRequest):
+    """
+    Get a specific query pattern.
+
+    Returns the requested query pattern with applied parameters.
+    """
+    try:
+        pattern = QueryPatternLibrary.get_pattern(
+            request.category,
+            request.pattern_name,
+            **request.kwargs
+        )
+
+        return {
+            "category": request.category,
+            "pattern_name": request.pattern_name,
+            "pattern": pattern,
+            "timestamp": datetime.now().isoformat()
         }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting pattern: {str(e)}")
+
+
+@router.get("/rate-limiter/stats", response_model=RateLimiterStatsResponse)
+async def get_rate_limiter_stats():
+    """
+    Get rate limiter statistics.
+
+    Returns statistics about rate limiting including request counts
+    and rejection rates.
+    """
+    if not rate_limiter:
+        raise HTTPException(status_code=503, detail="Rate limiter not initialized")
+
+    stats = rate_limiter.get_stats()
+
+    return RateLimiterStatsResponse(
+        total_requests=stats["total_requests"],
+        allowed_requests=stats["allowed_requests"],
+        rejected_requests=stats["rejected_requests"],
+        rejection_rate=stats["rejection_rate"],
+        endpoint_stats=stats["endpoint_stats"],
+        active_buckets=stats["active_buckets"]
+    )
+
+
+@router.post("/rate-limiter/limit")
+async def set_rate_limit(
+    endpoint: str = Query(..., description="Endpoint to set limit for"),
+    rate: float = Query(..., ge=0.1, description="Rate limit (requests per second)"),
+    burst: Optional[int] = Query(None, ge=1, description="Burst capacity")
+):
+    """
+    Set rate limit for an endpoint.
+
+    Configures rate limiting parameters for a specific endpoint.
+    """
+    if not rate_limiter:
+        raise HTTPException(status_code=503, detail="Rate limiter not initialized")
+
+    await rate_limiter.set_endpoint_limit(endpoint, rate, burst)
+
+    return {
+        "status": "configured",
+        "endpoint": endpoint,
+        "rate": rate,
+        "burst": burst or rate_limiter.burst,
+        "timestamp": datetime.now().isoformat()
     }
 
 
 @router.get("/health")
-async def optimization_health() -> Dict[str, Any]:
+async def optimization_health():
     """
-    Health check for optimization system.
+    Get optimization module health status.
 
-    Returns:
-        System health status
+    Returns health status of all optimization components.
     """
-    health = {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "components": {}
+    components = {
+        "query_optimizer": query_optimizer is not None,
+        "pool_manager": pool_manager is not None,
+        "rate_limiter": rate_limiter is not None
     }
 
-    # Check token tracker
-    try:
-        stats = token_tracker.get_stats(limit=1)
-        health["components"]["token_tracker"] = "healthy"
-    except Exception as e:
-        health["components"]["token_tracker"] = f"unhealthy: {e}"
-        health["status"] = "degraded"
+    all_healthy = all(components.values())
 
-    return health
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "components": components,
+        "timestamp": datetime.now().isoformat()
+    }

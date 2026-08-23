@@ -1,0 +1,89 @@
+# Alert Configuration Schema
+type: object
+required:
+  - name
+  - condition
+properties:
+  name:
+    type: string
+    minLength: 1
+    description: Unique alert name
+
+  description:
+    type: string
+    description: Human-readable alert description
+
+  enabled:
+    type: boolean
+    default: true
+
+  severity:
+    type: string
+    enum:
+      - critical
+      - high
+      - medium
+      - low
+      - info
+    default: medium
+
+  condition:
+    type: object
+    required:
+      - metric
+      - threshold
+    properties:
+      metric:
+        type: string
+        description: Metric name or PromQL query
+      threshold:
+        type: number
+        description: Alert threshold value
+      operator:
+        type: string
+        enum:
+          - '>'
+          - '<'
+          - '>='
+          - '<='
+          - '=='
+          - '!='
+        default: '>'
+      duration:
+        type: string
+        pattern: '^\d+[smhd]$'
+        description: Duration threshold must be breached (e.g., 5m, 1h)
+
+  actions:
+    type: array
+    items:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - slack
+            - email
+            - pagerduty
+            - webhook
+        target:
+          type: string
+          description: Action target (channel, email, URL, etc.)
+
+  cooldown:
+    type: string
+    pattern: '^\d+[smhd]$'
+    default: 5m
+    description: Minimum time between alert notifications
+
+  labels:
+    type: object
+    additionalProperties:
+      type: string
+    description: Additional labels for the alert
+
+  annotations:
+    type: object
+    additionalProperties:
+      type: string
+    description: Additional annotations for documentation

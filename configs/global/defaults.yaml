@@ -1,0 +1,79 @@
+# Global Default Configuration
+# These defaults apply to all projects unless overridden
+
+project:
+  environment: development
+
+monitoring:
+  elasticsearch:
+    indices:
+      - apm-*-transaction*
+      - apm-*-error*
+      - logs-*
+
+  prometheus:
+    queries:
+      cpu_usage: 'rate(process_cpu_seconds_total[5m]) * 100'
+      memory_usage: 'process_resident_memory_bytes / 1024 / 1024'
+
+alerting:
+  enabled: true
+  cooldown: 5m
+
+cache:
+  enabled: true
+  ttl_seconds: 300
+
+sla:
+  response_time_target_ms: 1000
+  uptime_target_percent: 99.9
+
+# Priority-based fetching configuration
+priorities:
+  health_endpoints:
+    priority: P0
+    timeout_ms: 5000
+    retry_count: 3
+    fallback_to_cache: true
+
+  active_alerts:
+    priority: P0
+    timeout_ms: 5000
+    retry_count: 3
+    fallback_to_cache: true
+
+  pod_status:
+    priority: P1
+    timeout_ms: 3000
+    retry_count: 2
+    fallback_to_cache: true
+
+  metrics_current:
+    priority: P1
+    timeout_ms: 3000
+    retry_count: 2
+    fallback_to_cache: true
+
+  logs_recent:
+    priority: P2
+    timeout_ms: 1000
+    retry_count: 1
+    fallback_to_cache: true
+
+  metrics_history:
+    priority: P2
+    timeout_ms: 1000
+    retry_count: 1
+    fallback_to_cache: true
+
+  logs_history:
+    priority: P3
+    timeout_ms: 500
+    retry_count: 0
+    fallback_to_cache: true
+
+  analytics:
+    priority: P3
+    timeout_ms: 500
+    retry_count: 0
+    fallback_to_cache: true

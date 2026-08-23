@@ -1,0 +1,58 @@
+# MeInvoice Project Configuration
+# This is the main configuration for the MeInvoice monitoring project
+
+project:
+  name: meinvoice
+  environment: production
+  description: "MeInvoice billing and invoicing system monitoring"
+  owner: "Platform Team"
+  tags:
+    - billing
+    - production
+    - critical
+
+monitoring:
+  elasticsearch:
+    url: "${ELASTICSEARCH_URL}"
+    username: "${ELASTICSEARCH_USERNAME}"
+    password: "${ELASTICSEARCH_PASSWORD}"
+    indices:
+      - apm-meinvoice-transaction*
+      - apm-meinvoice-error*
+      - logs-meinvoice-*
+
+  prometheus:
+    url: "${PROMETHEUS_URL}"
+    username: "${PROM_USERNAME}"
+    password: "${PROM_PASSWORD}"
+    queries:
+      error_rate: 'rate(http_requests_total{status=~"5.."}[5m])'
+      latency_p95: 'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))'
+
+  kubernetes:
+    enabled: true
+    namespaces:
+      - meinvoice-prod
+      - meinvoice-staging
+
+alerting:
+  enabled: true
+  channels:
+    slack:
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+      channel: "#meinvoice-alerts"
+    email:
+      smtp_host: "${SMTP_HOST}"
+      smtp_port: 587
+      from_address: "alerts@meinvoice.com"
+      to_addresses:
+        - "oncall@meinvoice.com"
+        - "platform@meinvoice.com"
+
+cache:
+  enabled: true
+  ttl_seconds: 600
+
+sla:
+  response_time_target_ms: 800
+  uptime_target_percent: 99.95

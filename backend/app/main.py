@@ -67,6 +67,12 @@ async def lifespan(app: FastAPI):
     # Phase 2: Action Engine
     from app.actions.engine import get_action_engine
     from app.approvals.store import get_approval_tracker
+    # Phase 7 Sprint 3: Performance Optimization
+    from app.optimization import QueryOptimizer, ConnectionPoolManager, RateLimiter
+    from app.api.v1 import optimization as optimization_api
+    # Phase 7 Sprint 4: Configuration Management
+    from app.config import ConfigValidator, ConfigVersionManager, GitOpsManager, AuditLogger, ConfigSecurity
+    from app.api.v1 import config as config_api
 
     app.state.es_client = ElasticsearchClient()
     app.state.prometheus_client = PrometheusClient()
@@ -92,6 +98,84 @@ async def lifespan(app: FastAPI):
     app.state.approval_tracker = approval_tracker
     logger.info("Phase 2: Action Engine initialized")
 
+    # Phase 7 Sprint 3: Initialize Performance Optimization
+    query_optimizer = QueryOptimizer(
+        es_client=app.state.es_client,
+        prom_client=app.state.prometheus_client,
+        k8s_client=app.state.k8s_client,
+        l2_cache=None  # Will be integrated with cache module
+    )
+
+    pool_manager = ConnectionPoolManager()
+    await pool_manager.start()
+
+    rate_limiter = RateLimiter(default_rate=100.0, burst=20)
+
+    # Store in app state and inject into API
+    app.state.query_optimizer = query_optimizer
+    app.state.pool_manager = pool_manager
+    app.state.rate_limiter = rate_limiter
+
+    optimization_api.set_optimization_instances(
+        q_optimizer=query_optimizer,
+        p_manager=pool_manager,
+        r_limiter=rate_limiter
+    )
+
+    # Start rate limiter background replenishment
+    replenish_task = asyncio.create_task(rate_limiter.start_background_replenish())
+
+    # Store task in app state for proper cleanup
+    app.state.replenish_task = replenish_task
+
+    logger.info("Phase 7 Sprint 3: Performance Optimization initialized")
+
+    # Phase 7 Sprint 4: Initialize Configuration Management
+    import os
+    config_storage_path = os.path.join(os.path.dirname(__file__), "..", "..", "configs")
+    config_schema_path = os.path.join(config_storage_path, "global", "schemas")
+
+    # Initialize config components
+    config_validator = ConfigValidator(schema_path=config_schema_path)
+    config_security = ConfigSecurity()
+
+    # Initialize version manager
+    config_version_manager = ConfigVersionManager(
+        storage_path=config_storage_path,
+        git_ops=None  # Will be initialized if needed
+    )
+
+    # Initialize audit logger
+    config_audit_logger = AuditLogger(storage_path=config_storage_path)
+
+    # Initialize GitOps manager (optional - requires Git repository)
+    config_git_ops = None
+    git_repo_path = os.getcwd()
+    if os.path.exists(os.path.join(git_repo_path, ".git")):
+        try:
+            config_git_ops = GitOpsManager(repo_path=git_repo_path, auto_push=False)
+            logger.info("GitOps manager initialized")
+        except Exception as e:
+            logger.warning(f"GitOps manager initialization failed: {e}")
+
+    # Inject into API
+    config_api.set_config_instances(
+        validator=config_validator,
+        version_manager=config_version_manager,
+        git_ops=config_git_ops,
+        audit_logger=config_audit_logger,
+        security=config_security
+    )
+
+    # Store in app state
+    app.state.config_validator = config_validator
+    app.state.config_version_manager = config_version_manager
+    app.state.config_audit_logger = config_audit_logger
+    app.state.config_security = config_security
+    app.state.config_git_ops = config_git_ops
+
+    logger.info("Phase 7 Sprint 4: Configuration Management initialized")
+
     if settings.AUTH_ENABLED and not settings.AUTH_SECRET:
         logger.warning("AUTH_ENABLED=true but AUTH_SECRET is empty — generate one!")
     if settings.AUTH_ENABLED and not settings.API_KEYS:
@@ -103,6 +187,15 @@ async def lifespan(app: FastAPI):
     alert_task.cancel()
     slo_reporter.stop()
     slo_task.cancel()
+
+    # Cancel rate limiter replenish task if it exists
+    if hasattr(app.state, 'replenish_task'):
+        app.state.replenish_task.cancel()
+
+    # Stop pool manager if it was initialized
+    if hasattr(app.state, 'pool_manager'):
+        await app.state.pool_manager.stop()
+
     await app.state.es_client.close()
 
 

@@ -1,0 +1,89 @@
+# SLO Configuration Schema
+type: object
+required:
+  - slo_name
+  - service
+  - objectives
+properties:
+  slo_name:
+    type: string
+    minLength: 1
+    description: Unique SLO identifier
+
+  service:
+    type: string
+    minLength: 1
+    description: Service name this SLO applies to
+
+  description:
+    type: string
+    description: Human-readable SLO description
+
+  objectives:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - name
+        - target
+      properties:
+        name:
+          type: string
+          description: Objective name (e.g., availability, latency)
+        target:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Target percentage (0-100)
+        window:
+          type: object
+          properties:
+            duration:
+              type: string
+              pattern: '^\d+[d]$'
+              description: Rolling window duration (e.g., 7d, 30d)
+            rolling:
+              type: boolean
+              default: true
+            calendar:
+              type: string
+              description: Calendar window (e.g., 'monthly', 'quarterly')
+
+  error_budget:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      alert_threshold:
+        type: number
+        minimum: 0
+        maximum: 100
+        default: 10
+        description: Alert when error budget remaining below this %
+
+  sli:
+    type: object
+    properties:
+      source:
+        type: string
+        enum:
+          - elasticsearch
+          - prometheus
+          - custom
+      query:
+        type: string
+        description: SLI query (ES DSL or PromQL)
+
+  metadata:
+    type: object
+    properties:
+      owner:
+        type: string
+      team:
+        type: string
+      tags:
+        type: array
+        items:
+          type: string

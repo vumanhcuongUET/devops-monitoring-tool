@@ -1,0 +1,156 @@
+# Project Configuration Schema
+type: object
+required:
+  - project
+properties:
+  project:
+    type: object
+    required:
+      - name
+      - environment
+    properties:
+      name:
+        type: string
+        minLength: 1
+        pattern: '^[a-zA-Z0-9_-]+$'
+        description: Project identifier (alphanumeric, hyphens, underscores only)
+      environment:
+        type: string
+        enum:
+          - development
+          - staging
+          - production
+        description: Deployment environment
+      description:
+        type: string
+        description: Human-readable project description
+      owner:
+        type: string
+        description: Project owner/team
+      tags:
+        type: array
+        items:
+          type: string
+        description: Project tags for organization
+
+  monitoring:
+    type: object
+    properties:
+      elasticsearch:
+        type: object
+        properties:
+          url:
+            type: string
+            format: uri
+            description: Elasticsearch endpoint URL
+          username:
+            type: string
+            description: Elasticsearch username
+          password:
+            type: string
+            description: Elasticsearch password (will be encrypted)
+          indices:
+            type: array
+            items:
+              type: string
+            description: Log indices to query
+
+      prometheus:
+        type: object
+        properties:
+          url:
+            type: string
+            format: uri
+            description: Prometheus endpoint URL
+          username:
+            type: string
+            description: Prometheus username
+          password:
+            type: string
+            description: Prometheus password
+          queries:
+            type: object
+            description: Custom PromQL queries
+
+      kubernetes:
+        type: object
+        properties:
+          enabled:
+            type: boolean
+            default: false
+          namespaces:
+            type: array
+            items:
+              type: string
+            description: Kubernetes namespaces to monitor
+
+  alerting:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      channels:
+        type: object
+        properties:
+          slack:
+            type: object
+            properties:
+              webhook_url:
+                type: string
+                format: uri
+                description: Slack webhook URL (will be encrypted)
+              channel:
+                type: string
+                description: Default Slack channel
+          email:
+            type: object
+            properties:
+              smtp_host:
+                type: string
+              smtp_port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+              from_address:
+                type: string
+                format: email
+              to_addresses:
+                type: array
+                items:
+                  type: string
+                  format: email
+          pagerduty:
+            type: object
+            properties:
+              api_key:
+                type: string
+                description: PagerDuty API key (will be encrypted)
+              service_key:
+                type: string
+                description: PagerDuty service key
+
+  cache:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      ttl_seconds:
+        type: integer
+        minimum: 0
+        default: 300
+        description: Default cache TTL in seconds
+
+  sla:
+    type: object
+    properties:
+      response_time_target_ms:
+        type: integer
+        minimum: 0
+        default: 1000
+      uptime_target_percent:
+        type: number
+        minimum: 0
+        maximum: 100
+        default: 99.9

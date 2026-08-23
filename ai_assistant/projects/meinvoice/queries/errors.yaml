@@ -36,5 +36,5 @@ display:
     - total ERROR + FATAL count per source (hits.total.value)
     - top error codes (aggs.by_error_code.buckets)
     - top services by error count (aggs.by_service.buckets)
-    - latest 5 errors as list: @timestamp | service.name | error_code | message
+    - latest 5 errors as list: "@timestamp | service.name | error_code | message"
   empty_message: "✅ Không có lỗi ERROR/FATAL trong {{ time_range }}"

@@ -3,6 +3,17 @@
 Cross-platform query runner for DevOps monitoring.
 Executes ELK (Elasticsearch) and Prometheus queries from YAML definitions.
 
+⚠️  DEPRECATED: This script (run_query.py) is deprecated and will be removed in v1.1.0.
+   Please migrate to run_query_v2.py which includes:
+   - Backend service integration with graceful HTTP fallback
+   - Feature flag-based runtime configuration
+   - Retry logic with exponential backoff
+   - Circuit breaker for failing services
+   - Comprehensive metrics and structured logging
+
+   Migration: Replace 'python tools/run_query.py' with 'python tools/run_query_v2.py'
+   See docs/MIGRATION_GUIDE.md for details.
+
 Usage:
     python tools/run_query.py --project meinvoice --section errors
     python tools/run_query.py --project meinvoice --section alerts --time-range now-30m
@@ -241,6 +252,28 @@ def main():
     parser.add_argument("--output", choices=["json", "pretty"], default="pretty",
                         help="Output format (default: pretty)")
     args = parser.parse_args()
+
+    # Validate inputs using InputValidator
+    from core.security import InputValidator
+
+    # Validate project name
+    is_valid, error = InputValidator.validate_project_name(args.project)
+    if not is_valid:
+        print(json.dumps({"error": f"Invalid project name: {error}"}))
+        sys.exit(1)
+
+    # Validate section name
+    is_valid, error = InputValidator.validate_section_name(args.section)
+    if not is_valid:
+        print(json.dumps({"error": f"Invalid section name: {error}"}))
+        sys.exit(1)
+
+    # Validate time range if provided
+    if args.time_range:
+        is_valid, error = InputValidator.validate_time_range(args.time_range)
+        if not is_valid:
+            print(json.dumps({"error": f"Invalid time range: {error}"}))
+            sys.exit(1)
 
     try:
         config = load_config(args.project)

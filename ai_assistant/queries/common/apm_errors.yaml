@@ -32,5 +32,5 @@ display:
     - total APM error count (hits.total.value)
     - top services by error count (aggs.by_service.buckets)
     - top exception types (aggs.by_exception.buckets)
-    - latest 5: \@timestamp | service.name | error.exception.type | error.exception.message
+    - latest 5: "@timestamp | service.name | error.exception.type | error.exception.message"
   empty_message: "✅ Không có APM error trong {{ time_range }}"

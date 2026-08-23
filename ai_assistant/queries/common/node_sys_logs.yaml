@@ -100,7 +100,7 @@ display:
     - error breakdown by category (aggs.by_category.buckets) — hiển thị tên category + count
     - top hosts có nhiều lỗi nhất (aggs.by_host.buckets)
     - top processes gây lỗi (aggs.by_program.buckets)
-    - latest {{ max_results }} log entries: @timestamp | host.name | process.name | message (truncate 120 chars)
+    - latest {{ max_results }} log entries: "@timestamp | host.name | process.name | message (truncate 120 chars)"
   empty_message: "✅ Không có system log lỗi trong {{ time_range }}"
 
   # Hướng xử lý theo từng category — hiển thị khi category đó có count > 0

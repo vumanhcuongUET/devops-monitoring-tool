@@ -25,5 +25,5 @@ display:
   show:
     - total error count per source (hits.total.value)
     - top services by error count (aggs.by_service.buckets)
-    - latest 5 errors as list: \@timestamp | service.name | message
+    - latest 5 errors as list: "@timestamp | service.name | message"
   empty_message: "✅ Không có lỗi ERROR trong {{ time_range }}"

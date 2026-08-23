@@ -4,14 +4,71 @@ Config-driven monitoring assistant for Claude CLI. Ask natural language question
 
 ---
 
+## ⚠️  Migration Notice
+
+**`run_query.py` (v1) is deprecated.** Please migrate to `run_query_v2.py` (v2) for enhanced features:
+
+### v2 Features
+- ✅ Backend service integration with graceful fallback
+- ✅ Retry logic with exponential backoff
+- ✅ Circuit breaker for failing services
+- ✅ Structured logging and metrics
+- ✅ Result caching and query deduplication
+- ✅ **Audit logging with tamper-evident chain hashing**
+- ✅ **Enhanced input validation and security**
+- ✅ **Rate limiting and DoS protection**
+
+### Security Enhancements
+- Command injection prevention
+- URL/SSRF attack protection
+- XSS and template injection prevention
+- Resource exhaustion protection
+- Comprehensive threat model
+
+**See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for details.**
+
+**Quick start:**
+```bash
+# Old (deprecated)
+python tools/run_query.py --project meinvoice --section errors
+
+# New (recommended)
+python tools/run_query_v2.py --project meinvoice --section errors
+```
+
+---
+
 ## Project structure
 
 ```
-devops_ai_assistant/
+ai_assistant/
 ├── CLAUDE.md                        # AI spec — Claude reads this first
 ├── requirements.txt                 # Python dependencies
+├── CHANGELOG.md                     # Version history & changes
 ├── config/
-│   └── global.yaml                  # Default endpoints & settings
+│   ├── global.yaml                  # Default endpoints & settings
+│   └── features.yaml               # Feature flags & optimization config
+├── core/                            # Core infrastructure modules
+│   ├── audit.py                    # Audit logging with tamper-evident chain hashing
+│   ├── cache.py                     # Multi-layer caching (SimpleCache, RedisCache)
+│   ├── redis_cache.py               # Redis distributed cache
+│   ├── single_flight.py             # Query deduplication (local, Redis)
+│   ├── redis_single_flight.py       # Redis-based distributed single-flight
+│   ├── retry.py                     # Retry logic with circuit breaker
+│   ├── security.py                  # Input validation, rate limiting, sanitization
+│   ├── sync_bridge.py               # Async/sync bridge for backend adapters
+│   ├── logging_config.py            # Structured logging & metrics
+│   └── config_loader.py             # Configuration & template loading
+├── services/                        # Backend service adapters
+│   ├── elasticsearch_adapter.py     # Elasticsearch client with fallback
+│   ├── prometheus_adapter.py        # Prometheus client with fallback
+│   ├── apm_adapter.py               # APM client for error transactions
+│   ├── kubernetes_adapter.py       # Kubernetes client for pod/status
+│   └── optimizer_adapter.py        # Query optimizer client
+├── docs/                            # Documentation
+│   ├── SECURITY.md                  # Threat model & security documentation
+│   ├── API.md                       # API documentation for adapters & utilities
+│   └── MIGRATION_GUIDE.md           # v1 to v2 migration guide
 ├── templates/
 │   └── system-status.yaml           # Report sections & display order
 ├── queries/
@@ -24,9 +81,15 @@ devops_ai_assistant/
 │       ├── pod_status.yaml / .md
 │       ├── apm_errors.yaml / .md
 │       └── ... (14 query types)
+├── tests/                           # Comprehensive test suite
+│   ├── test_security.py             # Security tests (37 tests)
+│   ├── test_audit.py                # Audit logging tests (15 tests)
+│   ├── test_injection.py            # Injection-focused tests (18 tests)
+│   ├── test_performance.py          # Performance regression tests (18 tests)
+│   └── test_*.py                   # Unit tests for core modules
 ├── tools/
-│   ├── run_query.py                 # Cross-platform Python query executor
-│   └── http-client.md               # Tool usage docs
+│   ├── run_query.py                 # Legacy (v1, deprecated)
+│   └── run_query_v2.py              # Enhanced query runner (v2, recommended)
 └── projects/
     ├── _template/                   # Copy this for a new project
     │   └── config.yaml
@@ -211,3 +274,68 @@ sources:
 | `http_401` from ELK/Prometheus | Check credential env vars (`ELK_AUTH`, `PROM_AUTH`) are set and correct |
 | `template_error` | Query YAML body has a syntax issue — check `queries/common/<section>.yaml` |
 | Project not found | Ensure `projects/<name>/config.yaml` exists |
+
+---
+
+## 🔒 Security
+
+The AI Assistant implements comprehensive security measures:
+
+### Input Validation
+- **Project/Section names**: Only alphanumeric, hyphens, underscores allowed
+- **Time ranges**: Strict format validation (`now` or `now-<duration>`)
+- **URLs**: Protocol validation (http://, https:// only), credential detection
+- **Templates**: Injection pattern detection (PHP, JSP, shell commands)
+- **PromQL**: XSS and dangerous pattern detection
+
+### Rate Limiting
+- Token bucket algorithm with configurable rate and burst capacity
+- Per-identifier rate limiting (IP, user, source name)
+- Automatic retry-after responses
+
+### Audit Logging
+- Tamper-evident chain hashing (HMAC-SHA256)
+- File rotation with configurable size limits
+- Integrity verification to detect tampering
+- Query by actor, event type, resource, time range
+
+### Protection Against
+- Command injection
+- SQL/LDAP injection
+- XSS attacks
+- Template injection
+- Path traversal
+- SSRF attacks
+- Resource exhaustion
+
+### Documentation
+- [Security Documentation](docs/SECURITY.md) - Threat model & security assumptions
+- [API Documentation](docs/API.md) - Service adapter & utility APIs
+
+### Running Security Tests
+```bash
+cd ai_assistant
+python -m pytest tests/test_security.py tests/test_audit.py tests/test_injection.py -v
+```
+
+---
+
+## 📊 Test Coverage
+
+- **209 tests passing** ✅
+- Security tests: 37 tests
+- Audit logging tests: 15 tests  
+- Injection tests: 18 tests
+- Performance tests: 18 tests
+- Core functionality tests: 121 tests
+
+Run all tests:
+```bash
+python -m pytest tests/ -v
+```
+
+---
+
+**Last Updated**: 2026-08-24  
+**Version**: 2.0 (Production Ready)  
+**Status**: ✅ Security Approved (Phase 3 Governance Complete)

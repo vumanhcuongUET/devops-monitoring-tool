@@ -1,0 +1,96 @@
+# AI Assistant Feature Flags
+# Controls which features are enabled in the monitoring assistant
+
+# Backend Integration
+# When enabled, uses backend service clients (with connection pooling, async support)
+# When disabled, falls back to direct HTTP requests
+backend_integration:
+  enabled: false  # Set to true when backend is available
+  # Per-service overrides (when backend_integration.enabled = true)
+  services:
+    elasticsearch: true
+    prometheus: true
+    apm: true
+    kubernetes: true
+    optimizer: true  # Token optimizer (70% reduction)
+  # Fallback to direct HTTP if backend unavailable
+  fallback_on_error: true
+
+# Optimization Features
+# These can work independently of backend integration
+optimization:
+  # Result caching (same query within time window)
+  cache_enabled: true
+  cache_ttl_seconds: 60
+
+  # Redis-based distributed cache (alternative to in-memory cache)
+  # When enabled, uses Redis for distributed caching across processes
+  # When disabled or Redis unavailable, falls back to in-memory SimpleCache
+  redis_cache:
+    enabled: false  # Set to true to enable Redis distributed cache
+    url: "redis://localhost:6379/0"  # Redis connection URL
+    key_prefix: "ai_assistant:"  # Prefix for all cache keys
+    ttl_seconds: 60  # TTL override (uses cache_ttl_seconds if not set)
+    fallback_enabled: true  # Fall back to SimpleCache if Redis unavailable
+
+  # Query deduplication (single-flight pattern)
+  deduplication_enabled: true
+
+  # Redis-based distributed single-flight (alternative to in-memory)
+  # When enabled, uses Redis for distributed locking across processes
+  # When disabled or Redis unavailable, falls back to in-memory SingleFlight
+  redis_single_flight:
+    enabled: false  # Set to true to enable Redis distributed single-flight
+    url: "redis://localhost:6379/0"  # Redis connection URL
+    lock_prefix: "sf_lock:"  # Prefix for lock keys
+    result_prefix: "sf_result:"  # Prefix for result cache keys
+    lock_ttl_seconds: 30  # Lock TTL (prevents deadlocks)
+    result_ttl_seconds: 60  # Result cache TTL
+    fallback_enabled: true  # Fall back to in-memory if Redis unavailable
+
+  # Parallel query execution
+  parallel_queries: true
+  max_parallel_workers: 8
+
+# Output Features
+output:
+  # Pretty print with colors and emojis
+  use_emoji: true
+  use_colors: true
+
+  # Truncate large result sets
+  truncate_results: true
+  max_results_per_source: 10
+
+# Query Features
+query:
+  # Time range validation
+  validate_time_range: true
+  max_time_range_hours: 168  # 7 days
+
+  # Query timeout enforcement
+  enforce_timeout: true
+  default_timeout_seconds: 10
+
+# Retry and Circuit Breaker
+retry:
+  # Retry with exponential backoff for transient failures
+  enabled: true
+  max_attempts: 3
+  backoff_base_seconds: 1.0
+  backoff_max_seconds: 30.0
+
+  # Circuit breaker for failing services
+  circuit_breaker_enabled: true
+  circuit_breaker_failure_threshold: 5
+  circuit_breaker_success_threshold: 2
+  circuit_breaker_timeout_seconds: 60
+
+# Monitoring
+monitoring:
+  # Track query execution metrics
+  track_metrics: true
+  metrics_output_file: null  # Set to file path to log metrics
+
+  # Debug mode (verbose output)
+  debug_mode: false

@@ -44,7 +44,8 @@
       "Bash(python -m pytest app/services/__tests__/test_token_optimizer.py -v --tb=short)",
       "Bash(python -m pytest app/services/__tests__/test_anomaly_detector_enhanced.py -v)",
       "Bash(python -m pytest app/services/__tests__/test_token_optimizer.py -v)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }

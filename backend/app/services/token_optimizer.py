@@ -72,6 +72,16 @@ class OptimizationResult:
     token_savings_percent: float
     strategies_applied: list[OptimizationStrategy]
     processing_time_ms: float
+    anomalies: list = None
+    logs_sampled: int = 0
+    metrics_compressed: bool = False
+    fallback: bool = False
+    fallback_reason: Optional[str] = None
+
+    def __post_init__(self):
+        """Initialize default values for list fields."""
+        if self.anomalies is None:
+            self.anomalies = []
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -83,6 +93,11 @@ class OptimizationResult:
             "token_savings_percent": self.token_savings_percent,
             "strategies_applied": [s.value for s in self.strategies_applied],
             "processing_time_ms": self.processing_time_ms,
+            "anomalies": self.anomalies,
+            "logs_sampled": self.logs_sampled,
+            "metrics_compressed": self.metrics_compressed,
+            "fallback": self.fallback,
+            "fallback_reason": self.fallback_reason,
         }
 
 
@@ -136,21 +151,27 @@ class TokenOptimizer:
         # Apply optimization strategies sequentially
         optimized_context = context_data.copy()
         strategies_applied = []
+        anomalies = []
+        logs_sampled = 0
+        metrics_compressed = False
 
         # Strategy 1: Anomaly Detection Filtering
         if self.config.anomaly_cpu_high > 0:
-            optimized_context = await self._apply_anomaly_detection(optimized_context)
+            optimized_context, detected_anomalies = await self._apply_anomaly_detection(optimized_context)
             strategies_applied.append(OptimizationStrategy.ANOMALY_DETECTION)
+            anomalies.extend(detected_anomalies)
 
         # Strategy 2: Smart Sampling (for logs)
         if "logs" in optimized_context and optimized_context["logs"]:
-            optimized_context = await self._apply_smart_sampling(optimized_context, incident_type)
+            optimized_context, sampled_count = await self._apply_smart_sampling(optimized_context, incident_type)
             strategies_applied.append(OptimizationStrategy.SMART_SAMPLING)
+            logs_sampled = sampled_count
 
         # Strategy 3: Time Series Compression
         if self.config.compress_time_series:
-            optimized_context = await self._apply_time_series_compression(optimized_context)
+            optimized_context, compressed = await self._apply_time_series_compression(optimized_context)
             strategies_applied.append(OptimizationStrategy.TIME_SERIES_COMPRESSION)
+            metrics_compressed = compressed
 
         # Strategy 4: Relevance Filtering
         optimized_context = await self._apply_relevance_filtering(
@@ -177,63 +198,209 @@ class TokenOptimizer:
             token_savings_percent=token_savings_percent,
             strategies_applied=strategies_applied,
             processing_time_ms=processing_time_ms,
+            anomalies=anomalies,
+            logs_sampled=logs_sampled,
+            metrics_compressed=metrics_compressed,
+            fallback=False,
+            fallback_reason=None,
         )
 
-    async def _apply_anomaly_detection(self, context: dict[str, Any]) -> dict[str, Any]:
-        """Apply anomaly detection filtering to metrics."""
+    async def optimize_with_fallback(
+        self,
+        context_data: dict[str, Any],
+        incident_type: str,
+        severity: SeverityLevel,
+        request_id: Optional[str] = None,
+    ) -> OptimizationResult:
+        """
+        Optimize with automatic fallback on error.
+
+        If optimization fails, returns original context with fallback=True.
+        This ensures production stability - optimization failures never crash the system.
+
+        Args:
+            context_data: Full incident context
+            incident_type: Type of incident
+            severity: Severity level
+            request_id: Request identifier for tracking
+
+        Returns:
+            OptimizationResult (with fallback=True if failed)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            # Attempt optimization
+            result = await self.optimize(
+                context_data=context_data,
+                incident_type=incident_type,
+                severity=severity
+            )
+
+            # Validate result
+            if not self._validate_result(result):
+                logger.warning(
+                    f"Optimization validation failed for {request_id}, using fallback"
+                )
+                return self._create_fallback_result(
+                    context_data, "Validation failed"
+                )
+
+            return result
+
+        except Exception as e:
+            # Log the error with full context
+            logger.error(
+                f"Optimization failed for {request_id}: {str(e)}",
+                exc_info=True,
+                extra={
+                    'incident_type': incident_type,
+                    'severity': str(severity),
+                    'context_keys': list(context_data.keys())
+                }
+            )
+
+            # Return fallback result
+            return self._create_fallback_result(
+                context_data,
+                f"{type(e).__name__}: {str(e)}"
+            )
+
+    def _validate_result(self, result: OptimizationResult) -> bool:
+        """Validate optimization result."""
+        # Check essential fields exist
+        if not result.optimized_context:
+            return False
+
+        # Check token reduction is reasonable
+        if result.token_savings_percent < -100:
+            return False
+
+        # Check processing time is reasonable
+        if result.processing_time_ms > 10000:
+            return False
+
+        # Check optimized context is not empty
+        if not result.optimized_context:
+            return False
+
+        return True
+
+    def _create_fallback_result(
+        self,
+        context_data: dict[str, Any],
+        reason: str
+    ) -> OptimizationResult:
+        """Create fallback result with original context."""
+        original_count = self._estimate_tokens(context_data)
+
+        return OptimizationResult(
+            optimized_context=context_data,
+            original_tokens=original_count,
+            optimized_tokens=original_count,
+            token_savings=0,
+            token_savings_percent=0.0,
+            strategies_applied=[],
+            processing_time_ms=0.0,
+            anomalies=[],
+            logs_sampled=0,
+            metrics_compressed=False,
+            fallback=True,
+            fallback_reason=reason
+        )
+
+    async def _apply_anomaly_detection(self, context: dict[str, Any]) -> tuple[dict[str, Any], list]:
+        """Apply anomaly detection filtering to metrics.
+
+        Returns:
+            Tuple of (updated_context, list_of_anomalies)
+        """
         # Import here to avoid circular imports
         from app.services.anomaly_detector import AnomalyDetector
 
+        anomalies = []
         if self._anomaly_detector is None:
             self._anomaly_detector = AnomalyDetector(self.config)
 
         if "metrics" in context and context["metrics"]:
-            context["metrics"] = await self._anomaly_detector.detect_metrics_anomaly(
+            context["metrics"], detected_anomalies = await self._anomaly_detector.detect_metrics_anomaly(
                 context["metrics"]
             )
+            anomalies.extend(detected_anomalies)
 
-        return context
+        return context, anomalies
 
     async def _apply_smart_sampling(
         self, context: dict[str, Any], incident_type: str
-    ) -> dict[str, Any]:
-        """Apply smart sampling to logs."""
+    ) -> tuple[dict[str, Any], int]:
+        """Apply smart sampling to logs.
+
+        Returns:
+            Tuple of (updated_context, sampled_count)
+        """
         from app.services.log_sampler import LogSampler
 
+        sampled_count = 0
         if self._log_sampler is None:
             self._log_sampler = LogSampler(self.config)
 
         if "logs" in context and context["logs"]:
-            context["logs"] = await self._log_sampler.sample_logs(
-                context["logs"],
+            # Handle both dict format (TestDataGenerator) and list format
+            logs_data = context["logs"]
+            if isinstance(logs_data, dict):
+                # TestDataGenerator format: {"logs": [...], "total": N, ...}
+                logs_list = logs_data.get("logs", [])
+                original_count = len(logs_list)
+            else:
+                # Direct list format
+                logs_list = logs_data
+                original_count = len(logs_list)
+
+            # Sample the logs
+            sampled_logs = await self._log_sampler.sample_logs(
+                logs_list,
                 incident_type,
                 self.config.max_results_per_source
             )
+            sampled_count = len(sampled_logs)
 
-        # Apply to APM errors too
-        if "apm" in context and isinstance(context["apm"], dict):
-            if "top_errors" in context["apm"]:
-                context["apm"]["top_errors"] = await self._log_sampler.sample_apm_errors(
-                    context["apm"]["top_errors"],
+            # Update context - preserve original structure if it was a dict
+            if isinstance(logs_data, dict):
+                context["logs"]["logs"] = sampled_logs
+                context["logs"]["total"] = sampled_count
+            else:
+                context["logs"] = sampled_logs
+
+        # Apply to APM errors too (check for apm_data)
+        if "apm_data" in context and isinstance(context["apm_data"], dict):
+            if "top_errors" in context["apm_data"]:
+                context["apm_data"]["top_errors"] = await self._log_sampler.sample_apm_errors(
+                    context["apm_data"]["top_errors"],
                     self.config.log_sampling_error
                 )
 
-        return context
+        return context, sampled_count
 
-    async def _apply_time_series_compression(self, context: dict[str, Any]) -> dict[str, Any]:
-        """Apply time series compression."""
+    async def _apply_time_series_compression(self, context: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        """Apply time series compression.
+
+        Returns:
+            Tuple of (updated_context, was_compressed)
+        """
         from app.services.time_series_compressor import TimeSeriesCompressor
 
+        compressed = False
         if self._ts_compressor is None:
             self._ts_compressor = TimeSeriesCompressor(self.config)
 
         # Compress any time-series data in metrics
         if "metrics" in context and context["metrics"]:
-            context["metrics"] = await self._ts_compressor.compress_metrics(
+            context["metrics"], compressed = await self._ts_compressor.compress_metrics(
                 context["metrics"]
             )
 
-        return context
+        return context, compressed
 
     async def _apply_relevance_filtering(
         self, context: dict[str, Any], incident_type: str, severity: SeverityLevel

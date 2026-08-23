@@ -44,18 +44,19 @@ class TestAnomalyDetector:
         """Test CPU anomaly detection."""
         metrics = {"cpu_percent": 92.1, "memory_percent": 68.5}
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert "cpu_percent" in result
         assert result["cpu_percent"] == 92.1
         assert "_anomalies" in result
+        assert len(anomalies) > 0
 
     @pytest.mark.asyncio
     async def test_normal_cpu_filtered(self, detector):
         """Test normal CPU is filtered out."""
         metrics = {"cpu_percent": 45.2, "memory_percent": 60.0}
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert "cpu_percent" not in result
         # When all metrics are normal, we get a summary instead
@@ -70,7 +71,7 @@ class TestAnomalyDetector:
             "disk_percent": 45.0,
         }
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert "_summary" in result
         assert result["_summary"] == "All metrics within normal range"
@@ -78,7 +79,7 @@ class TestAnomalyDetector:
     @pytest.mark.asyncio
     async def test_empty_metrics(self, detector):
         """Test empty metrics handling."""
-        result = await detector.detect_metrics_anomaly({})
+        result, anomalies = await detector.detect_metrics_anomaly({})
 
         assert "status" in result
         assert result["status"] == "no_metrics_available"
@@ -238,12 +239,15 @@ class TestTimeSeriesCompressor:
             "memory_percent": 70.0,  # Scalar, should remain unchanged
         }
 
-        result = await compressor.compress_metrics(metrics)
+        result, compressed = await compressor.compress_metrics(metrics)
 
         # Time-series should be compressed
         assert "cpu_history" in result
         assert isinstance(result["cpu_history"], dict)
         assert "current" in result["cpu_history"]
+
+        # Compression flag should be True
+        assert compressed is True
 
         # Scalar should remain unchanged
         assert result["memory_percent"] == 70.0

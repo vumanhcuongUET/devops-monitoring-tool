@@ -57,7 +57,7 @@ class TestAnomalyDetectorMetricTypes:
             {'cpu_percent': 92.0, 'timestamp': datetime.now(timezone.utc) - timedelta(minutes=1)},
         ]
 
-        result = await detector.detect_metrics_anomaly(metrics[-1])
+        result, anomalies = await detector.detect_metrics_anomaly(metrics[-1])
 
         assert 'cpu_percent' in result
         assert '_anomalies' in result
@@ -69,7 +69,7 @@ class TestAnomalyDetectorMetricTypes:
         """Test memory anomaly detection."""
         metrics = {'memory_percent': 90.0}
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert 'memory_percent' in result
         assert any(a['metric'] == 'memory_percent' for a in result.get('_anomalies', []))
@@ -79,7 +79,7 @@ class TestAnomalyDetectorMetricTypes:
         """Test disk anomaly detection."""
         metrics = {'disk_percent': 95.0}
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert 'disk_percent' in result
         assert any(a['metric'] == 'disk_percent' for a in result.get('_anomalies', []))
@@ -92,7 +92,7 @@ class TestAnomalyDetectorMetricTypes:
 
         metrics = {'network_in_bytes': 10_000_000}  # 10x baseline
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert '_network_io_anomaly' in result or '_anomalies' in result
 
@@ -104,7 +104,7 @@ class TestAnomalyDetectorMetricTypes:
 
         metrics = {'disk_read_bytes': 300000}  # 6x baseline
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert '_disk_io_anomaly' in result or '_anomalies' in result
 
@@ -113,7 +113,7 @@ class TestAnomalyDetectorMetricTypes:
         """Test error rate anomaly detection (NEW for Day 2)."""
         metrics = {'error_rate': 12.0}  # Above critical threshold
 
-        result = await detector.detect_metrics_anomaly(metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(metrics)
 
         assert 'error_rate' in result
         assert any(a['metric'] == 'error_rate' for a in result.get('_anomalies', []))
@@ -334,7 +334,7 @@ class TestWithGeneratedData:
                 current_metrics[f"{key}_percent" if '_percent' not in key else key] = value['current']
 
         # Detect anomalies
-        result = await detector.detect_metrics_anomaly(current_metrics)
+        result, anomalies = await detector.detect_metrics_anomaly(current_metrics)
 
         # Should detect some anomalies in high_latency incident
         assert result is not None

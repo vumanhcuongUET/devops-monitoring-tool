@@ -66,7 +66,7 @@ class TimeSeriesCompressor:
         self.include_percentiles = config.include_percentiles
         self.include_trend = config.include_trend
 
-    async def compress_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
+    async def compress_metrics(self, metrics: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         """
         Compress all time-series data in metrics dict.
 
@@ -74,26 +74,30 @@ class TimeSeriesCompressor:
             metrics: Raw metrics dictionary with potential time-series
 
         Returns:
-            Metrics with compressed time-series
+            Tuple of (metrics_with_compressed_time_series, was_compressed)
         """
         if not metrics:
-            return metrics
+            return metrics, False
 
         result = {}
+        compressed = False
 
         # Process each metric
         for key, value in metrics.items():
             if isinstance(value, list) and self._is_time_series(value):
                 # Compress time-series data
                 result[key] = self._compress_time_series(value)
+                compressed = True
             elif isinstance(value, dict):
                 # Recursively process nested dicts
-                result[key] = await self.compress_metrics(value)
+                result[key], child_compressed = await self.compress_metrics(value)
+                if child_compressed:
+                    compressed = True
             else:
                 # Keep scalar values as-is
                 result[key] = value
 
-        return result
+        return result, compressed
 
     async def compress_single_series(
         self,

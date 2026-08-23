@@ -78,7 +78,7 @@ class AnomalyDetector:
         self.historical_metrics = {}
         self.baseline_window = 10  # Number of samples for baseline
 
-    async def detect_metrics_anomaly(self, metrics: dict[str, Any]) -> dict[str, Any]:
+    async def detect_metrics_anomaly(self, metrics: dict[str, Any]) -> tuple[dict[str, Any], list]:
         """
         Detect and filter anomalous metrics.
 
@@ -86,19 +86,32 @@ class AnomalyDetector:
             metrics: Raw metrics dictionary
 
         Returns:
-            Filtered metrics with only anomalous values + summary for normal
+            Tuple of (filtered_metrics, list_of_anomalies)
         """
         if not metrics:
-            return {"status": "no_metrics_available"}
+            return {"status": "no_metrics_available"}, []
 
         result = {}
         anomalies = []
         normal_count = 0
 
+        def get_metric_value(metric_data: Any) -> Optional[float]:
+            """Extract numeric value from metric data.
+
+            Handles both simple float values and complex dict structures
+            from TestDataGenerator.
+            """
+            if isinstance(metric_data, (int, float)):
+                return float(metric_data)
+            elif isinstance(metric_data, dict):
+                # TestDataGenerator format: {"current": value, "baseline": value, ...}
+                return float(metric_data.get("current", metric_data.get("value", 0)))
+            return None
+
         # Check CPU (existing)
         if "cpu_percent" in metrics:
-            cpu = metrics["cpu_percent"]
-            if cpu >= self.thresholds.cpu_high or cpu <= self.thresholds.cpu_low:
+            cpu = get_metric_value(metrics["cpu_percent"])
+            if cpu is not None and (cpu >= self.thresholds.cpu_high or cpu <= self.thresholds.cpu_low):
                 result["cpu_percent"] = cpu
                 anomalies.append(AnomalyResult(
                     is_anomalous=True,
@@ -113,8 +126,8 @@ class AnomalyDetector:
 
         # Check Memory (existing)
         if "memory_percent" in metrics:
-            memory = metrics["memory_percent"]
-            if memory >= self.thresholds.memory_high:
+            memory = get_metric_value(metrics["memory_percent"])
+            if memory is not None and memory >= self.thresholds.memory_high:
                 result["memory_percent"] = memory
                 anomalies.append(AnomalyResult(
                     is_anomalous=True,
@@ -129,8 +142,8 @@ class AnomalyDetector:
 
         # Check Disk usage (existing)
         if "disk_percent" in metrics:
-            disk = metrics["disk_percent"]
-            if disk >= self.thresholds.disk_high:
+            disk = get_metric_value(metrics["disk_percent"])
+            if disk is not None and disk >= self.thresholds.disk_high:
                 result["disk_percent"] = disk
                 anomalies.append(AnomalyResult(
                     is_anomalous=True,
@@ -156,20 +169,23 @@ class AnomalyDetector:
             result["_disk_io_anomaly"] = [a.__dict__ for a in disk_io_anomalies]
 
         # NEW: Check Error Rate (Day 2)
-        if "error_rate" in metrics:
-            error_rate = metrics["error_rate"]
-            if error_rate >= self.thresholds.error_rate_high:
-                result["error_rate"] = error_rate
-                anomalies.append(AnomalyResult(
-                    is_anomalous=True,
-                    metric_name="error_rate",
-                    value=error_rate,
-                    threshold=self.thresholds.error_rate_high,
-                    reason="Error rate high",
-                    severity="critical" if error_rate >= 10 else "high"
-                ))
-            else:
-                normal_count += 1
+        # Check both "error_rate" and "error_rate_percent" keys
+        for error_key in ["error_rate", "error_rate_percent"]:
+            if error_key in metrics:
+                error_rate = get_metric_value(metrics[error_key])
+                if error_rate is not None and error_rate >= self.thresholds.error_rate_high:
+                    result[error_key] = error_rate
+                    anomalies.append(AnomalyResult(
+                        is_anomalous=True,
+                        metric_name=error_key,
+                        value=error_rate,
+                        threshold=self.thresholds.error_rate_high,
+                        reason="Error rate high",
+                        severity="critical" if error_rate >= 10 else "high"
+                    ))
+                    break
+                else:
+                    normal_count += 1
 
         # Add summary for normal metrics
         if normal_count > 0 and not anomalies:
@@ -190,7 +206,26 @@ class AnomalyDetector:
                 for a in anomalies
             ]
 
-        return result
+        return result, anomalies
+
+    def _get_metric_value(self, metric_data: Any) -> Optional[float]:
+        """Extract numeric value from metric data.
+
+        Handles both simple float values and complex dict structures
+        from TestDataGenerator.
+        """
+        if isinstance(metric_data, (int, float)):
+            return float(metric_data)
+        elif isinstance(metric_data, dict):
+            # TestDataGenerator format: {"current": value, "baseline": value, ...}
+            return float(metric_data.get("current", metric_data.get("value", 0)))
+        return None
+
+    def _get_metric_baseline(self, metric_data: Any) -> Optional[float]:
+        """Extract baseline value from metric data if available."""
+        if isinstance(metric_data, dict):
+            return float(metric_data.get("baseline", 0))
+        return None
 
     async def _detect_network_io_anomaly(self, metrics: dict[str, Any]) -> List[AnomalyResult]:
         """
@@ -203,57 +238,65 @@ class AnomalyDetector:
         """
         anomalies = []
 
-        # Check network input
-        if "network_in_bytes" in metrics:
-            current_in = metrics["network_in_bytes"]
-            baseline_in = self._get_baseline("network_in_bytes")
+        # Check network input (support both key variants)
+        for net_in_key in ["network_in_bytes", "network_io_in"]:
+            if net_in_key in metrics:
+                net_in_data = metrics[net_in_key]
+                current_in = self._get_metric_value(net_in_data)
+                baseline_in = self._get_metric_baseline(net_in_data) or self._get_baseline(net_in_key)
 
-            if baseline_in > 0:
-                ratio_in = current_in / baseline_in
-                if ratio_in >= self.thresholds.network_io_critical_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="network_in_bytes",
-                        value=current_in,
-                        threshold=baseline_in * self.thresholds.network_io_critical_multiplier,
-                        reason=f"Network input spike: {ratio_in:.1f}x baseline",
-                        severity="critical"
-                    ))
-                elif ratio_in >= self.thresholds.network_io_high_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="network_in_bytes",
-                        value=current_in,
-                        threshold=baseline_in * self.thresholds.network_io_high_multiplier,
-                        reason=f"Network input elevated: {ratio_in:.1f}x baseline",
-                        severity="high"
-                    ))
+                if current_in is not None and baseline_in is not None and baseline_in > 0:
+                    ratio_in = current_in / baseline_in
+                    if ratio_in >= self.thresholds.network_io_critical_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=net_in_key,
+                            value=current_in,
+                            threshold=baseline_in * self.thresholds.network_io_critical_multiplier,
+                            reason=f"Network input spike: {ratio_in:.1f}x baseline",
+                            severity="critical"
+                        ))
+                        break  # Only report once
+                    elif ratio_in >= self.thresholds.network_io_high_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=net_in_key,
+                            value=current_in,
+                            threshold=baseline_in * self.thresholds.network_io_high_multiplier,
+                            reason=f"Network input elevated: {ratio_in:.1f}x baseline",
+                            severity="high"
+                        ))
+                        break
 
-        # Check network output
-        if "network_out_bytes" in metrics:
-            current_out = metrics["network_out_bytes"]
-            baseline_out = self._get_baseline("network_out_bytes")
+        # Check network output (support both key variants)
+        for net_out_key in ["network_out_bytes", "network_io_out"]:
+            if net_out_key in metrics:
+                net_out_data = metrics[net_out_key]
+                current_out = self._get_metric_value(net_out_data)
+                baseline_out = self._get_metric_baseline(net_out_data) or self._get_baseline(net_out_key)
 
-            if baseline_out > 0:
-                ratio_out = current_out / baseline_out
-                if ratio_out >= self.thresholds.network_io_critical_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="network_out_bytes",
-                        value=current_out,
-                        threshold=baseline_out * self.thresholds.network_io_critical_multiplier,
-                        reason=f"Network output spike: {ratio_out:.1f}x baseline",
-                        severity="critical"
-                    ))
-                elif ratio_out >= self.thresholds.network_io_high_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="network_out_bytes",
-                        value=current_out,
-                        threshold=baseline_out * self.thresholds.network_io_high_multiplier,
-                        reason=f"Network output elevated: {ratio_out:.1f}x baseline",
-                        severity="high"
-                    ))
+                if current_out is not None and baseline_out is not None and baseline_out > 0:
+                    ratio_out = current_out / baseline_out
+                    if ratio_out >= self.thresholds.network_io_critical_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=net_out_key,
+                            value=current_out,
+                            threshold=baseline_out * self.thresholds.network_io_critical_multiplier,
+                            reason=f"Network output spike: {ratio_out:.1f}x baseline",
+                            severity="critical"
+                        ))
+                        break
+                    elif ratio_out >= self.thresholds.network_io_high_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=net_out_key,
+                            value=current_out,
+                            threshold=baseline_out * self.thresholds.network_io_high_multiplier,
+                            reason=f"Network output elevated: {ratio_out:.1f}x baseline",
+                            severity="high"
+                        ))
+                        break
 
         return anomalies
 
@@ -268,57 +311,65 @@ class AnomalyDetector:
         """
         anomalies = []
 
-        # Check disk read I/O
-        if "disk_read_bytes" in metrics:
-            current_read = metrics["disk_read_bytes"]
-            baseline_read = self._get_baseline("disk_read_bytes")
+        # Check disk read I/O (support both key variants)
+        for disk_in_key in ["disk_read_bytes", "disk_io_in"]:
+            if disk_in_key in metrics:
+                disk_in_data = metrics[disk_in_key]
+                current_read = self._get_metric_value(disk_in_data)
+                baseline_read = self._get_metric_baseline(disk_in_data) or self._get_baseline(disk_in_key)
 
-            if baseline_read > 0:
-                ratio_read = current_read / baseline_read
-                if ratio_read >= self.thresholds.disk_io_critical_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="disk_read_bytes",
-                        value=current_read,
-                        threshold=baseline_read * self.thresholds.disk_io_critical_multiplier,
-                        reason=f"Disk read spike: {ratio_read:.1f}x baseline",
-                        severity="critical"
-                    ))
-                elif ratio_read >= self.thresholds.disk_io_high_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="disk_read_bytes",
-                        value=current_read,
-                        threshold=baseline_read * self.thresholds.disk_io_high_multiplier,
-                        reason=f"Disk read elevated: {ratio_read:.1f}x baseline",
-                        severity="high"
-                    ))
+                if current_read is not None and baseline_read is not None and baseline_read > 0:
+                    ratio_read = current_read / baseline_read
+                    if ratio_read >= self.thresholds.disk_io_critical_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=disk_in_key,
+                            value=current_read,
+                            threshold=baseline_read * self.thresholds.disk_io_critical_multiplier,
+                            reason=f"Disk read spike: {ratio_read:.1f}x baseline",
+                            severity="critical"
+                        ))
+                        break
+                    elif ratio_read >= self.thresholds.disk_io_high_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=disk_in_key,
+                            value=current_read,
+                            threshold=baseline_read * self.thresholds.disk_io_high_multiplier,
+                            reason=f"Disk read elevated: {ratio_read:.1f}x baseline",
+                            severity="high"
+                        ))
+                        break
 
-        # Check disk write I/O
-        if "disk_write_bytes" in metrics:
-            current_write = metrics["disk_write_bytes"]
-            baseline_write = self._get_baseline("disk_write_bytes")
+        # Check disk write I/O (support both key variants)
+        for disk_out_key in ["disk_write_bytes", "disk_io_out"]:
+            if disk_out_key in metrics:
+                disk_out_data = metrics[disk_out_key]
+                current_write = self._get_metric_value(disk_out_data)
+                baseline_write = self._get_metric_baseline(disk_out_data) or self._get_baseline(disk_out_key)
 
-            if baseline_write > 0:
-                ratio_write = current_write / baseline_write
-                if ratio_write >= self.thresholds.disk_io_critical_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="disk_write_bytes",
-                        value=current_write,
-                        threshold=baseline_write * self.thresholds.disk_io_critical_multiplier,
-                        reason=f"Disk write spike: {ratio_write:.1f}x baseline",
-                        severity="critical"
-                    ))
-                elif ratio_write >= self.thresholds.disk_io_high_multiplier:
-                    anomalies.append(AnomalyResult(
-                        is_anomalous=True,
-                        metric_name="disk_write_bytes",
-                        value=current_write,
-                        threshold=baseline_write * self.thresholds.disk_io_high_multiplier,
-                        reason=f"Disk write elevated: {ratio_write:.1f}x baseline",
-                        severity="high"
-                    ))
+                if current_write is not None and baseline_write is not None and baseline_write > 0:
+                    ratio_write = current_write / baseline_write
+                    if ratio_write >= self.thresholds.disk_io_critical_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=disk_out_key,
+                            value=current_write,
+                            threshold=baseline_write * self.thresholds.disk_io_critical_multiplier,
+                            reason=f"Disk write spike: {ratio_write:.1f}x baseline",
+                            severity="critical"
+                        ))
+                        break
+                    elif ratio_write >= self.thresholds.disk_io_high_multiplier:
+                        anomalies.append(AnomalyResult(
+                            is_anomalous=True,
+                            metric_name=disk_out_key,
+                            value=current_write,
+                            threshold=baseline_write * self.thresholds.disk_io_high_multiplier,
+                            reason=f"Disk write elevated: {ratio_write:.1f}x baseline",
+                            severity="high"
+                        ))
+                        break
 
         return anomalies
 

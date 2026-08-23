@@ -1,0 +1,599 @@
+# Comprehensive Monitoring Stack
+#
+# Includes Prometheus, Grafana, AlertManager, and Node Exporter
+# For production-grade observability
+#
+# Phase 7: Production Hardening - Week 3, Day 11-13
+
+---
+# Namespace for monitoring
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    pod-security.kubernetes.io/enforce: privileged
+
+---
+# Prometheus Operator
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: monitoring
+spec:
+  interval: 1h
+  url: https://prometheus-community.github.io/helm-charts
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus-operator
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "56.x"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  values:
+    # Default retention and size
+    prometheus:
+      prometheusSpec:
+        retention: 90d
+        retentionSize: 50GB
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: gp3-encrypted
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 50Gi
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2Gi
+          limits:
+            cpu: 1000m
+            memory: 4Gi
+        serviceMonitorSelectorNilUsesHelmValues: false
+        # Remote write for long-term storage
+        remoteWrite:
+          - url: "https://thanos-receiver.monitoring.svc.cluster.local:19291/api/v1/receive"
+            sendExemplars: true
+            queueConfig:
+              capacity: 10000
+              maxSamplesPerSend: 1000
+              batchSendDeadline: 5s
+              minBackoff: 100ms
+              maxBackoff: 1s
+        # AlertManager configuration
+        alertingEndpoints:
+          - name: alertmanager
+            namespace: monitoring
+            port: web
+
+    # Grafana configuration
+    grafana:
+      enabled: true
+      persistence:
+        type: pvc
+        storageClassName: gp3-encrypted
+        size: 10Gi
+      adminPassword: "CHANGE_ME_IN_PRODUCTION"
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+      grafana.ini:
+        server:
+          root_url: "https://grafana.example.com"
+        database:
+          host: grafana-db.monitoring.svc
+        session:
+          provider: postgres
+        auth.anonymous:
+          enabled: false
+        users:
+          viewers_can_edit: false
+      dashboardProviders:
+        dashboards:
+          enabled: true
+      sidecar:
+        dashboards:
+          enabled: true
+          searchNamespace: monitoring
+        datasources:
+          enabled: true
+          searchNamespace: monitoring
+      # Provision dashboards
+      dashboardsConfigMaps:
+        default:
+          - dashboard-p8s-overview.json
+          - dashboard-k8s-resources.json
+          - dashboard-k8s-state-metrics.json
+
+    # AlertManager configuration
+    alertmanager:
+      enabled: true
+      config:
+        global:
+          slack_api_url: "CHANGE_ME_SLACK_WEBHOOK_URL"
+          resolve_timeout: 5m
+        route:
+          group_by: ['alertname', 'cluster', 'service']
+          group_wait: 10s
+          group_interval: 10s
+          repeat_interval: 12h
+          receiver: 'default-receiver'
+          routes:
+            - match:
+                severity: critical
+              receiver: 'critical-receiver'
+              continue: true
+            - match:
+                severity: warning
+              receiver: 'warning-receiver'
+        receivers:
+          - name: 'default-receiver'
+            slack_configs:
+              - api_url: "CHANGE_ME_SLACK_WEBHOOK_URL"
+                channel: '#alerts'
+                title: '{{ .GroupLabels.alertname }}'
+                text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+          - name: 'critical-receiver'
+            pagerduty_configs:
+              - service_key: "CHANGE_ME_PAGERDUTY_SERVICE_KEY"
+                description: '{{ .GroupLabels.alertname }}'
+            slack_configs:
+              - api_url: "CHANGE_ME_SLACK_WEBHOOK_URL"
+                channel: '#incidents-critical'
+                title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+          - name: 'warning-receiver'
+            slack_configs:
+              - api_url: "CHANGE_ME_SLACK_WEBHOOK_URL"
+                channel: '#alerts'
+                title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+      persistence:
+        enabled: true
+        storageClassName: gp3-encrypted
+        size: 2Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    # Node Exporter for system metrics
+    nodeExporter:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+    # Kube-State-Metrics for cluster state
+    kubeStateMetrics:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 100m
+          memory: 256Mi
+
+    # Blackbox Exporter for endpoint monitoring
+    blackboxExporter:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+---
+# Custom Prometheus Rules for AI Agentics Platform
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ai-agentics-alerts
+  namespace: monitoring
+  labels:
+    release: prometheus-operator
+    app: ai-agentics
+spec:
+  groups:
+    # Critical Alerts (P0)
+    - name: critical-alerts
+      interval: 30s
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            (
+              rate(http_requests_total{job="api-server",status=~"5.."}[5m])
+              /
+              rate(http_requests_total{job="api-server"}[5m])
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "API error rate above 5%"
+            description: "API error rate is {{ $value | humanizePercentage }}, affecting {{ $labels.instance }}"
+
+        - alert: DatabaseConnectionFailure
+          expr: |
+            pg_stat_database_datname{datname="devops_monitoring"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Database connection lost"
+            description: "Cannot connect to PostgreSQL on {{ $labels.instance }}"
+
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{reason="Error"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Pod crash looping"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is crash looping"
+
+        - alert: HighLatency
+          expr: |
+            histogram_quantile(0.95,
+              rate(http_request_duration_seconds_bucket{job="api-server"}[5m])
+            ) > 1
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "P95 latency above 1 second"
+            description: "API latency P95 is {{ $value }}s on {{ $labels.instance }}"
+
+        - alert: DiskSpaceLow
+          expr: |
+            (
+              (node_filesystem_avail_bytes{mountpoint="/"} /
+              node_filesystem_size_bytes{mountpoint="/"})
+              < 0.1
+            )
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Disk space below 10%"
+            description: "Disk on {{ $labels.instance }} has {{ $value | humanizePercentage }} free space"
+
+        - alert: MemoryPressure
+          expr: |
+            (
+              (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
+            )
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Available memory below 10%"
+            description: "Node {{ $labels.instance }} has {{ $value | humanizePercentage }} memory available"
+
+    # Warning Alerts (P1)
+    - name: warning-alerts
+      interval: 1m
+      rules:
+        - alert: HighCPUUsage
+          expr: |
+            (
+              100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+            ) > 80
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "CPU usage above 80%"
+            description: "Node {{ $labels.instance }} CPU usage is {{ $value }}%"
+
+        - alert: ReplicationLag
+          expr: |
+            (
+              pg_stat_replication_lag_seconds > 30
+            )
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Database replication lag above 30 seconds"
+            description: "Replication lag is {{ $value }}s"
+
+        - alert: QueueBacklog
+          expr: |
+            (
+              rabbitmq_queue_messages{queue="ai-agentics-tasks"} > 1000
+            )
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Queue backlog growing"
+            description: "Queue has {{ $value }} messages pending"
+
+        - alert: CertificateExpiring
+          expr: |
+            (
+              (cert_certificate_expiry_time - time()) / 86400 < 30
+            )
+          for: 1h
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "TLS certificate expiring soon"
+            description: "Certificate expires in {{ $value }} days"
+
+    # Business Logic Alerts
+    - name: business-alerts
+      interval: 1m
+      rules:
+        - alert: OptimizationFailed
+          expr: |
+            (
+              rate(ai_agentics_optimization_failures_total[5m]) > 0.1
+            )
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Token optimization failure rate high"
+            description: "Optimization failing for {{ $value | humanizePercentage }} of requests"
+
+        - alert: SkillExecutionFailed
+          expr: |
+            (
+              rate(ai_agentics_skill_failures_total[5m]) > 0.05
+            )
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Skill execution failure rate above 5%"
+            description: "Skills failing for {{ $value | humanizePercentage }} of executions"
+
+        - alert: TriageCardGenerationFailed
+          expr: |
+            (
+              rate(ai_agentics_triage_failures_total[5m]) > 0.1
+            )
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Triage card generation failing"
+            description: "Triage generation failing for {{ $value | humanizePercentage }} of incidents"
+
+    # Backup Alerts
+    - name: backup-alerts
+      interval: 5m
+      rules:
+        - alert: BackupFailed
+          expr: |
+            (
+              time() - backup_last_success_timestamp > 36 * 3600
+            )
+          for: 15m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Backup not succeeded in 36 hours"
+            description: "Backup for {{ $labels.service }} hasn't succeeded in 36 hours"
+
+        - alert: BackupStorageExhausted
+          expr: |
+            (
+              (backup_storage_usage_bytes / backup_storage_capacity_bytes) > 0.9
+            )
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Backup storage usage above 90%"
+            description: "Backup storage at {{ $value | humanizePercentage }} capacity"
+
+    # SLO Alerts
+    - name: slo-alerts
+      interval: 1m
+      rules:
+        - alert: AvailabilitySLO
+          expr: |
+            (
+              (
+                (
+                  sum(rate(http_requests_total{job="api-server",code!~"5.."}[5m]))
+                  /
+                  sum(rate(http_requests_total{job="api-server"}[5m]))
+                ) < 0.99
+              )
+            )
+          for: 10m
+          labels:
+            severity: critical
+            slo: availability
+            team: platform
+          annotations:
+            summary: "Availability SLO breach (below 99%)"
+            description: "Current availability is {{ $value | humanizePercentage }}"
+
+        - alert: LatencySLO
+          expr: |
+            (
+              histogram_quantile(0.95,
+                rate(http_request_duration_seconds_bucket{job="api-server"}[5m])
+              ) > 0.5
+            )
+          for: 10m
+          labels:
+            severity: warning
+            slo: latency
+            team: platform
+          annotations:
+            summary: "Latency SLO breach (P95 above 500ms)"
+            description: "Current P95 latency is {{ $value }}s"
+
+---
+# ServiceMonitors for custom applications
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend-api
+  namespace: backend
+  labels:
+    app: backend-api
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scheme: http
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-exporter
+  namespace: monitoring
+  labels:
+    app: postgres-exporter
+spec:
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  endpoints:
+  - port: metrics
+    interval: 15s
+
+---
+# PodMonitor for stateful applications
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres-pods
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: postgresql
+  podMetricsEndpoints:
+  - port: metrics
+    interval: 30s
+
+---
+# Thanos for long-term metrics storage
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: thanos
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: thanos
+      version: "12.x"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  values:
+    query:
+      enabled: true
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+      replicas:
+        2
+      store:
+        # S3 for long-term storage
+        type: s3
+        s3:
+          bucket: "devops-monitoring-metrics-${ENVIRONMENT:-staging}"
+          endpoint: "s3.amazonaws.com"
+          region: "us-east-1"
+          access_key: "${AWS_ACCESS_KEY_ID}"
+          secret_key: "${AWS_SECRET_ACCESS_KEY}"
+          insecure: false
+          signature_version: "4"
+
+    store:
+      enabled: true
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 200m
+          memory: 512Mi
+      type: s3
+      s3:
+        bucket: "devops-monitoring-metrics-${ENVIRONMENT:-stating}"
+        endpoint: "s3.amazonaws.com"
+        region: "us-east-1"
+        access_key: "${AWS_ACCESS_KEY_ID}"
+        secret_key: "${AWS_SECRET_ACCESS_KEY}"
+        insecure: false
+        signature_version: "4"
+
+    compact:
+      enabled: true
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 200m
+          memory: 512Mi
+      retain:
+        raw:
+          compacted:
+            delete-after: 240h
+        source:
+          delete-after: 720h

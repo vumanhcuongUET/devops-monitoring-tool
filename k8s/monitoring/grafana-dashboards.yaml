@@ -1,0 +1,345 @@
+---
+# Phase 7 Grafana Dashboards
+# Dashboards for Cache, Analytics, and Database monitoring
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-phase7
+  namespace: monitoring
+  labels:
+    app: grafana
+    phase: "7"
+data:
+  # Cache Performance Dashboard
+  cache-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Phase 7 - Cache Performance",
+        "tags": ["phase7", "cache", "performance"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "Cache Hit Rate by Level",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "cache:hit_rate:5m{cache_level=\"L1\"}",
+                "legendFormat": "L1 Hit Rate"
+              },
+              {
+                "expr": "cache:hit_rate:5m{cache_level=\"L2\"}",
+                "legendFormat": "L2 Hit Rate"
+              },
+              {
+                "expr": "cache:hit_rate:5m{cache_level=\"L3\"}",
+                "legendFormat": "L3 Hit Rate"
+              }
+            ]
+          },
+          {
+            "title": "Cache Memory Usage",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "cache:memory_bytes:total",
+                "legendFormat": "{{cache_level}} Memory"
+              }
+            ]
+          },
+          {
+            "title": "Cache Eviction Rate",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "cache:eviction_rate:5m",
+                "legendFormat": "{{cache_level}} Evictions/sec"
+              }
+            ]
+          },
+          {
+            "title": "Requests by Cache Level",
+            "type": "stat",
+            "gridPos": {"x": 12, "y": 8, "w": 6, "h": 4},
+            "targets": [
+              {
+                "expr": "sum(rate(cache_requests_total[5m])) by (cache_level)",
+                "legendFormat": "{{cache_level}}"
+              }
+            ]
+          },
+          {
+            "title": "Total Cache Objects",
+            "type": "stat",
+            "gridPos": {"x": 18, "y": 8, "w": 6, "h": 4},
+            "targets": [
+              {
+                "expr": "sum(cache_objects)",
+                "legendFormat": "Objects"
+              }
+            ]
+          },
+          {
+            "title": "Redis Connections",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "redis_connected_clients",
+                "legendFormat": "{{environment}} Connections"
+              }
+            ]
+          },
+          {
+            "title": "Redis Commands/sec",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(redis_commands_processed_total[5m])",
+                "legendFormat": "{{environment}} Commands/sec"
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+  # Analytics Dashboard
+  analytics-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Phase 7 - Analytics & Cost",
+        "tags": ["phase7", "analytics", "cost"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "Daily Cost by Project",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 0, "w": 16, "h": 8},
+            "targets": [
+              {
+                "expr": "cost:daily_usd:total",
+                "legendFormat": "{{project}}"
+              }
+            ]
+          },
+          {
+            "title": "Total Daily Cost",
+            "type": "stat",
+            "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
+            "targets": [
+              {
+                "expr": "sum(cost:daily_usd:total)",
+                "legendFormat": "USD"
+              }
+            ]
+          },
+          {
+            "title": "Token Usage Rate",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "tokens:usage_total:5m{model=\"claude\"}",
+                "legendFormat": "Claude - {{project}}"
+              },
+              {
+                "expr": "tokens:usage_total:5m{model=\"gpt\"}",
+                "legendFormat": "GPT - {{project}}"
+              }
+            ]
+          },
+          {
+            "title": "Average Latency",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "latency:avg_ms:5m",
+                "legendFormat": "{{project}} Avg"
+              },
+              {
+                "expr": "latency:p95_ms:5m",
+                "legendFormat": "{{project}} P95"
+              }
+            ]
+          },
+          {
+            "title": "Cost by Category",
+            "type": "piechart",
+            "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8},
+            "targets": [
+              {
+                "expr": "sum by (metric_category) (cost_tracking_total_usd)",
+                "legendFormat": "{{metric_category}}"
+              }
+            ]
+          },
+          {
+            "title": "Token Efficiency (Requests/1k tokens)",
+            "type": "graph",
+            "gridPos": {"x": 8, "y": 16, "w": 16, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(http_requests_total[5m]) / (rate(usage_tokens_total[5m]) / 1000)",
+                "legendFormat": "{{project}} Efficiency"
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+  # Database Dashboard
+  database-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Phase 7 - Database Performance",
+        "tags": ["phase7", "database", "postgres"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "Connection Usage",
+            "type": "gauge",
+            "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
+            "targets": [
+              {
+                "expr": "postgres:connection_usage:ratio * 100",
+                "legendFormat": "Usage %"
+              }
+            ]
+          },
+          {
+            "title": "Query Latency P95",
+            "type": "graph",
+            "gridPos": {"x": 8, "y": 0, "w": 16, "h": 8},
+            "targets": [
+              {
+                "expr": "postgres:query_latency:p95",
+                "legendFormat": "{{datname}} P95 Latency"
+              }
+            ]
+          },
+          {
+            "title": "Slow Queries Rate",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "postgres:slow_queries:rate_5m",
+                "legendFormat": "{{datname}} Slow Queries/sec"
+              }
+            ]
+          },
+          {
+            "title": "Database Size",
+            "type": "stat",
+            "gridPos": {"x": 12, "y": 8, "w": 6, "h": 8},
+            "targets": [
+              {
+                "expr": "pg_database_size_bytes{datname=\"devops_monitoring\"}",
+                "legendFormat": "Bytes"
+              }
+            ]
+          },
+          {
+            "title": "Transactions/sec",
+            "type": "stat",
+            "gridPos": {"x": 18, "y": 8, "w": 6, "h": 8},
+            "targets": [
+              {
+                "expr": "sum(rate(pg_stat_database_xact_commit[5m]))",
+                "legendFormat": "Commits/sec"
+              }
+            ]
+          },
+          {
+            "title": "Table Row Counts",
+            "type": "table",
+            "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8},
+            "targets": [
+              {
+                "expr": "pg_stat_user_tables{datname=\"devops_monitoring\"}",
+                "legendFormat": "{{schemaname}}.{{relname}}: {{n_live_tup}}"
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+---
+# PrometheusRule for Phase 7 alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: phase7-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    phase: "7"
+spec:
+  groups:
+  - name: phase7_cache_alerts
+    interval: 30s
+    rules:
+    - alert: CacheHitRateLow
+      expr: cache:hit_rate:5m < 0.5
+      for: 10m
+      labels:
+        severity: warning
+        phase: "7"
+      annotations:
+        summary: "Cache hit rate below 50%"
+        description: "{{ $labels.project }}/{{ $labels.cache_level }} hit rate: {{ $value | humanizePercentage }}"
+
+    - alert: RedisDown
+      expr: redis_up == 0
+      for: 1m
+      labels:
+        severity: critical
+        phase: "7"
+      annotations:
+        summary: "Redis instance down"
+        description: "Redis {{ $labels.instance }} is down"
+
+  - name: phase7_analytics_alerts
+    interval: 30s
+    rules:
+    - alert: CostTrackingAnomaly
+      expr: cost:daily_usd:total > (cost:daily_usd:total offset 1d * 2)
+      for: 1h
+      labels:
+        severity: warning
+        phase: "7"
+      annotations:
+        summary: "Cost doubled compared to yesterday"
+        description: "{{ $labels.project }} cost: {{ $value }}USD"
+
+  - name: phase7_database_alerts
+    interval: 30s
+    rules:
+    - alert: PostgresConnectionPoolExhausted
+      expr: postgres:connection_usage:ratio > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        phase: "7"
+      annotations:
+        summary: "PostgreSQL connection pool > 90%"
+        description: "Connection usage: {{ $value | humanizePercentage }}"
+
+    - alert: PostgresDown
+      expr: pg_up == 0
+      for: 1m
+      labels:
+        severity: critical
+        phase: "7"
+      annotations:
+        summary: "PostgreSQL instance down"
+        description: "PostgreSQL {{ $labels.instance }} is down"

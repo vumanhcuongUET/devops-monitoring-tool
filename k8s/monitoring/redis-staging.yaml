@@ -1,0 +1,149 @@
+---
+# Redis Cluster for Staging
+# Environment: Staging
+# Specs: 2 nodes, 1GB each
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: staging
+  labels:
+    app: redis
+    tier: cache
+    env: staging
+data:
+  redis.conf: |
+    maxmemory 1gb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    appendonly yes
+    appendfsync everysec
+    loglevel notice
+    bind 0.0.0.0
+
+  sentinel.conf: |
+    port 26379
+    sentinel monitor mymaster redis-0 6379 2
+    sentinel auth-pass mymaster REDIS_PASSWORD
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 10000
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: staging
+type: Opaque
+stringData:
+  redis-password: "staging_redis_change_me"
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: staging
+  labels:
+    app: redis
+    env: staging
+spec:
+  serviceName: redis-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        env: staging
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        - containerPort: 26379
+          name: sentinel
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        command:
+        - sh
+        - -c
+        - |
+          echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+          if [ "${HOSTNAME##*-}" = "0" ]; then
+            redis-server /etc/redis/redis.conf
+          else
+            redis-sentinel /etc/redis/sentinel.conf
+          fi
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 2Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: staging
+spec:
+  ports:
+  - port: 6379
+  clusterIP: None
+  selector:
+    app: redis
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: staging
+spec:
+  ports:
+  - port: 6379
+  selector:
+    app: redis
+  type: ClusterIP

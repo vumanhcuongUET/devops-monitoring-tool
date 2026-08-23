@@ -33,6 +33,11 @@ from .single_flight import (
     get_single_flight_stats,
 )
 
+from .output_optimizer import (
+    OutputOptimizer,
+    get_output_optimizer,
+)
+
 from .logging_config import (
     LogContext,
     get_log_context,
@@ -89,6 +94,9 @@ __all__ = [
     "get_global_single_flight",
     "single_flight",
     "get_single_flight_stats",
+    # Output optimization
+    "OutputOptimizer",
+    "get_output_optimizer",
     # Logging & metrics
     "LogContext",
     "get_log_context",

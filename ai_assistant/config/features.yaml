@@ -62,6 +62,9 @@ output:
   truncate_results: true
   max_results_per_source: 10
 
+  # Output optimization (compact formatting, intelligent truncation)
+  optimization_enabled: true
+
 # Query Features
 query:
   # Time range validation

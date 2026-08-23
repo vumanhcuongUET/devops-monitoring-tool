@@ -13,15 +13,25 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 
-# Mock backend imports before importing run_query_v2
-with patch.dict("sys.modules", {
-    "app.services.elasticsearch_client": MagicMock(),
-    "app.services.prometheus_client": MagicMock(),
-    "app.services.apm_client": MagicMock(),
-    "app.services.kubernetes_client": MagicMock(),
-    "app.config": MagicMock(),
-}):
-    from tools import run_query_v2
+# Mock requests before importing run_query_v2 (which imports requests at module level)
+mock_requests = MagicMock()
+mock_requests.post = MagicMock()
+mock_requests.get = MagicMock()
+mock_requests.exceptions = MagicMock()
+mock_requests.exceptions.ConnectionError = Exception
+mock_requests.exceptions.Timeout = Exception
+mock_requests.exceptions.HTTPError = Exception
+
+with patch.dict("sys.modules", {"requests": mock_requests}):
+    # Mock backend imports before importing run_query_v2
+    with patch.dict("sys.modules", {
+        "app.services.elasticsearch_client": MagicMock(),
+        "app.services.prometheus_client": MagicMock(),
+        "app.services.apm_client": MagicMock(),
+        "app.services.kubernetes_client": MagicMock(),
+        "app.config": MagicMock(),
+    }):
+        from tools import run_query_v2
 
 
 @pytest.mark.unit
@@ -62,7 +72,7 @@ class TestRunQueryIntegration:
     def test_query_elk_http_fallback(self, sample_elk_response):
         """Test HTTP fallback for ELK queries."""
         # Mock requests to avoid actual HTTP call
-        with patch("tools.run_query_v2.requests.post") as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.return_value.json.return_value = sample_elk_response
             mock_post.return_value.status_code = 200
             mock_post.return_value.raise_for_status = lambda: None
@@ -82,7 +92,7 @@ class TestRunQueryIntegration:
 
     def test_query_prometheus_http_fallback(self, sample_prometheus_response):
         """Test HTTP fallback for Prometheus queries."""
-        with patch("tools.run_query_v2.requests.get") as mock_get:
+        with patch("requests.get") as mock_get:
             mock_get.return_value.json.return_value = sample_prometheus_response
             mock_get.return_value.status_code = 200
             mock_get.return_value.raise_for_status = lambda: None

@@ -48,6 +48,9 @@ from core.logging_config import (
     CredentialSanitizer
 )
 from core.audit import get_audit_logger, AuditLogEntry
+from core.cache import cached, get_global_cache, get_cache_stats
+from core.single_flight import single_flight, get_global_single_flight
+from core.output_optimizer import get_output_optimizer
 
 # Setup logging
 _logger = setup_logging()
@@ -172,14 +175,14 @@ def query_elk_http(source: dict, body: dict, timeout: int) -> dict:
     start_time = time.time()
     source_name = source.get("name", "unknown")
 
-    _logger.debug("Executing ELK HTTP query", source=source_name, index=source.get("index"))
+    _logger.debug("Executing ELK HTTP query", extra={"source": source_name, "index": source.get("index")})
 
     # Validate URL before using it
     from core.security import InputValidator
     source_url = source.get('url', '')
     is_valid, error = InputValidator.validate_url(source_url, allow_credentials=True)
     if not is_valid:
-        _logger.error("Invalid source URL", source=source_name, error=error)
+        _logger.error("Invalid source URL", extra={"source": source_name, "error": error})
         return {"status": "error", "source": source["name"], "error": f"Invalid URL: {error}", "data": None}
 
     url = f"{source['url']}/{source.get('index', '*')}/_search"
@@ -194,7 +197,7 @@ def query_elk_http(source: dict, body: dict, timeout: int) -> dict:
                              {"source": source_name, "status": "ok"})
         get_metrics().increment("elk_http_query_total", labels={"source": source_name, "status": "ok"})
 
-        _logger.info("ELK HTTP query successful", source=source_name, duration=duration)
+        _logger.info("ELK HTTP query successful", extra={"source": source_name, "duration": duration})
 
         return {"status": "ok", "source": source["name"], "data": resp.json()}
     except requests.exceptions.ConnectionError as e:
@@ -202,28 +205,28 @@ def query_elk_http(source: dict, body: dict, timeout: int) -> dict:
         get_metrics().observe("elk_http_query_duration_seconds", duration,
                              {"source": source_name, "status": "error"})
         get_metrics().increment("elk_http_query_total", labels={"source": source_name, "status": "connection_error"})
-        _logger.warning("ELK HTTP query connection error", source=source_name, error=str(e))
+        _logger.warning("ELK HTTP query connection error", extra={"source": source_name, "error": str(e)})
         return {"status": "unreachable", "source": source["name"], "data": None}
     except requests.exceptions.Timeout:
         duration = time.time() - start_time
         get_metrics().observe("elk_http_query_duration_seconds", duration,
                              {"source": source_name, "status": "timeout"})
         get_metrics().increment("elk_http_query_total", labels={"source": source_name, "status": "timeout"})
-        _logger.warning("ELK HTTP query timeout", source=source_name)
+        _logger.warning("ELK HTTP query timeout", extra={"source": source_name})
         return {"status": "timeout", "source": source["name"], "data": None}
     except requests.exceptions.HTTPError as e:
         duration = time.time() - start_time
         get_metrics().observe("elk_http_query_duration_seconds", duration,
                              {"source": source_name, "status": "http_error"})
         get_metrics().increment("elk_http_query_total", labels={"source": source_name, "status": f"http_{e.response.status_code}"})
-        _logger.error("ELK HTTP query HTTP error", source=source_name, status_code=e.response.status_code)
+        _logger.error("ELK HTTP query HTTP error", extra={"source": source_name, "status_code": e.response.status_code})
         return {"status": f"http_{e.response.status_code}", "source": source["name"], "data": None}
     except Exception as e:
         duration = time.time() - start_time
         get_metrics().observe("elk_http_query_duration_seconds", duration,
                              {"source": source_name, "status": "error"})
         get_metrics().increment("elk_http_query_total", labels={"source": source_name, "status": "error"})
-        _logger.error("ELK HTTP query unexpected error", source=source_name, error=str(e))
+        _logger.error("ELK HTTP query unexpected error", extra={"source": source_name, "error": str(e)})
         return {"status": "error", "source": source["name"], "error": str(e), "data": None}
 
 
@@ -272,7 +275,7 @@ def query_prometheus_http(source: dict, promql: str, timeout: int) -> dict:
     source_url = source.get('url', '')
     is_valid, error = InputValidator.validate_url(source_url, allow_credentials=True)
     if not is_valid:
-        _logger.error("Invalid source URL", source=source.get("name"), error=error)
+        _logger.error("Invalid source URL", extra={"source": source.get("name"), "error": error})
         return {"status": "error", "source": source["name"], "error": f"Invalid URL: {error}", "data": None}
 
     headers = _auth_headers(source.get("auth_env"))
@@ -324,11 +327,13 @@ def query_prometheus_adapter(source: dict, promql: str, timeout: int) -> dict:
 # Query execution dispatcher
 # ---------------------------------------------------------------------------
 
+@single_flight(lambda source, body, timeout: f"elk:{source.get('name')}:{hash(str(body))}")
 def execute_elk_query(source: dict, body: dict, timeout: int) -> dict:
     """
     Execute Elasticsearch query using best available method.
 
     Tries adapter first (if enabled), falls back to HTTP.
+    Concurrent requests with same source+body will deduplicate.
 
     Args:
         source: Source configuration
@@ -370,11 +375,13 @@ def execute_elk_query(source: dict, body: dict, timeout: int) -> dict:
     return result
 
 
+@single_flight(lambda source, promql, timeout: f"prom:{source.get('name')}:{hash(promql)}")
 def execute_prometheus_query(source: dict, promql: str, timeout: int) -> dict:
     """
     Execute Prometheus query using best available method.
 
     Tries adapter first (if enabled), falls back to HTTP.
+    Concurrent requests with same source+promql will deduplicate.
 
     Args:
         source: Source configuration
@@ -420,9 +427,14 @@ def execute_prometheus_query(source: dict, promql: str, timeout: int) -> dict:
 # Section runner
 # ---------------------------------------------------------------------------
 
+@cached(ttl=60)  # 60-second cache for query results
+@track_time("query_section_duration", {"section": "args[1]"})
 def run_section(config: dict, section: str, time_range_override: str | None) -> dict:
     """
     Execute a query section using configured sources.
+
+    Results are cached for 60 seconds to reduce duplicate queries.
+    Different time_range_override values result in separate cache entries.
 
     Args:
         config: Merged project configuration
@@ -479,7 +491,7 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
             from core.security import InputValidator
             is_valid, error = InputValidator.validate_template_content(template)
             if not is_valid:
-                _logger.error("Invalid ELK template", source=source["name"], error=error)
+                _logger.error("Invalid ELK template", extra={"source": source["name"], "error": error})
                 return {"status": "template_error", "source": source["name"], "error": f"Invalid template: {error}", "data": None}
 
             body_str = render_template(template, vars_)
@@ -498,7 +510,7 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
                     from core.security import InputValidator
                     is_valid, error = InputValidator.validate_template_content(template, max_length=2000)
                     if not is_valid:
-                        _logger.error("Invalid PromQL template", source=source["name"], error=error)
+                        _logger.error("Invalid PromQL template", extra={"source": source["name"], "error": error})
                         return {"status": "template_error", "source": source["name"], "error": f"Invalid template: {error}", "data": None}
                     promql = render_template(template, vars_)
                     res = execute_prometheus_query(source, promql, timeout)
@@ -511,7 +523,7 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
                 from core.security import InputValidator
                 is_valid, error = InputValidator.validate_template_content(template, max_length=2000)
                 if not is_valid:
-                    _logger.error("Invalid PromQL template", source=source["name"], error=error)
+                    _logger.error("Invalid PromQL template", extra={"source": source["name"], "error": error})
                     return {"status": "template_error", "source": source["name"], "error": f"Invalid template: {error}", "data": None}
                 promql = render_template(template, vars_)
                 return execute_prometheus_query(source, promql, timeout)
@@ -529,7 +541,27 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
         futures = [pool.submit(execute, src) for src in all_sources]
         results = [f.result() for f in as_completed(futures)]
 
-    return {"section": section, "results": results}
+    result = {"section": section, "results": results}
+
+    # Apply output optimization if enabled
+    if is_feature_enabled("output.truncate_results"):
+        optimizer = get_output_optimizer()
+        result = optimizer.optimize_section(result)
+
+        # Log token estimate
+        original_tokens = optimizer.estimate_tokens({"section": section, "results": results})
+        optimized_tokens = optimizer.estimate_tokens(result)
+        if original_tokens > 0:
+            savings = original_tokens - optimized_tokens
+            savings_percent = (savings / original_tokens * 100) if original_tokens > 0 else 0
+            _logger.info("Output optimization applied",
+                        extra={"section": section,
+                               "original_tokens": original_tokens,
+                               "optimized_tokens": optimized_tokens,
+                               "savings": savings,
+                               "savings_percent": f"{savings_percent:.1f}%"})
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +582,10 @@ def main():
                         help="Output format (default: pretty)")
     parser.add_argument("--reload-features", action="store_true",
                         help="Force reload feature flags from disk")
+    parser.add_argument("--show-cache-stats", action="store_true",
+                        help="Show cache statistics and exit")
+    parser.add_argument("--show-optimization-stats", action="store_true",
+                        help="Show all optimization statistics (cache, single-flight) and exit")
     args = parser.parse_args()
 
     # Validate inputs using InputValidator
@@ -578,6 +614,33 @@ def main():
     if args.reload_features:
         from core.config_loader import reload_feature_flags
         reload_feature_flags()
+
+    # Show cache statistics if requested
+    if args.show_cache_stats:
+        stats = get_cache_stats()
+        print(json.dumps(stats, indent=2, ensure_ascii=False))
+        sys.exit(0)
+
+    # Show all optimization statistics if requested
+    if args.show_optimization_stats:
+        from core.single_flight import get_single_flight_stats
+
+        cache_stats = get_cache_stats()
+        sf_stats = get_single_flight_stats()
+
+        # Calculate hit rate if possible
+        hit_count = cache_stats.get("size", 0)  # Approximate
+        optimization_stats = {
+            "cache": cache_stats,
+            "single_flight": sf_stats,
+            "summary": {
+                "caching_enabled": is_feature_enabled("optimization.cache_enabled"),
+                "deduplication_enabled": is_feature_enabled("optimization.deduplication_enabled"),
+                "parallel_queries_enabled": is_feature_enabled("optimization.parallel_queries"),
+            }
+        }
+        print(json.dumps(optimization_stats, indent=2, ensure_ascii=False))
+        sys.exit(0)
 
     try:
         config = load_config(args.project)

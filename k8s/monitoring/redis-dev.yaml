@@ -1,0 +1,125 @@
+---
+# Redis Single Instance for Development
+# Environment: Development
+# Specs: 1 node, 512MB
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: development
+  labels:
+    app: redis
+    tier: cache
+    env: development
+data:
+  redis.conf: |
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    save ""  # Disable persistence for dev
+    loglevel verbose
+    bind 0.0.0.0
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: development
+type: Opaque
+stringData:
+  redis-password: "dev_redis_password"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: development
+  labels:
+    app: redis
+    env: development
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        env: development
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        command:
+        - sh
+        - -c
+        - |
+          echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+          redis-server /etc/redis/redis.conf --save ""
+        volumeMounts:
+        - name: redis-config
+          mountPath: /etc/redis
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: development
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: redis
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-external
+  namespace: development
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+    nodePort: 30379
+  selector:
+    app: redis
+  type: NodePort  # For easy local dev access

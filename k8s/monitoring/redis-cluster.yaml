@@ -1,0 +1,212 @@
+---
+# Redis Cluster for Production with Sentinel
+# Environment: Production
+# Specs: 3 nodes, 2GB each, HA enabled
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+data:
+  redis.conf: |
+    # Redis configuration for production
+    maxmemory 2gb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+    appendonly yes
+    appendfsync everysec
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+    loglevel notice
+    databases 16
+    bind 0.0.0.0
+    protected-mode yes
+    port 6379
+    # TLS (optional, enable in production)
+    # tls-port 6380
+    # tls-cert-file /etc/redis/tls/redis.crt
+    # tls-key-file /etc/redis/tls/redis.key
+    # tls-ca-cert-file /etc/redis/tls/ca.crt
+
+  sentinel.conf: |
+    # Sentinel configuration for HA
+    port 26379
+    sentinel monitor mymaster redis-0 6379 2
+    sentinel auth-pass mymaster REDIS_PASSWORD
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 10000
+    sentinel parallel-syncs mymaster 1
+    sentinel announce-ip ${SENTINEL_ANNOUNCE_IP}
+    sentinel announce-port 26379
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: monitoring
+type: Opaque
+stringData:
+  redis-password: "CHANGE_ME_IN_PRODUCTION"
+  sentinel-password: "CHANGE_ME_IN_PRODUCTION"
+
+---
+# StatefulSet for Redis Master
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+spec:
+  serviceName: redis-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        tier: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        - containerPort: 26379
+          name: sentinel
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: SENTINEL_ANNOUNCE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        command:
+        - sh
+        - -c
+        - |
+          # Generate redis.conf with password
+          echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+
+          # Check if this is pod 0 (master)
+          if [ "${HOSTNAME##*-}" = "0" ]; then
+            echo "Starting as master..."
+            redis-server /etc/redis/redis.conf
+          else
+            echo "Starting as slave with sentinel..."
+            redis-sentinel /etc/redis/sentinel.conf
+          fi
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+# Headless Service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+spec:
+  ports:
+  - port: 6379
+    name: redis
+    targetPort: 6379
+  - port: 26379
+    name: sentinel
+    targetPort: 26379
+  clusterIP: None
+  selector:
+    app: redis
+
+---
+# Service for Redis access
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+spec:
+  ports:
+  - port: 6379
+    name: redis
+    targetPort: 6379
+  selector:
+    app: redis
+  type: ClusterIP
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+  - port: redis
+    interval: 30s
+    scrapeTimeout: 10s

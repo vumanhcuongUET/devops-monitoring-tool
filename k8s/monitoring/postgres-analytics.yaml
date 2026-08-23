@@ -1,0 +1,459 @@
+---
+# PostgreSQL for Analytics and Metrics Storage
+# Environment: Production
+# Purpose: Store aggregated metrics, cost tracking, analytics data
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: monitoring
+  labels:
+    app: postgres
+    tier: database
+    purpose: analytics
+data:
+  postgres.conf: |
+    # PostgreSQL Configuration for Analytics
+    max_connections = 200
+    shared_buffers = 512MB
+    effective_cache_size = 2GB
+    maintenance_work_mem = 128MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 2621kB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+
+    # Logging
+    logging_collector = on
+    log_directory = 'pg_log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_statement = 'mod'
+    log_duration = on
+    log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+
+    # Performance
+    shared_preload_libraries = 'pg_stat_statements'
+    pg_stat_statements.max = 10000
+    pg_stat_statements.track = all
+
+  init-sql.sh: |
+    #!/bin/bash
+    set -e
+
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+      -- Create analytics schema
+      CREATE SCHEMA IF NOT EXISTS analytics;
+
+      -- Metrics table (time-series metrics aggregation)
+      CREATE TABLE IF NOT EXISTS analytics.metrics (
+        id SERIAL PRIMARY KEY,
+        project VARCHAR(100) NOT NULL,
+        metric_name VARCHAR(200) NOT NULL,
+        metric_type VARCHAR(50) NOT NULL,  -- counter, gauge, histogram
+        timestamp TIMESTAMPTZ NOT NULL,
+        value NUMERIC NOT NULL,
+        labels JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX idx_metrics_project_time ON analytics.metrics(project, timestamp DESC);
+      CREATE INDEX idx_metrics_name_time ON analytics.metrics(metric_name, timestamp DESC);
+
+      -- Cost tracking table
+      CREATE TABLE IF NOT EXISTS analytics.cost_tracking (
+        id SERIAL PRIMARY KEY,
+        project VARCHAR(100) NOT NULL,
+        date DATE NOT NULL,
+        metric_category VARCHAR(50) NOT NULL,  -- api, monitoring, storage
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        cost_usd NUMERIC(10, 4) NOT NULL,
+        model VARCHAR(50),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX idx_cost_project_date ON analytics.cost_tracking(project, date DESC);
+      CREATE INDEX idx_cost_date ON analytics.cost_tracking(date DESC);
+
+      -- Performance baselines table
+      CREATE TABLE IF NOT EXISTS analytics.performance_baselines (
+        id SERIAL PRIMARY KEY,
+        project VARCHAR(100) NOT NULL,
+        metric_name VARCHAR(200) NOT NULL,
+        baseline_type VARCHAR(50) NOT NULL,  -- p50, p95, p99, avg
+        period VARCHAR(50) NOT NULL,  -- weekday, weekend, business_hours, off_hours
+        baseline_value NUMERIC NOT NULL,
+        std_deviation NUMERIC,
+        sample_size INTEGER,
+        calculated_at TIMESTAMPTZ DEFAULT NOW(),
+        valid_until TIMESTAMPTZ
+      );
+
+      CREATE INDEX idx_baseline_project_metric ON analytics.performance_baselines(project, metric_name);
+
+      -- Cache statistics table
+      CREATE TABLE IF NOT EXISTS analytics.cache_stats (
+        id SERIAL PRIMARY KEY,
+        project VARCHAR(100) NOT NULL,
+        cache_level VARCHAR(10) NOT NULL,  -- L1, L2, L3
+        timestamp TIMESTAMPTZ NOT NULL,
+        hits INTEGER NOT NULL,
+        misses INTEGER NOT NULL,
+        hit_rate NUMERIC NOT NULL,
+        evictions INTEGER DEFAULT 0,
+        memory_used_bytes BIGINT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX idx_cache_stats_project_time ON analytics.cache_stats(project, timestamp DESC);
+
+      -- Real-time analytics aggregation
+      CREATE TABLE IF NOT EXISTS analytics.realtime_analytics (
+        id SERIAL PRIMARY KEY,
+        project VARCHAR(100) NOT NULL,
+        metric_name VARCHAR(200) NOT NULL,
+        window_start TIMESTAMPTZ NOT NULL,
+        window_end TIMESTAMPTZ NOT NULL,
+        aggregation_type VARCHAR(20) NOT NULL,  -- sum, avg, max, min, count
+        value NUMERIC NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX idx_realtime_project_window ON analytics.realtime_analytics(project, window_start DESC);
+
+      -- Audit log table
+      CREATE TABLE IF NOT EXISTS analytics.config_audit_log (
+        id SERIAL PRIMARY KEY,
+        project VARCHAR(100) NOT NULL,
+        config_type VARCHAR(50) NOT NULL,
+        action VARCHAR(20) NOT NULL,  -- create, update, delete, rollback
+        version VARCHAR(20) NOT NULL,
+        author VARCHAR(100) NOT NULL,
+        timestamp TIMESTAMPTZ DEFAULT NOW(),
+        changes JSONB,
+        reason TEXT
+      );
+
+      CREATE INDEX idx_audit_project_time ON analytics.config_audit_log(project, timestamp DESC);
+      CREATE INDEX idx_audit_author_time ON analytics.config_audit_log(author, timestamp DESC);
+
+      -- Create view for daily cost aggregation
+      CREATE OR REPLACE VIEW analytics.daily_cost_summary AS
+      SELECT
+        date,
+        project,
+        SUM(total_tokens) as total_tokens,
+        SUM(cost_usd) as total_cost_usd,
+        COUNT(DISTINCT metric_category) as metric_categories
+      FROM analytics.cost_tracking
+      GROUP BY date, project
+      ORDER BY date DESC, project;
+
+      -- Create view for cache performance
+      CREATE OR REPLACE VIEW analytics.cache_performance_summary AS
+      SELECT
+        project,
+        cache_level,
+        date_trunc('hour', timestamp) as hour,
+        AVG(hit_rate) as avg_hit_rate,
+        SUM(hits + misses) as total_requests,
+        SUM(evictions) as total_evictions,
+        AVG(memory_used_bytes) as avg_memory_used
+      FROM analytics.cache_stats
+      WHERE timestamp > NOW() - INTERVAL '24 hours'
+      GROUP BY project, cache_level, date_trunc('hour', timestamp)
+      ORDER BY hour DESC;
+
+      GRANT USAGE ON SCHEMA analytics TO analytics_user;
+      GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA analytics TO analytics_user;
+      GRANT SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA analytics TO analytics_user;
+    EOSQL
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: monitoring
+type: Opaque
+stringData:
+  postgres-user: "postgres"
+  postgres-password: "CHANGE_ME_IN_PRODUCTION"
+  analytics-user: "analytics_user"
+  analytics-password: "CHANGE_ME_IN_PRODUCTION"
+  postgres-db: "devops_monitoring"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-storage
+  namespace: monitoring
+  labels:
+    app: postgres
+    tier: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: gp2  # AWS EBS gp2
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: monitoring
+  labels:
+    app: postgres
+    tier: database
+    purpose: analytics
+spec:
+  serviceName: postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: database
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-db
+        - name: ANALYTICS_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: analytics-user
+        - name: ANALYTICS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: analytics-password
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+          items:
+          - key: postgres.conf
+            path: postgresql.conf
+      - name: init-sql
+        configMap:
+          name: postgres-config
+          items:
+          - key: init-sql.sh
+            path: init-sql.sh
+            mode: 0755
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgres-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: monitoring
+  labels:
+    app: postgres
+spec:
+  ports:
+  - port: 5432
+    name: postgres
+    targetPort: 5432
+  clusterIP: None
+  selector:
+    app: postgres
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: monitoring
+  labels:
+    app: postgres
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+  type: ClusterIP
+
+---
+# ServiceMonitor for PostgreSQL
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres
+  namespace: monitoring
+  labels:
+    app: postgres
+    tier: database
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  endpoints:
+  - port: postgres
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ConfigMap for PostgreSQL monitoring alerts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-alerts
+  namespace: monitoring
+data:
+  alerts.yaml: |
+    groups:
+    - name: postgres_alerts
+      rules:
+      - alert: PostgresConnectionUsageHigh
+        expr: (pg_stat_activity_count / pg_settings_max_connections) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          tier: database
+        annotations:
+          summary: "PostgreSQL connection usage > 90%"
+          description: "PostgreSQL {{ $labels.instance }} connection usage is {{ $value }}%"
+
+      - alert: PostgresReplicationLagHigh
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+          tier: database
+        annotations:
+          summary: "PostgreSQL replication lag high"
+          description: "PostgreSQL {{ $labels.instance }} replication lag is {{ $value }}s"
+
+      - alert: PostgresDiskSpaceHigh
+        expr: (pg_stat_database_size_bytes / pg_total_disk_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          tier: database
+        annotations:
+          summary: "PostgreSQL disk space > 90%"
+          description: "PostgreSQL {{ $labels.instance }} disk usage is {{ $value }}%"
+
+      - alert: PostgresSlowQueries
+        expr: rate(pg_stat_statements_calls_total{mean_exec_time_ms > 1000}[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+          tier: database
+        annotations:
+          summary: "PostgreSQL slow queries detected"
+          description: "PostgreSQL {{ $labels.instance }} has {{ $value }} slow queries/sec"
+
+---
+# NetworkPolicy for PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-netpol
+  namespace: monitoring
+  labels:
+    app: postgres
+    tier: database
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow from backend services
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: backend
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from monitoring (Prometheus exporter)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow DNS
+  - from:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: UDP
+      port: 53

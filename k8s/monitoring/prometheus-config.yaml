@@ -1,0 +1,254 @@
+---
+# Phase 7 Monitoring Configuration
+# Extended Prometheus scraping for Redis, PostgreSQL, and Application metrics
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config-phase7
+  namespace: monitoring
+  labels:
+    app: prometheus
+    phase: "7"
+data:
+  # Redis scrape configuration
+  redis-scrape-config.yaml: |
+    - job_name: 'redis-internal'
+      static_configs:
+        - targets:
+          - 'redis-0.redis:6379'
+          - 'redis-1.redis:6379'
+          - 'redis-2.redis:6379'
+          labels:
+            environment: 'production'
+            tier: 'cache'
+      relabel_configs:
+        - source_labels: [__address__]
+          target_label: instance
+        - source_labels: [__address__]
+          regex: 'redis-(.+)\\.redis.*'
+          replacement: 'redis-$1'
+          target_label: pod
+
+    - job_name: 'redis-sentinel'
+      static_configs:
+        - targets:
+          - 'redis-0.redis:26379'
+          - 'redis-1.redis:26379'
+          - 'redis-2.redis:26379'
+          labels:
+            environment: 'production'
+            tier: 'cache'
+            component: 'sentinel'
+
+    - job_name: 'redis-staging'
+      static_configs:
+        - targets:
+          - 'redis.staging.svc.cluster.local:6379'
+          labels:
+            environment: 'staging'
+            tier: 'cache'
+
+    - job_name: 'redis-development'
+      static_configs:
+        - targets:
+          - 'redis.development.svc.cluster.local:6379'
+          labels:
+            environment: 'development'
+            tier: 'cache'
+
+  # PostgreSQL scrape configuration
+  postgres-scrape-config.yaml: |
+    - job_name: 'postgres-analytics'
+      static_configs:
+        - targets:
+          - 'postgres.monitoring.svc.cluster.local:9187'
+          labels:
+            environment: 'production'
+            tier: 'database'
+            purpose: 'analytics'
+      relabel_configs:
+        - source_labels: [__address__]
+          target_label: instance
+
+  # Application cache metrics
+  cache-metrics.yaml: |
+    - job_name: 'backend-cache-metrics'
+      static_configs:
+        - targets:
+          - 'backend-service:8000'
+          labels:
+            environment: 'production'
+            component: 'cache'
+      metrics_path: '/metrics'
+      scrape_interval: 30s
+      scrape_timeout: 10s
+
+  # Recording rules for aggregation
+  recording-rules.yaml: |
+    groups:
+    - name: cache_recording_rules
+      interval: 1m
+      rules:
+      # Cache hit rate by level
+      - record: cache:hit_rate:5m
+        expr: |
+          sum by (project, cache_level) (rate(cache_hits_total{cache_level=~"L1|L2|L3"}[5m]))
+          /
+          sum by (project, cache_level) (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m]))
+
+      # Cache memory usage
+      - record: cache:memory_bytes:total
+        expr: sum by (cache_level) (cache_memory_used_bytes)
+
+      # Cache eviction rate
+      - record: cache:eviction_rate:5m
+        expr: sum by (cache_level) (rate(cache_evictions_total[5m]))
+
+      # Cache TTL distribution
+      - record: cache:objects_by_ttl:5m
+        expr: sum by (ttl_range) (cache_objects)
+
+    - name: analytics_recording_rules
+      interval: 5m
+      rules:
+      # Daily cost aggregation
+      - record: cost:daily_usd:total
+        expr: |
+          sum by (project, date) (cost_tracking_total_usd)
+
+      # Token usage by project
+      - record: tokens:usage_total:5m
+        expr: |
+          sum by (project, model) (rate(usage_tokens_total[5m]))
+
+      # Average latency by project
+      - record: latency:avg_ms:5m
+        expr: |
+          avg by (project) (rate(http_request_duration_ms_sum[5m])
+          / rate(http_request_duration_ms_count[5m]))
+
+      # P95 latency by project
+      - record: latency:p95_ms:5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (project, le) (rate(http_request_duration_ms_bucket[5m]))
+          )
+
+    - name: database_recording_rules
+      interval: 1m
+      rules:
+      # PostgreSQL connection usage
+      - record: postgres:connection_usage:ratio
+        expr: |
+          sum(pg_stat_activity_count{datname="devops_monitoring"})
+          / pg_settings_max_connections
+
+      # PostgreSQL query performance
+      - record: postgres:query_latency:p95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(pg_stat_statements_duration_seconds_bucket[5m]))
+          )
+
+      # PostgreSQL slow queries
+      - record: postgres:slow_queries:rate_5m
+        expr: |
+          sum by (datname) (rate(pg_stat_statements_calls{mean_exec_time_ms > 1000}[5m]))
+
+  # Alert rules
+  phase7-alerts.yaml: |
+    groups:
+    - name: phase7_cache_alerts
+      rules:
+      # Cache hit rate alert
+      - alert: CacheHitRateLow
+        expr: cache:hit_rate:5m < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          phase: "7"
+          tier: cache
+        annotations:
+          summary: "Cache hit rate below 50%"
+          description: "Cache {{ $labels.project }}/{{ $labels.cache_level }} hit rate is {{ $value | humanizePercentage }}"
+
+      # Cache memory high
+      - alert: CacheMemoryUsageHigh
+        expr: cache:memory_bytes:total / cache_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          phase: "7"
+          tier: cache
+        annotations:
+          summary: "Cache memory usage > 90%"
+          description: "Cache memory usage is {{ $value | humanizePercentage }}"
+
+      # Redis eviction rate high
+      - alert: RedisEvictionRateHigh
+        expr: cache:eviction_rate:5m > 100
+        for: 5m
+        labels:
+          severity: warning
+          phase: "7"
+          tier: cache
+        annotations:
+          summary: "High Redis eviction rate"
+          description: "Redis evicting {{ $value }} keys/sec"
+
+    - name: phase7_analytics_alerts
+      rules:
+      # Cost tracking anomaly
+      - alert: CostTrackingAnomaly
+        expr: |
+          cost:daily_usd:total
+          > (cost:daily_usd:total offset 1d * 2)
+        for: 1h
+        labels:
+          severity: warning
+          phase: "7"
+          tier: analytics
+        annotations:
+          summary: "Daily cost doubled compared to yesterday"
+          description: "Project {{ $labels.project }} cost is {{ $value }}USD"
+
+      # Token usage spike
+      - alert: TokenUsageSpike
+        expr: |
+          tokens:usage_total:5m
+          > (tokens:usage_total:5m offset 1h * 3)
+        for: 15m
+        labels:
+          severity: warning
+          phase: "7"
+          tier: analytics
+        annotations:
+          summary: "Token usage spiked 3x compared to last hour"
+          description: "Project {{ $labels.project }} using {{ $value }} tokens/sec"
+
+    - name: phase7_database_alerts
+      rules:
+      # PostgreSQL connection pool exhausted
+      - alert: PostgresConnectionPoolExhausted
+        expr: postgres:connection_usage:ratio > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          phase: "7"
+          tier: database
+        annotations:
+          summary: "PostgreSQL connection pool > 90%"
+          description: "Connection usage is {{ $value | humanizePercentage }}"
+
+      # PostgreSQL slow queries
+      - alert: PostgresSlowQueries
+        expr: postgres:slow_queries:rate_5m > 10
+        for: 10m
+        labels:
+          severity: warning
+          phase: "7"
+          tier: database
+        annotations:
+          summary: "High number of slow PostgreSQL queries"
+          description: "{{ $value }} slow queries/sec"

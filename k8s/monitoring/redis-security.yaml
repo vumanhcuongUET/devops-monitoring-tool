@@ -1,0 +1,272 @@
+---
+# Redis Security Configuration
+# Network policies and security hardening for Redis
+
+---
+# Network Policy for Production Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-netpol
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow Redis port from backend services
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: backend
+    - namespaceSelector:
+        matchLabels:
+          name: frontend
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow Sentinel port for internal cluster communication
+  - from:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 26379
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow external access for backup (if needed)
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backup-service
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# Pod Security Policy (if using PSP)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: redis-psp
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfiles: runtime/default
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+  - ALL
+  volumes:
+  - 'configMap'
+  - 'emptyDir'
+  - 'projected'
+  - 'secret'
+  - 'downwardAPI'
+  - 'persistentVolumeClaim'
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: MustRunAsNonRoot
+  seLinux:
+    rule: RunAsAny
+  fsGroup:
+    rule: MustRunAs
+    ranges:
+    - rule: MustRunAs
+      ranges:
+      - min: 999
+        max: 999
+  supplementalGroups:
+    rule: MustRunAs
+    ranges:
+    - rule: MustRunAs
+      ranges:
+      - min: 999
+        max: 999
+  readOnlyRootFilesystem: false
+
+---
+# RBAC for Redis Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redis-sa
+  namespace: monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: redis-role
+  namespace: monitoring
+rules:
+- apiGroups: [""]
+  resources: ["endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: redis-rolebinding
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: redis-role
+subjects:
+- kind: ServiceAccount
+  name: redis-sa
+  namespace: monitoring
+
+---
+# Resource Quota for Redis
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: redis-quota
+  namespace: monitoring
+spec:
+  hard:
+    requests.memory: 4Gi
+    requests.cpu: "2000m"
+    limits.memory: 8Gi
+    limits.cpu: "4000m"
+    persistentvolumeclaims: 3
+    services.loadbalancers: "0"
+    services.nodeports: "0"
+
+---
+# Limit Range for Redis Pods
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: redis-limits
+  namespace: monitoring
+spec:
+  limits:
+  - default:
+      cpu: 1000m
+      memory: 2Gi
+    defaultRequest:
+      cpu: 500m
+      memory: 1Gi
+    type: Container
+
+---
+# ConfigMap for Redis monitoring alerts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-alerts
+  namespace: monitoring
+  labels:
+    app: redis
+data:
+  alerts.yaml: |
+    groups:
+    - name: redis_alerts
+      rules:
+      # Memory usage alert
+      - alert: RedisMemoryUsageHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          tier: cache
+        annotations:
+          summary: "Redis memory usage > 90%"
+          description: "Redis instance {{ $labels.instance }} memory usage is {{ $value }}%"
+
+      # Connection count alert
+      - alert: RedisConnectionCountHigh
+        expr: redis_connected_clients > 1000
+        for: 5m
+        labels:
+          severity: warning
+          tier: cache
+        annotations:
+          summary: "Redis connection count > 1000"
+          description: "Redis instance {{ $labels.instance }} has {{ $value }} connections"
+
+      # Eviction rate alert
+      - alert: RedisHighEvictionRate
+        expr: rate(redis_evicted_keys_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          tier: cache
+        annotations:
+          summary: "Redis eviction rate high"
+          description: "Redis {{ $labels.instance }} evicting {{ $value }} keys/sec"
+
+      # Hit rate alert
+      - alert: RedisLowHitRate
+        expr: rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m])) < 0.5
+        for: 10m
+        labels:
+          severity: info
+          tier: cache
+        annotations:
+          summary: "Redis cache hit rate < 50%"
+          description: "Redis {{ $labels.instance }} hit rate is {{ $value }}%"
+
+      # Redis down alert
+      - alert: RedisInstanceDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          tier: cache
+        annotations:
+          summary: "Redis instance down"
+          description: "Redis instance {{ $labels.instance }} is down"
+
+      # Sentinel failover alert
+      - alert: RedisSentinelFailover
+        expr: increase(redis_sentinel_failover_count_total[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          tier: cache
+        annotations:
+          summary: "Redis Sentinel failover detected"
+          description: "Redis Sentinel {{ $labels.instance }} performed a failover"
+
+---
+# Prometheus Rule for Redis alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: redis-prometheus-rules
+  namespace: monitoring
+  labels:
+    app: redis
+    tier: cache
+spec:
+  groups:
+  - name: redis
+    rules:
+    - alert: RedisMemoryUsageHigh
+      expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Redis memory usage high"
+        description: "Redis {{ $labels.instance }} memory usage is {{ $value | humanizePercentage }}"

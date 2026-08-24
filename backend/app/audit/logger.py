@@ -135,6 +135,71 @@ class AuditLogger:
             chain_of_thought=chain_of_thought,
         )
 
+    def log_chain_limit_exceeded(
+        self,
+        action_id: str,
+        project: str,
+        action_type: str,
+        chain_count: int,
+        chain_limit: int,
+        user: Optional[str] = None,
+    ) -> AuditEntry:
+        """Log when action chain limit is exceeded."""
+        return self.log_event(
+            event_type=AuditEventType.CHAIN_LIMIT_EXCEEDED,
+            user=user,
+            action_id=action_id,
+            project=project,
+            details={
+                "action_type": action_type,
+                "chain_count": chain_count,
+                "chain_limit": chain_limit,
+                "message": f"Action chain limit reached: {chain_count}/{chain_limit} consecutive actions",
+            },
+        )
+
+    def log_rate_limit_exceeded(
+        self,
+        action_id: str,
+        project: str,
+        action_type: str,
+        rate_limit: int,
+        user: Optional[str] = None,
+    ) -> AuditEntry:
+        """Log when rate limit is exceeded."""
+        return self.log_event(
+            event_type=AuditEventType.RATE_LIMIT_EXCEEDED,
+            user=user,
+            action_id=action_id,
+            project=project,
+            details={
+                "action_type": action_type,
+                "rate_limit": rate_limit,
+                "message": f"Rate limit exceeded: maximum {rate_limit} actions per hour",
+            },
+        )
+
+    def log_cooldown_active(
+        self,
+        action_id: str,
+        project: str,
+        action_type: str,
+        cooldown_remaining: int,
+        user: Optional[str] = None,
+    ) -> AuditEntry:
+        """Log when cooldown period is active."""
+        return self.log_event(
+            event_type=AuditEventType.COOLDOWN_ACTIVE,
+            user=user,
+            action_id=action_id,
+            project=project,
+            details={
+                "action_type": action_type,
+                "cooldown_remaining_seconds": cooldown_remaining,
+                "message": f"Cooldown active: wait {cooldown_remaining}s before next action",
+            },
+        )
+
     def query(self, query: AuditLogQuery) -> AuditLogResponse:
         """Query audit logs with filters."""
         all_entries = self._load_entries()

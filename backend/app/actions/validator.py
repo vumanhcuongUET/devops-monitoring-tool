@@ -3,6 +3,7 @@
 from typing import Optional
 
 from app.actions.parser import get_command_parser
+from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
 from app.models.actions import CommandParams, CommandType, RiskLevel
 from app.registry.loader import get_registry
 
@@ -169,17 +170,42 @@ class CommandValidator:
         # Default to medium for unknown actions
         return RiskLevel.MEDIUM
 
-    def check_rate_limit(self, project: str, action_type: str = "restart") -> tuple[bool, str]:
-        """Check if action rate limit has been exceeded."""
+    def check_rate_limit(
+        self,
+        project: str,
+        action_type: str = "restart",
+        user: Optional[str] = None,
+    ) -> tuple[bool, str, dict]:
+        """Check if action rate limit has been exceeded.
+
+        Args:
+            project: Project name
+            action_type: Type of action (restart, scale, delete, etc.)
+            user: Optional user identifier
+
+        Returns:
+            Tuple of (allowed, reason, metadata)
+            - allowed: bool indicating if action is permitted
+            - reason: str explaining the result
+            - metadata: dict with rate limit status (remaining, reset_time, etc.)
+        """
         project_config = self.registry.projects and next(
             (p for p in self.registry.projects if p.name == project), None
         )
         if not project_config:
-            return True, "Project not found"
+            return False, "Project not found", {}
 
-        # For now, return allowed (rate limiting will be implemented with state tracking)
-        # TODO: Implement rate limiting with time-window tracking
-        return True, "Rate limit check passed"
+        # Get the rate limiter instance
+        rate_limiter = get_rate_limiter()
+
+        # Check rate limits
+        allowed, reason, metadata = rate_limiter.check(
+            project=project,
+            action_type=action_type,
+            user=user,
+        )
+
+        return allowed, reason, metadata
 
 
 # Singleton instance

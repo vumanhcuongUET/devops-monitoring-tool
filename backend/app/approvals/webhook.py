@@ -275,13 +275,16 @@ async def teams_approval_webhook(
     - Verifies HMAC signature from Authorization header
     - Teams HMAC is calculated as: HMAC_SHA256(webhook_url, body)
     - FAILS HARD if signature verification is not configured in production
+
+    Teams Adaptive Cards Format:
+    - Uses Action.Submit actions for button interactions
+    - Returns adaptive card updates for message modification
     """
     try:
         # Get raw body for signature verification
         raw_body = await request.body()
 
         # Signature verification is REQUIRED in production
-        # For development, we allow requests without verification if ENVIRONMENT != production
         if settings.ENVIRONMENT == "production":
             if not settings.TEAMS_WEBHOOK_URL:
                 logger.error("TEAMS_WEBHOOK_URL not configured - rejecting Teams webhook request")
@@ -311,11 +314,149 @@ async def teams_approval_webhook(
                 "Configure TEAMS_WEBHOOK_URL for production security."
             )
 
-        # TODO: Implement Teams webhook handler
-        # Teams uses a different format (Adaptive Cards) compared to Slack (Block Kit)
-        logger.info("Received Teams webhook (not yet implemented)")
-        return {"status": "not_implemented"}
+        # Parse Teams Adaptive Card payload
+        payload = await request.json()
 
+        # Extract action details from Teams adaptive card
+        # Teams format: {"type": "invoke", "data": {"action": "approve", "actionId": "xxx"}}
+        action_type = payload.get("data", {}).get("action", "")
+        action_id = payload.get("data", {}).get("actionId", "")
+
+        if not action_id:
+            raise HTTPException(status_code=400, detail="Invalid action ID")
+
+        # Get user info from Teams context
+        user_data = payload.get("from", {})
+        user_id = user_data.get("id", "")
+        user_name = user_data.get("name", user_id)
+
+        # Lazy import to avoid circular import
+        from app.actions.engine import get_action_engine
+        from app.approvals.teams import get_teams_approval_notifier
+        engine = get_action_engine()
+        teams_notifier = get_teams_approval_notifier()
+
+        if action_type == "approve_action":
+            # Approve the action
+            result = await engine.approve_action(
+                action_id=action_id,
+                request=ApproveActionRequest(
+                    approved_by=user_name,
+                    comment=f"Approved via Teams by {user_name}",
+                ),
+            )
+
+            # Send confirmation to Teams
+            await teams_notifier.send_approval_status(
+                action=result,
+                status=result.status,
+                user=user_name,
+            )
+
+            # Return adaptive card update
+            return {
+                "type": "invokeResponse",
+                "value": {
+                    "status": 200,
+                    "body": {
+                        "type": "AdaptiveCard",
+                        "version": "1.4",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"✅ Action {action_id[:8]} has been approved by {user_name}",
+                                "weight": "Bolder",
+                                "color": "Good",
+                                "size": "Medium",
+                            }
+                        ],
+                    }
+                },
+            }
+
+        elif action_type == "reject_action":
+            # For reject, we'd normally collect reason via modal
+            result = await engine.reject_action(
+                action_id=action_id,
+                request=RejectActionRequest(
+                    rejected_by=user_name,
+                    reason=f"Rejected via Teams by {user_name}",
+                ),
+            )
+
+            # Send confirmation to Teams
+            await teams_notifier.send_approval_status(
+                action=result,
+                status=result.status,
+                user=user_name,
+            )
+
+            # Return adaptive card update
+            return {
+                "type": "invokeResponse",
+                "value": {
+                    "status": 200,
+                    "body": {
+                        "type": "AdaptiveCard",
+                        "version": "1.4",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"❌ Action {action_id[:8]} has been rejected by {user_name}",
+                                "weight": "Bolder",
+                                "color": "Warning",
+                                "size": "Medium",
+                            }
+                        ],
+                    }
+                },
+            }
+
+        elif action_type == "view_action":
+            # View action details
+            action_data = engine.get_action(action_id)
+            if not action_data:
+                raise HTTPException(status_code=404, detail="Action not found")
+
+            command = action_data.get("command", "")
+            description = action_data.get("description", "")
+            risk_level = action_data.get("risk_level", "unknown")
+
+            # Return adaptive card with details
+            return {
+                "type": "invokeResponse",
+                "value": {
+                    "status": 200,
+                    "body": {
+                        "type": "AdaptiveCard",
+                        "version": "1.4",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": "Action Details",
+                                "weight": "Bolder",
+                                "size": "Large",
+                            },
+                            {
+                                "type": "FactSet",
+                                "facts": [
+                                    {"title": "Action ID:", "value": action_id[:8]},
+                                    {"title": "Command:", "value": command},
+                                    {"title": "Description:", "value": description},
+                                    {"title": "Risk Level:", "value": risk_level},
+                                ],
+                            },
+                        ],
+                    }
+                },
+            }
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action type: {action_type}")
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Teams payload: {e}")
+        raise HTTPException(status_code=400, detail="Invalid payload format")
     except HTTPException:
         raise
     except Exception as e:
@@ -324,12 +465,14 @@ async def teams_approval_webhook(
 
 
 @router.get("/health")
-async def approval_webhook_health() -> dict:
+async def approval_webhook_health():
     """Health check endpoint for approval webhook service."""
+    from app.approvals.teams import get_teams_approval_notifier
+
     return {
         "status": "healthy",
         "webhooks": {
             "slack": "enabled" if get_slack_approval_notifier().webhook_url else "disabled",
-            "teams": "not_implemented",
+            "teams": "enabled" if get_teams_approval_notifier().is_enabled() else "disabled",
         },
     }

@@ -8,6 +8,9 @@ from typing import Any, Optional
 
 from app.actions.parser import get_command_parser
 from app.actions.validator import get_command_validator, ValidationResult
+from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
+from app.actions.impact_estimator import get_impact_estimator, ImpactEstimate, ImpactLevel
+from app.actions.rollback_executor import get_rollback_executor, RollbackStatus
 from app.actions.executor import get_command_executor
 from app.actions.environment_executor import get_executor
 from app.approvals.store import get_approval_tracker, get_approval_history
@@ -90,6 +93,31 @@ class ActionEngine:
             permission_result.requires_approval
         )
 
+        # High and Critical impact actions require approval (Phase 8 Day 7)
+        if impact_estimate.impact_level in (ImpactLevel.HIGH, ImpactLevel.CRITICAL):
+            requires_approval = True
+
+        # Critical impact actions may require executive approval
+        requires_executive_approval = impact_estimate.impact_level == ImpactLevel.CRITICAL
+
+        # Estimate impact (Phase 8 Day 7)
+        impact_estimator = get_impact_estimator()
+        # Try to get k8s client for real impact estimation
+        k8s_client = None
+        try:
+            from app.main import app_state
+            if app_state and app_state.k8s_client:
+                k8s_client = app_state.k8s_client
+        except ImportError:
+            pass
+
+        impact_estimate = impact_estimator.estimate(
+            action_id=action_id,
+            command=command,
+            k8s_client=k8s_client,
+            dry_run=True,  # Use heuristics for now, can be configurable
+        )
+
         # Create the action
         action = Action(
             id=action_id,
@@ -109,6 +137,22 @@ class ActionEngine:
                 "priority": recommendation.priority,
                 "permission_check": permission_result.to_dict(),
                 "environment": environment,
+                "impact_estimate": {
+                    "impact_level": impact_estimate.impact_level.value,
+                    "total_affected_resources": impact_estimate.total_affected_resources,
+                    "resource_impacts": [
+                        {
+                            "resource_type": r.resource_type,
+                            "affected_count": r.affected_count,
+                            "namespace": r.namespace,
+                        }
+                        for r in impact_estimate.resource_impacts
+                    ],
+                    "risk_factors": impact_estimate.risk_factors,
+                    "recommendations": impact_estimate.recommendations,
+                    "estimated_duration_seconds": impact_estimate.estimated_duration_seconds,
+                },
+                "requires_executive_approval": requires_executive_approval,
             },
         )
 
@@ -310,6 +354,56 @@ class ActionEngine:
         environment = context.get("environment", "production")
         project = state.get("project", "")
 
+        # Parse command to get action type for rate limiting
+        parsed_params = state.get("parsed_params")
+        action_type = parsed_params.action if parsed_params else "unknown"
+
+        # Check rate limits before execution (Phase 8)
+        rate_limiter = get_rate_limiter()
+        rate_allowed, rate_reason, rate_metadata = rate_limiter.check(
+            project=project,
+            action_type=action_type,
+            user=request.executed_by,
+        )
+
+        if not rate_allowed:
+            # Log the rate limit event for audit trail (Phase 8 Day 6)
+            chain_count = rate_metadata.get("chain_count", 0)
+            chain_limit = rate_metadata.get("chain_limit", 0)
+
+            # Determine which type of rate limit event to log
+            if "chain limit" in rate_reason.lower():
+                self.audit_logger.log_chain_limit_exceeded(
+                    action_id=action_id,
+                    project=project,
+                    action_type=action_type,
+                    chain_count=chain_count,
+                    chain_limit=chain_limit,
+                    user=request.executed_by,
+                )
+            elif "cooldown" in rate_reason.lower():
+                cooldown_remaining = rate_metadata.get("cooldown_remaining", 0)
+                self.audit_logger.log_cooldown_active(
+                    action_id=action_id,
+                    project=project,
+                    action_type=action_type,
+                    cooldown_remaining=cooldown_remaining,
+                    user=request.executed_by,
+                )
+            else:  # Rate limit exceeded
+                rate_limit = rate_metadata.get("limit", 0)
+                self.audit_logger.log_rate_limit_exceeded(
+                    action_id=action_id,
+                    project=project,
+                    action_type=action_type,
+                    rate_limit=rate_limit,
+                    user=request.executed_by,
+                )
+
+            raise PermissionError(
+                f"Rate limit exceeded for action {action_id}: {rate_reason}"
+            )
+
         # Final permission check before execution (Phase 3 integration)
         permission_result = self.permission_checker.check_command(
             command=command,
@@ -376,6 +470,61 @@ class ActionEngine:
                 f"Action {action_id} executed by {request.executed_by} in {environment}: "
                 f"{'SUCCESS' if success else 'FAILED'}"
             )
+
+            # Rollback handling for failed actions (Phase 8 Day 8)
+            rollback_executor = get_rollback_executor()
+            if not success:
+                # Create rollback plan before execution
+                rollback_plan = rollback_executor.create_rollback_plan(
+                    action_id=action_id,
+                    command=command,
+                    context={"environment": environment, "project": project},
+                )
+
+                # Check if rollback should be triggered
+                execution_context = {
+                    "execution_success": success,
+                    "environment": environment,
+                    "project": project,
+                    "duration_seconds": duration,
+                }
+
+                should_rollback, triggered_conditions = rollback_executor.should_rollback(
+                    action_id=action_id,
+                    execution_context=execution_context,
+                )
+
+                if should_rollback and rollback_plan:
+                    # Log rollback trigger
+                    self.audit_logger.log_event(
+                        event_type="rollback_triggered",
+                        user=request.executed_by,
+                        action_id=action_id,
+                        project=project,
+                        details={
+                            "triggered_conditions": triggered_conditions,
+                            "rollback_command": rollback_plan.rollback_command,
+                        },
+                    )
+                    logger.warning(
+                        f"Rollback triggered for action {action_id} due to: {triggered_conditions}"
+                    )
+
+                    # For now, rollback requires manual approval
+                    # Automatic rollback can be configured via settings
+                    # In production, this would trigger an approval workflow
+
+            # Record action in rate limiter after successful execution (Phase 8)
+            if success:
+                rate_limiter.record_action(
+                    project=project,
+                    action_type=action_type,
+                    user=request.executed_by,
+                )
+                logger.info(
+                    f"Rate limiter: Recorded action '{action_type}' for project '{project}' "
+                    f"(metadata: {rate_metadata})"
+                )
 
             # Convert result to ExecutionResult if it's a mock
             if isinstance(result, ExecutionResult):

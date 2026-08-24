@@ -1,7 +1,7 @@
 # DevOps AI Agentics 2026 - Documentation Index
 
 **Last Updated**: 2026-08-24
-**Current Phase**: Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 5 ✅ COMPLETE | Phase 6 ✅ COMPLETE | Phase 7 ✅ COMPLETE
+**Current Phase**: Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 5 ✅ COMPLETE | Phase 6 ✅ COMPLETE | Phase 7 ✅ COMPLETE | Phase 8 🚧 PLANNED
 
 **AI Assistant Code Review**: ✅ ALL TASKS COMPLETE (2026-08-24) - 8 tasks, 209 tests passing
 
@@ -67,8 +67,15 @@
 ### Phase 7: Production Hardening ✅
 - [Sprint 3 Summary](../docs/phase7-sprint3-summary.md) - Performance optimization ✅
 - [Sprint 4 Summary](../docs/phase7-sprint4-summary.md) - Configuration management ✅
-- [Phase 6 Complete Plan](phase-6-complete-plan.md) - **MASTER PLAN** - All 20 days across 4 sprints
-- [Phase 6 Implementation Plan](phase-6-implementation-plan.md) - Detailed 4-week sprint plan with daily tasks
+
+### Phase 8: Final Polish & Production Excellence 🚧 PLANNED
+- [Phase 8 Plan](phase-8-plan.md) - Complete all TODO items and safety features
+
+**Phase 8 Sprint Breakdown:**
+- [Sprint 1: Security Hardening](phase-8-plan.md#sprint-1-security-hardening-days-1-5) - Rate limiting, CSP, Teams webhook, Frontend auth
+- [Sprint 2: Safety Features](phase-8-plan.md#sprint-2-safety-features-days-6-10) - Action chaining, Impact estimation, Rollback, Time-window, Resource limits
+- [Sprint 3: Integration & Testing](phase-8-plan.md#sprint-3-integration--testing-days-11-14) - Integration tests, Performance tests, Security validation
+- [Sprint 4: Production Validation](phase-8-plan.md#sprint-4-production-validation-days-15-18) - Staging deployment, UAT, Security review, Production rollout
 
 **Sprint 1: Foundation & Core Optimization (Days 1-5)**
 - [Sprint 1 Daily Plans](phase-6-sprint1-daily-plans.md) - Sprint 1 overview
@@ -161,6 +168,7 @@ Documentation for AI agent workflows and operations:
 | **Phase 5** | ✅ Complete | Observability & Operational Excellence (44 skills) |
 | **Phase 6** | ✅ Complete | AI Input Optimization & Cost Efficiency (70% token reduction) |
 | **Phase 7** | ✅ Complete | Production Hardening (Performance + Config Management) |
+| **Phase 8** | 🚧 Planned | Final Polish & Production Excellence (18 days) |
 | **Security Review** | ✅ Approved | Production-ready (Aug 2026) |
 
 ---

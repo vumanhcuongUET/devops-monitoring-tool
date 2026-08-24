@@ -19,6 +19,9 @@ class AuditEventType(str, Enum):
     CONTEXT_COLLECTED = "context_collected"
     COMMAND_PARSED = "command_parsed"
     VALIDATION_CHECK = "validation_check"
+    CHAIN_LIMIT_EXCEEDED = "chain_limit_exceeded"  # Action blocked due to chain limit
+    RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"  # Action blocked due to rate limit
+    COOLDOWN_ACTIVE = "cooldown_active"  # Action blocked due to cooldown period
 
 
 class ChainOfThoughtEntry(BaseModel):

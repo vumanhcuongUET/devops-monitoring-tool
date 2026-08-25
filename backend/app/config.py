@@ -107,6 +107,24 @@ class Settings(BaseSettings):
     TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for signature verification
     TEAMS_SIGNING_SECRET: str = ""  # Teams signing secret for HMAC verification
 
+    # Phase 9: Redis Configuration for Distributed State
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+    REDIS_DB_ALERTS: int = 0
+    REDIS_DB_APPROVALS: int = 1
+    REDIS_DB_RATE_LIMIT: int = 2
+    REDIS_DB_CACHE: int = 3
+    REDIS_URL: str | None = None  # Alternative: full Redis URL
+    ALERT_STATE_USE_REDIS: bool = False  # Use Redis for alert state (default: file-based)
+    APPROVAL_STATE_USE_REDIS: bool = False  # Use Redis for approval state (default: file-based)
+    RATE_LIMIT_USE_REDIS: bool = False  # Use Redis for rate limiting (default: in-memory)
+
+    # Connection Pool Settings
+    ES_MAX_CONNECTIONS: int = 20
+    PROM_MAX_CONNECTIONS: int = 20
+    K8S_MAX_CONNECTIONS: int = 10
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @model_validator(mode="after")

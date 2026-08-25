@@ -56,6 +56,11 @@ async def lifespan(app: FastAPI):
     root_logger = logging.getLogger()
     root_logger.addFilter(SensitiveDataFilter())
 
+    # Phase 9 Sprint 4: Initialize OpenTelemetry tracing
+    from app.telemetry import setup_telemetry, shutdown_telemetry
+    setup_telemetry(app)
+    logger.info("Phase 9 Sprint 4: OpenTelemetry tracing initialized")
+
     # Import service clients (localized imports for clarity)
     from app.services.elasticsearch_client import ElasticsearchClient
     from app.services.prometheus_client import PrometheusClient
@@ -80,10 +85,13 @@ async def lifespan(app: FastAPI):
     app.state.apm_client = ApmClient(es_client=app.state.es_client)
     app.state.slo_client = SloClient(es_client=app.state.es_client)
 
-    alert_engine = AlertEngine()
+    # Phase 9: Use Redis for alert state if configured
+    alert_engine = AlertEngine(use_redis=settings.ALERT_STATE_USE_REDIS)
     alert_engine.set_ws_manager(ws_manager)
     app.state.alert_engine = alert_engine
     app.state.alert_state = {}
+
+    logger.info(f"Alert engine initialized with {'Redis' if settings.ALERT_STATE_USE_REDIS else 'file-based'} state storage")
 
     alert_task = asyncio.create_task(alert_engine.start(app.state))
 
@@ -92,11 +100,11 @@ async def lifespan(app: FastAPI):
 
     # Phase 2: Initialize Action Engine
     action_engine = get_action_engine()
-    approval_tracker = get_approval_tracker()
+    approval_tracker = get_approval_tracker(use_redis=settings.APPROVAL_STATE_USE_REDIS)
     approval_tracker.set_ws_manager(ws_manager)
     app.state.action_engine = action_engine
     app.state.approval_tracker = approval_tracker
-    logger.info("Phase 2: Action Engine initialized")
+    logger.info(f"Phase 2: Action Engine initialized with {'Redis' if settings.APPROVAL_STATE_USE_REDIS else 'file-based'} approval state")
 
     # Phase 7 Sprint 3: Initialize Performance Optimization
     query_optimizer = QueryOptimizer(
@@ -196,7 +204,13 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, 'pool_manager'):
         await app.state.pool_manager.stop()
 
+    # Close service clients
     await app.state.es_client.close()
+    await app.state.prometheus_client.close()
+
+    # Phase 9 Sprint 4: Shutdown telemetry
+    shutdown_telemetry()
+    logger.info("Phase 9 Sprint 4: Telemetry shutdown complete")
 
 
 app = FastAPI(
@@ -209,7 +223,8 @@ app = FastAPI(
 # Phase 8: Enable nonce-based CSP for enhanced security
 # use_nonce=True enables per-request nonce generation for inline scripts
 app.add_middleware(SecurityHeadersMiddleware, use_nonce=True, use_hashes=False)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20)
+# Phase 9: Support Redis-based rate limiting
+app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20, use_redis=settings.RATE_LIMIT_USE_REDIS)
 app.add_middleware(AuthMiddleware)
 
 app.add_middleware(

@@ -14,8 +14,13 @@ class KubernetesClient:
                 k8s_config.load_kube_config(config_file=settings.KUBECONFIG_PATH)
             else:
                 k8s_config.load_incluster_config()
-            self.core = client.CoreV1Api()
-            self.apps = client.AppsV1Api()
+
+            # Phase 9: Configure connection pool settings
+            configuration = client.Configuration()
+            configuration.connection_pool_size = getattr(settings, "K8S_MAX_CONNECTIONS", 10)
+
+            self.core = client.CoreV1Api(configuration)
+            self.apps = client.AppsV1Api(configuration)
             self._available = True
         except Exception:
             self.core = None

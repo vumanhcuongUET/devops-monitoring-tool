@@ -1,0 +1,242 @@
+---
+# OpenTelemetry Collector Configuration
+# Phase 9 - Sprint 4 - Day 16
+#
+# This deployment runs the OpenTelemetry Collector to receive traces
+# from the backend and export them to Jaeger for visualization.
+
+# ConfigMap for collector configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: devops-monitoring
+  labels:
+    app: otel-collector
+data:
+  config.yaml: |
+    receivers:
+      # OTLP receiver for traces
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # Batch traces before exporting
+      batch:
+        timeout: 1s
+        max_batch_size: 1024
+        max_traces: 64
+
+      # Add service attributes to all spans
+      attributes:
+        actions:
+          - key: environment
+            value: production
+            action: insert
+          - key: cluster
+            value: devops-monitoring
+            action: insert
+
+    exporters:
+      # Export to Jaeger
+      jaeger:
+        endpoint: jaeger:4317
+        tls:
+          insecure: true
+
+      # Alternative: Export to stdout (for debugging)
+      logging:
+        loglevel: debug
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, attributes]
+          exporters: [jaeger, logging]
+
+---
+# Service for OTLP receiver
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: devops-monitoring
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: devops-monitoring
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.97.0
+        args:
+        - --config=/etc/otel-collector-config/config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otel-collector-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318
+          name: otlp-http
+          protocol: TCP
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+
+---
+# Jaeger Deployment (for trace visualization)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: devops-monitoring
+  labels:
+    app: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+      - name: jaeger
+        image: jaegertracing/all-in-one:1.53
+        env:
+        - name: COLLECTOR_OTLP_ENABLED
+          value: "true"
+        ports:
+        - containerPort: 5775  # accept zipkin.thrift over compact thrift protocol
+          name: zipkin-compact
+          protocol: UDP
+        - containerPort: 6831  # accept jaeger.thrift over compact thrift protocol
+          name: thrift-compact
+          protocol: UDP
+        - containerPort: 6832  # accept jaeger.thrift over binary thrift protocol
+          name: thrift-binary
+          protocol: UDP
+        - containerPort: 5778  # serve configs
+          name: config
+          protocol: TCP
+        - containerPort: 16686  # serve frontend
+          name: query
+          protocol: TCP
+        - containerPort: 14268  # accept model.proto
+          name: model-proto
+          protocol: TCP
+        - containerPort: 14250  # accept model.proto
+          name: grpc-proto
+          protocol: TCP
+        - containerPort: 4317  # OTLP gRPC receiver
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318  # OTLP HTTP receiver
+          name: otlp-http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+---
+# Jaeger Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: devops-monitoring
+  labels:
+    app: jaeger
+spec:
+  selector:
+    app: jaeger
+  ports:
+    - name: query
+      port: 16686
+      targetPort: 16686
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+  type: LoadBalancer  # Or NodePort/ClusterIP based on your setup
+
+---
+# Ingress for Jaeger UI (optional)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jaeger-ui
+  namespace: devops-monitoring
+  labels:
+    app: jaeger
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # if using cert-manager
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - jaeger.devops-monitoring.internal
+    secretName: jaeger-tls
+  rules:
+  - host: jaeger.devops-monitoring.internal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jaeger
+            port:
+              number: 16686

@@ -12,9 +12,15 @@ class ElasticsearchClient:
         kwargs: dict[str, Any] = {}
         if settings.ELASTICSEARCH_USERNAME:
             kwargs["basic_auth"] = (settings.ELASTICSEARCH_USERNAME, settings.ELASTICSEARCH_PASSWORD)
+
+        # Phase 9: Add connection pooling
         self.client = AsyncElasticsearch(
             settings.ELASTICSEARCH_URL,
             request_timeout=settings.REQUEST_TIMEOUT_SECONDS,
+            max_connections=getattr(settings, "ES_MAX_CONNECTIONS", 20),
+            max_retries=3,
+            retry_on_timeout=True,
+            http_compress=True,
             **kwargs,
         )
 

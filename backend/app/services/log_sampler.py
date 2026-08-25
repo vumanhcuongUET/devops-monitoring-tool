@@ -781,7 +781,7 @@ class LogSampler:
                     score += 0.1
                 elif time_diff <= timedelta(minutes=15):
                     score += 0.05
-            except:
+            except Exception:
                 pass
 
         return min(score, 1.0)

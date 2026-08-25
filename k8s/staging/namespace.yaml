@@ -1,0 +1,10 @@
+---
+# Staging Environment Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-monitor-staging
+  labels:
+    environment: staging
+    project: devops-monitor
+    version: v1.0.0

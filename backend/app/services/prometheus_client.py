@@ -11,25 +11,38 @@ class PrometheusClient:
     def __init__(self):
         self.base_url = settings.PROMETHEUS_URL.rstrip("/")
 
+        # Phase 9: Use persistent client with connection pooling
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=settings.REQUEST_TIMEOUT_SECONDS,
+            limits=httpx.Limits(
+                max_connections=getattr(settings, "PROM_MAX_CONNECTIONS", 20),
+                max_keepalive_connections=10,
+            ),
+            http2=True,  # Enable HTTP/2 for better performance
+        )
+
     async def _query(self, expr: str) -> list[dict]:
-        async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT_SECONDS) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/query",
-                params={"query": expr},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("data", {}).get("result", [])
+        resp = await self._client.get(
+            "/api/v1/query",
+            params={"query": expr},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("data", {}).get("result", [])
 
     async def _query_range(self, expr: str, start: str, end: str, step: str = "60s") -> list[dict]:
-        async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT_SECONDS) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/query_range",
-                params={"query": expr, "start": start, "end": end, "step": step},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("data", {}).get("result", [])
+        resp = await self._client.get(
+            "/api/v1/query_range",
+            params={"query": expr, "start": start, "end": end, "step": step},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("data", {}).get("result", [])
+
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
 
     async def get_node_metrics(self, minutes: int = 60) -> list[dict[str, Any]]:
         end_ts = datetime.now(timezone.utc).timestamp()

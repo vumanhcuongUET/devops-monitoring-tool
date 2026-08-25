@@ -13,9 +13,45 @@ logger = logging.getLogger(__name__)
 
 
 class AlertEngine:
-    def __init__(self):
-        self.state_tracker = AlertStateTracker()
-        self.history = AlertHistory()
+    def __init__(self, use_redis: bool = False):
+        """
+        Initialize alert engine.
+
+        Args:
+            use_redis: If True, use Redis-backed state; otherwise file-based
+        """
+        self.use_redis = use_redis
+
+        if use_redis:
+            from app.alerting.redis_store import RedisAlertStore, RedisAlertHistory
+
+            # Build Redis URL from settings or use REDIS_URL if provided
+            if settings.REDIS_URL:
+                redis_url = settings.REDIS_URL
+            else:
+                password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
+                redis_url = f"redis://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_ALERTS}"
+
+            # Parse URL components for Redis client
+            from urllib.parse import urlparse
+            parsed = urlparse(redis_url if settings.REDIS_URL else f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_ALERTS}")
+
+            self.state_tracker = RedisAlertStore(
+                redis_host=parsed.hostname or settings.REDIS_HOST,
+                redis_port=parsed.port or settings.REDIS_PORT,
+                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_db=settings.REDIS_DB_ALERTS,
+            )
+            self.history = RedisAlertHistory(
+                redis_host=parsed.hostname or settings.REDIS_HOST,
+                redis_port=parsed.port or settings.REDIS_PORT,
+                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_db=settings.REDIS_DB_ALERTS,
+            )
+        else:
+            self.state_tracker = AlertStateTracker()
+            self.history = AlertHistory()
+
         self.slack = SlackNotifier()
         self.email = EmailNotifier()
         self.webhook = WebhookNotifier()
@@ -61,7 +97,12 @@ class AlertEngine:
             breached = self._evaluate(rule.condition, value, rule.threshold)
 
             if breached:
-                state = self.state_tracker.set_breached(rule.id)
+                # Handle both sync (file) and async (redis) state trackers
+                if asyncio.iscoroutinefunction(self.state_tracker.set_breached):
+                    state = await self.state_tracker.set_breached(rule.id)
+                else:
+                    state = self.state_tracker.set_breached(rule.id)
+
                 if state.get("status") != "firing":
                     from datetime import datetime as dt
                     first = dt.fromisoformat(state["first_breached_at"])
@@ -69,11 +110,22 @@ class AlertEngine:
                     if elapsed >= rule.duration_seconds:
                         await self._fire(rule, value)
             else:
-                state = self.state_tracker.get(rule.id)
+                # Handle both sync (file) and async (redis) state trackers
+                if asyncio.iscoroutinefunction(self.state_tracker.get):
+                    state = await self.state_tracker.get(rule.id)
+                else:
+                    state = self.state_tracker.get(rule.id)
+
                 if state and state.get("status") == "firing":
                     await self._resolve(rule, value)
 
-        app_state.alert_state = self.state_tracker.all_state()
+        # Handle both sync (file) and async (redis) all_state
+        if asyncio.iscoroutinefunction(self.state_tracker.all_state):
+            app_state.alert_state = await self.state_tracker.all_state()
+        elif asyncio.iscoroutinefunction(self.state_tracker.get_all_state):
+            app_state.alert_state = await self.state_tracker.get_all_state()
+        else:
+            app_state.alert_state = self.state_tracker.all_state()
 
     def _evaluate(self, condition: str, value: float, threshold: float) -> bool:
         ops = {"gt": lambda v, t: v > t, "gte": lambda v, t: v >= t, "lt": lambda v, t: v < t, "lte": lambda v, t: v <= t, "eq": lambda v, t: v == t}
@@ -81,7 +133,12 @@ class AlertEngine:
         return op(value, threshold)
 
     async def _fire(self, rule, value: float):
-        self.state_tracker.set_firing(rule.id)
+        # Handle both sync (file) and async (redis) set_firing
+        if asyncio.iscoroutinefunction(self.state_tracker.set_firing):
+            await self.state_tracker.set_firing(rule.id)
+        else:
+            self.state_tracker.set_firing(rule.id)
+
         event = {
             "id": str(uuid.uuid4()),
             "rule_id": rule.id,
@@ -93,7 +150,13 @@ class AlertEngine:
             "message": f"{rule.name}: {rule.metric} is {value} (threshold: {rule.condition} {rule.threshold})",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        self.history.add(event)
+
+        # Handle both sync (file) and async (redis) history.add
+        if asyncio.iscoroutinefunction(self.history.add):
+            await self.history.add(event)
+        else:
+            self.history.add(event)
+
         await self._notify(rule, event)
         if self._ws_manager:
             await self._ws_manager.broadcast({"type": "alert_fired", "data": event})
@@ -174,7 +237,12 @@ class AlertEngine:
             logger.error(f"Failed to trigger autonomous remediation: {e}")
 
     async def _resolve(self, rule, value: float):
-        self.state_tracker.set_resolved(rule.id)
+        # Handle both sync (file) and async (redis) set_resolved
+        if asyncio.iscoroutinefunction(self.state_tracker.set_resolved):
+            await self.state_tracker.set_resolved(rule.id)
+        else:
+            self.state_tracker.set_resolved(rule.id)
+
         event = {
             "id": str(uuid.uuid4()),
             "rule_id": rule.id,
@@ -186,7 +254,13 @@ class AlertEngine:
             "message": f"{rule.name}: resolved (current: {value})",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        self.history.add(event)
+
+        # Handle both sync (file) and async (redis) history.add
+        if asyncio.iscoroutinefunction(self.history.add):
+            await self.history.add(event)
+        else:
+            self.history.add(event)
+
         await self._notify(rule, event)
         if self._ws_manager:
             await self._ws_manager.broadcast({"type": "alert_resolved", "data": event})

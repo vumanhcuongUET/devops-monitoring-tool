@@ -366,7 +366,7 @@ class ConnectionPool:
             while len(self.connections) < self.config.min_connections:
                 try:
                     await self._create_connection()
-                except:
+                except Exception:
                     break
 
     def get_stats(self) -> PoolStats:

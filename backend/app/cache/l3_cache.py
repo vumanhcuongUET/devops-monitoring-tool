@@ -354,7 +354,7 @@ class SemanticCache:
                         cached_patterns = cached.get("patterns", [])
                         if pattern in cached_patterns:
                             to_delete.append(key)
-                except:
+                except Exception:
                     continue
 
             if to_delete:
@@ -545,7 +545,7 @@ class PatternExtractor:
             else:
                 return "time:night"
 
-        except:
+        except Exception:
             return "time:unknown"
 
     def extract_alerting_patterns(

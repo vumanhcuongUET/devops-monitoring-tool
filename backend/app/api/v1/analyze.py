@@ -222,6 +222,203 @@ async def analyze_health(request: Request):
         )
 
 
+@router.post("/analyze/stream")
+async def analyze_stream(request: Request, triage_request: TriageCardRequest):
+    """
+    Streaming version of analyze endpoint.
+
+    Returns tokens as they are generated, providing better UX for long analyses.
+
+    Response format: application/x-ndjson (newline-delimited JSON)
+    Each line is a JSON object with:
+    - {"type": "token", "text": "...", "done": false}
+    - {"type": "complete", "done": true, "stop_reason": "...", "full_response": "..."}
+    - {"type": "error", "done": true, "error": "..."}
+
+    Example:
+    ```
+    {"type": "token", "text": "Based", "done": false}
+    {"type": "token", "text": " on", "done": false}
+    {"type": "token", "text": " the", "done": false}
+    ...
+    {"type": "complete", "done": true, "stop_reason": "end_turn"}
+    ```
+    """
+    from fastapi.responses import StreamingResponse
+
+    # Validate inputs
+    _validate_project_name(triage_request.project)
+
+    sanitized_alert = _sanitize_input(
+        triage_request.alert_message or "",
+        MAX_ALERT_MESSAGE_LENGTH
+    )
+
+    sanitized_incident_id = _sanitize_input(
+        triage_request.incident_id or "unknown",
+        100
+    )
+
+    # Get the monitoring clients
+    es_client = request.app.state.es_client
+    prom_client = request.app.state.prometheus_client
+    k8s_client = request.app.state.k8s_client
+    apm_client = request.app.state.apm_client
+
+    # Get LLM client
+    try:
+        llm_client = get_llm_client()
+    except ValueError as e:
+        # Return error as stream
+        async def error_stream():
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"LLM service not configured: {e}",
+            }) + "\n"
+
+        return StreamingResponse(
+            error_stream(),
+            media_type="application/x-ndjson",
+        )
+
+    # Collect context data
+    time_delta = timedelta(minutes=triage_request.time_range_minutes)
+
+    try:
+        context_data = await _collect_context_data(
+            es_client=es_client,
+            prom_client=prom_client,
+            k8s_client=k8s_client,
+            apm_client=apm_client,
+            project=triage_request.project,
+            time_delta=time_delta,
+            severity_threshold=triage_request.severity_threshold,
+        )
+    except Exception as e:
+        async def error_stream():
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"Failed to collect context data: {e}",
+            }) + "\n"
+
+        return StreamingResponse(
+            error_stream(),
+            media_type="application/x-ndjson",
+        )
+
+    # Stream the LLM response
+    async def generate():
+        """Generate streaming response."""
+        try:
+            async for chunk in llm_client.analyze_with_streaming(
+                project=triage_request.project,
+                incident_id=sanitized_incident_id,
+                alert_message=sanitized_alert,
+                context_data=context_data,
+                time_range_minutes=triage_request.time_range_minutes,
+            ):
+                yield chunk
+
+        except Exception as e:
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"Streaming failed: {e}",
+            }) + "\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+    )
+
+
+@router.post("/analyze/simple-stream")
+async def analyze_simple_stream(
+    request: Request,
+    project: str,
+    question: str,
+):
+    """
+    Simple streaming analysis endpoint for quick questions.
+
+    This is a lighter version for quick queries without full triage card generation.
+
+    Query params:
+    - project: Project name
+    - question: Question to answer
+
+    Response format: application/x-ndjson (newline-delimited JSON)
+    """
+    from fastapi.responses import StreamingResponse
+
+    # Validate inputs
+    _validate_project_name(project)
+
+    sanitized_question = _sanitize_input(question, 500)
+
+    # Get the monitoring clients
+    es_client = request.app.state.es_client
+    prom_client = request.app.state.prometheus_client
+    k8s_client = request.app.state.k8s_client
+    apm_client = request.app.state.apm_client
+
+    # Get LLM client
+    try:
+        llm_client = get_llm_client()
+    except ValueError as e:
+        async def error_stream():
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"LLM service not configured: {e}",
+            }) + "\n"
+
+        return StreamingResponse(
+            error_stream(),
+            media_type="application/x-ndjson",
+        )
+
+    # Collect basic context
+    try:
+        time_delta = timedelta(minutes=30)
+        context_data = await _collect_context_data(
+            es_client=es_client,
+            prom_client=prom_client,
+            k8s_client=k8s_client,
+            apm_client=apm_client,
+            project=project,
+            time_delta=time_delta,
+            severity_threshold=SeverityLevel.LOW,
+        )
+    except Exception as e:
+        # Continue with empty context on error
+        context_data = {}
+
+    # Stream the LLM response
+    async def generate():
+        """Generate streaming response."""
+        try:
+            async for chunk in llm_client.analyze_simple_streaming(
+                context=context_data,
+                question=sanitized_question,
+            ):
+                yield chunk
+
+        except Exception as e:
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"Streaming failed: {e}",
+            }) + "\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+    )
+
+
 async def _collect_context_data(
     es_client,
     prom_client,

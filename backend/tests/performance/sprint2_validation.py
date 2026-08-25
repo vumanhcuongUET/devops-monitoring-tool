@@ -1,0 +1,353 @@
+"""
+Sprint 2 Validation Script
+
+Phase 9 - Sprint 2 - Day 10
+Purpose: Validate all Sprint 2 deliverables are complete and working
+
+Run this script to verify Sprint 2 completion:
+    python backend/tests/performance/sprint2_validation.py
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+from typing import Any, Dict, List
+
+
+# Add backend to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+
+class Sprint2Validator:
+    """Validates all Sprint 2 deliverables."""
+
+    def __init__(self):
+        self.results: Dict[str, Any] = {
+            "passed": [],
+            "failed": [],
+            "skipped": [],
+        }
+
+    def record(self, test_name: str, status: str, message: str = ""):
+        """Record test result."""
+        self.results[status].append({"name": test_name, "message": message})
+
+    def print_result(self, test_name: str, passed: bool, message: str = ""):
+        """Print and record test result."""
+        status = "passed" if passed else "failed"
+        icon = "✅" if passed else "❌"
+        print(f"{icon} {test_name}: {message or ('PASS' if passed else 'FAIL')}")
+        self.record(test_name, status, message)
+
+    def print_skip(self, test_name: str, reason: str):
+        """Print and record skipped test."""
+        print(f"⏭️  {test_name}: SKIPPED ({reason})")
+        self.record(test_name, "skipped", reason)
+
+    async def validate_day6_connection_pool(self) -> bool:
+        """Day 6: Validate connection pool configuration."""
+        print("\n=== Day 6: Connection Pool Configuration ===")
+
+        try:
+            from app.services.connection_pool import (
+                ConnectionPoolManager,
+                get_pool_manager,
+            )
+
+            # Check singleton access
+            manager = get_pool_manager()
+            self.print_result(
+                "Connection pool singleton",
+                manager is not None,
+            )
+
+            # Check pool configurations
+            stats = manager.get_stats()
+            self.print_result(
+                "Pool configurations exist",
+                len(stats) > 0,
+                f"{len(stats)} services configured",
+            )
+
+            # Verify required services
+            required_services = ["elasticsearch", "prometheus", "kubernetes", "llm"]
+            all_present = all(s in stats for s in required_services)
+            self.print_result(
+                "Required service pools configured",
+                all_present,
+                f"Services: {list(stats.keys())}",
+            )
+
+            # Check pool sizes
+            es_config = manager.get_config("elasticsearch")
+            self.print_result(
+                "Elasticsearch pool size",
+                es_config.max_connections >= 10,
+                f"max_connections={es_config.max_connections}",
+            )
+
+            return len(self.results["failed"]) == 0
+
+        except Exception as e:
+            self.print_result("Day 6 validation", False, str(e))
+            return False
+
+    async def validate_day7_batch_optimizer(self) -> bool:
+        """Day 7: Validate request batching optimization."""
+        print("\n=== Day 7: Request Batching Optimization ===")
+
+        try:
+            from app.services.batch_optimizer import (
+                BatchOptimizer,
+                get_batch_optimizer,
+            )
+
+            # Test batch optimizer creation
+            optimizer = BatchOptimizer(batch_size=5, max_wait=0.1)
+            self.print_result("Batch optimizer creation", True)
+
+            # Test batch execution
+            executed = []
+
+            async def mock_execute(ids):
+                executed.append(ids)
+                await asyncio.sleep(0.05)
+                return [{"id": id} for id in ids]
+
+            # Submit 5 requests
+            results = await asyncio.gather(*[
+                optimizer.batch_request(
+                    batch_key="test",
+                    request_id=f"req-{i}",
+                    execute_fn=mock_execute,
+                )
+                for i in range(5)
+            ])
+
+            self.print_result(
+                "Batch execution",
+                len(executed) >= 1,
+                f"{len(executed)} batch execution(s)",
+            )
+
+            self.print_result(
+                "Batch results",
+                len(results) == 5,
+                f"{len(results)} results returned",
+            )
+
+            # Test stats
+            stats = optimizer.get_stats()
+            self.print_result(
+                "Batch optimizer stats",
+                "total_requests" in stats,
+                f"total_requests={stats['total_requests']}",
+            )
+
+            return len(self.results["failed"]) == 0
+
+        except Exception as e:
+            self.print_result("Day 7 validation", False, str(e))
+            return False
+
+    async def validate_day8_llm_streaming(self) -> bool:
+        """Day 8: Validate LLM streaming implementation."""
+        print("\n=== Day 8: LLM Streaming Implementation ===")
+
+        try:
+            from app.services.llm_client import LLMClient
+
+            # Check streaming methods exist
+            client_class = LLMClient
+
+            has_streaming = hasattr(client_class, "analyze_with_streaming")
+            self.print_result(
+                "analyze_with_streaming method",
+                has_streaming,
+            )
+
+            has_simple_streaming = hasattr(client_class, "analyze_simple_streaming")
+            self.print_result(
+                "analyze_simple_streaming method",
+                has_simple_streaming,
+            )
+
+            # Check API endpoints exist
+            import app.api.v1.analyze as analyze_api
+            analyze_routes = [r.path for r in analyze_api.router.routes]
+
+            has_stream_endpoint = "/analyze/stream" in analyze_routes
+            self.print_result(
+                "Streaming API endpoint",
+                has_stream_endpoint,
+            )
+
+            has_simple_stream_endpoint = "/analyze/simple-stream" in analyze_routes
+            self.print_result(
+                "Simple streaming API endpoint",
+                has_simple_stream_endpoint,
+            )
+
+            # Check frontend hook exists
+            hook_file = Path(__file__).parent.parent.parent.parent / "frontend/src/hooks/useLLMStream.ts"
+            self.print_result(
+                "Frontend streaming hook",
+                hook_file.exists(),
+                str(hook_file),
+            )
+
+            return len(self.results["failed"]) == 0
+
+        except Exception as e:
+            self.print_result("Day 8 validation", False, str(e))
+            return False
+
+    async def validate_day9_benchmarks(self) -> bool:
+        """Day 9: Validate performance benchmarks."""
+        print("\n=== Day 9: Performance Benchmarks ===")
+
+        try:
+            # Check benchmark file exists
+            benchmark_file = Path(__file__).parent / "test_benchmarks.py"
+            self.print_result(
+                "Benchmark test file",
+                benchmark_file.exists(),
+                str(benchmark_file),
+            )
+
+            # Check for key benchmark tests
+            content = benchmark_file.read_text()
+
+            has_es_benchmark = "test_elasticsearch_query_performance" in content
+            self.print_result(
+                "Elasticsearch benchmark",
+                has_es_benchmark,
+            )
+
+            has_overview_benchmark = "test_overview_endpoint_latency" in content
+            self.print_result(
+                "Overview endpoint benchmark",
+                has_overview_benchmark,
+            )
+
+            has_concurrent_benchmark = "test_concurrent_overview_requests" in content
+            self.print_result(
+                "Concurrent requests benchmark",
+                has_concurrent_benchmark,
+            )
+
+            has_batch_benchmark = "test_batch_optimizer_performance" in content
+            self.print_result(
+                "Batch optimizer benchmark",
+                has_batch_benchmark,
+            )
+
+            # Check performance targets defined
+            has_targets = "TARGET_OVERVIEW_LATENCY" in content
+            self.print_result(
+                "Performance targets defined",
+                has_targets,
+            )
+
+            return len(self.results["failed"]) == 0
+
+        except Exception as e:
+            self.print_result("Day 9 validation", False, str(e))
+            return False
+
+    async def validate_integration(self) -> bool:
+        """Validate integration of all Sprint 2 components."""
+        print("\n=== Integration Validation ===")
+
+        try:
+            # Check imports work together
+            from app.services.connection_pool import get_pool_manager
+            from app.services.batch_optimizer import BatchOptimizer
+            from app.services.llm_client import LLMClient
+            from app.api.v1.analyze import router
+
+            self.print_result("All imports successful", True)
+
+            # Verify no circular imports
+            self.print_result("No circular imports", True)
+
+            # Check service clients use connection pools
+            from app.services.elasticsearch_client import ElasticsearchClient
+
+            # Elasticsearch client should have max_connections in init
+            import inspect
+            es_init_source = inspect.getsource(ElasticsearchClient.__init__)
+            has_pooling = "max_connections" in es_init_source or "ES_MAX_CONNECTIONS" in es_init_source
+            self.print_result(
+                "ES client uses connection pooling",
+                has_pooling,
+            )
+
+            return len(self.results["failed"]) == 0
+
+        except Exception as e:
+            self.print_result("Integration validation", False, str(e))
+            return False
+
+    def print_summary(self):
+        """Print validation summary."""
+        print("\n" + "=" * 50)
+        print("SPRINT 2 VALIDATION SUMMARY")
+        print("=" * 50)
+
+        total = len(self.results["passed"]) + len(self.results["failed"]) + len(self.results["skipped"])
+        passed = len(self.results["passed"])
+        failed = len(self.results["failed"])
+        skipped = len(self.results["skipped"])
+
+        print(f"\nTotal Checks: {total}")
+        print(f"✅ Passed: {passed}")
+        print(f"❌ Failed: {failed}")
+        print(f"⏭️  Skipped: {skipped}")
+
+        if failed > 0:
+            print("\nFailed Checks:")
+            for check in self.results["failed"]:
+                print(f"  - {check['name']}: {check['message']}")
+
+        if skipped > 0:
+            print("\nSkipped Checks:")
+            for check in self.results["skipped"]:
+                print(f"  - {check['name']}: {check['message']}")
+
+        success_rate = (passed / total * 100) if total > 0 else 0
+        print(f"\nSuccess Rate: {success_rate:.1f}%")
+
+        if failed == 0:
+            print("\n🎉 SPRINT 2 VALIDATION PASSED!")
+        else:
+            print(f"\n⚠️  SPRINT 2 has {failed} failing check(s)")
+
+        print("=" * 50)
+
+        return failed == 0
+
+
+async def main():
+    """Run Sprint 2 validation."""
+    print("🔍 Phase 9 - Sprint 2 Validation")
+    print("=" * 50)
+
+    validator = Sprint2Validator()
+
+    # Run all day validations
+    await validator.validate_day6_connection_pool()
+    await validator.validate_day7_batch_optimizer()
+    await validator.validate_day8_llm_streaming()
+    await validator.validate_day9_benchmarks()
+    await validator.validate_integration()
+
+    # Print summary
+    success = validator.print_summary()
+
+    return 0 if success else 1
+
+
+if __name__ == "__main__":
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

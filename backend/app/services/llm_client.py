@@ -7,10 +7,11 @@ AI-powered incident analysis and recommendations.
 Based on strategic roadmap: docs/chien_luoc_tong_the.md (Giai đoạn 1)
 """
 
+import asyncio
 import json
 import time
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, AsyncIterator, Optional
 
 import anthropic
 from anthropic.types import Message
@@ -357,6 +358,168 @@ You communicate in Vietnamese by default, unless the user specifically requests 
             model_used=model_used,
             tokens_used=tokens_used,
         )
+
+    async def analyze_with_streaming(
+        self,
+        project: str,
+        incident_id: Optional[str],
+        alert_message: Optional[str],
+        context_data: dict[str, Any],
+        time_range_minutes: int = 60,
+    ) -> AsyncIterator[str]:
+        """
+        Analyze context and stream response token by token.
+
+        This is a streaming version of generate_triage_card that yields
+        JSON-formatted chunks compatible with the frontend.
+
+        Args:
+            project: Project name
+            incident_id: Optional incident identifier
+            alert_message: Alert description
+            context_data: Monitoring data from various sources
+            time_range_minutes: Time range for analysis (minutes)
+
+        Yields:
+            JSON-formatted chunks:
+            - {"type": "token", "text": "...", "done": false}
+            - {"type": "complete", "done": true, "full_response": "..."}
+        """
+        time_range = timedelta(minutes=time_range_minutes)
+
+        # Build the prompt
+        user_prompt = self._build_user_prompt(
+            project=project,
+            incident_id=incident_id,
+            alert_message=alert_message,
+            context_data=context_data,
+            time_range=time_range,
+        )
+
+        full_response = ""
+
+        try:
+            # Create streaming message
+            with self.client.messages.stream(
+                model=self.model,
+                max_tokens=settings.AI_MAX_TOKENS,
+                system=self.SYSTEM_PROMPT,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                    }
+                ],
+                temperature=0.3,
+            ) as stream:
+
+                for chunk in stream:
+                    if chunk.type == "content_block_delta":
+                        if hasattr(chunk.delta, "text") and chunk.delta.text:
+                            text = chunk.delta.text
+                            full_response += text
+
+                            # Yield formatted chunk
+                            yield json.dumps({
+                                "type": "token",
+                                "text": text,
+                                "done": False,
+                            }) + "\n"
+
+                    elif chunk.type == "message_delta":
+                        # Message complete, send final summary
+                        if hasattr(chunk.delta, "stop_reason"):
+                            yield json.dumps({
+                                "type": "complete",
+                                "text": "",
+                                "done": True,
+                                "stop_reason": chunk.delta.stop_reason,
+                                "full_response": full_response,
+                            }) + "\n"
+
+        except anthropic.APIError as e:
+            # Send error chunk
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"Claude API error: {e}",
+            }) + "\n"
+        except Exception as e:
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": f"Streaming failed: {e}",
+            }) + "\n"
+
+    async def analyze_simple_streaming(
+        self,
+        context: dict[str, Any],
+        question: str,
+    ) -> AsyncIterator[str]:
+        """
+        Simple streaming analysis for basic questions.
+
+        This is a lighter version for quick queries without full triage card generation.
+
+        Args:
+            context: Context data (logs, metrics, etc.)
+            question: User question to answer
+
+        Yields:
+            JSON-formatted chunks
+        """
+        # Build simple prompt
+        prompt_parts = [
+            f"# Question",
+            f"{question}",
+            f"",
+            f"# Context",
+            f"```json",
+            json.dumps(context, ensure_ascii=False, indent=2),
+            f"```",
+            f"",
+            f"Answer the question based on the context above. Be concise and actionable.",
+        ]
+
+        user_prompt = "\n".join(prompt_parts)
+        full_response = ""
+
+        try:
+            with self.client.messages.stream(
+                model=self.model,
+                max_tokens=min(settings.AI_MAX_TOKENS, 2000),  # Lower limit for simple queries
+                messages=[{"role": "user", "content": user_prompt}],
+                temperature=0.3,
+            ) as stream:
+
+                for chunk in stream:
+                    if chunk.type == "content_block_delta":
+                        if hasattr(chunk.delta, "text") and chunk.delta.text:
+                            text = chunk.delta.text
+                            full_response += text
+
+                            yield json.dumps({
+                                "type": "token",
+                                "text": text,
+                                "done": False,
+                            }) + "\n"
+
+                    elif chunk.type == "message_delta":
+                        if hasattr(chunk.delta, "stop_reason"):
+                            yield json.dumps({
+                                "type": "complete",
+                                "text": "",
+                                "done": True,
+                                "stop_reason": chunk.delta.stop_reason,
+                                "full_response": full_response,
+                            }) + "\n"
+
+        except Exception as e:
+            yield json.dumps({
+                "type": "error",
+                "done": True,
+                "error": str(e),
+            }) + "\n"
 
     async def health_check(self) -> bool:
         """

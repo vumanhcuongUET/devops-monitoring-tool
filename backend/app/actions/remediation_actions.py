@@ -647,7 +647,7 @@ class ClearStuckPodsAction(RemediationAction):
                             else:
                                 is_stuck = False
                                 stuck_reason = f"Pod not stuck long enough (started {pod_start_time_str})"
-                        except:
+                        except Exception:
                             pass  # If we can't parse time, still consider it stuck
 
                     # Check if pod is in target list (if specified)
@@ -801,7 +801,7 @@ class CleanupFailedJobsAction(RemediationAction):
                             failed_time_str = condition.get("lastTransitionTime", start_time_str)
                             try:
                                 failed_time = datetime.fromisoformat(failed_time_str.replace("Z", "+00:00"))
-                            except:
+                            except Exception:
                                 failed_time = cutoff_time - timedelta(hours=1)  # Conservative
                             break
 

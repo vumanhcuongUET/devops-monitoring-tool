@@ -1,5 +1,6 @@
 """Approval store for tracking action approval state (similar to AlertStateTracker)."""
 
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -14,14 +15,55 @@ HISTORY_FILE = "data/approval_history.json"
 class ApprovalStateTracker:
     """Track approval state for actions (similar to AlertStateTracker)."""
 
-    def __init__(self):
-        self._state: dict[str, dict[str, Any]] = {}
+    def __init__(self, use_redis: bool = False):
+        """
+        Initialize approval state tracker.
+
+        Args:
+            use_redis: If True, use Redis-backed state; otherwise file-based
+        """
+        self.use_redis = use_redis
+
+        if use_redis:
+            from app.approvals.redis_store import RedisApprovalStore, RedisApprovalHistory
+            from app.config import settings
+
+            # Build Redis URL from settings or use REDIS_URL if provided
+            if settings.REDIS_URL:
+                redis_url = settings.REDIS_URL
+            else:
+                password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
+                redis_url = f"redis://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}"
+
+            # Parse URL components for Redis client
+            from urllib.parse import urlparse
+            parsed = urlparse(redis_url if settings.REDIS_URL else f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}")
+
+            self._state = RedisApprovalStore(
+                redis_host=parsed.hostname or settings.REDIS_HOST,
+                redis_port=parsed.port or settings.REDIS_PORT,
+                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_db=settings.REDIS_DB_APPROVALS,
+            )
+            self._history = RedisApprovalHistory(
+                redis_host=parsed.hostname or settings.REDIS_HOST,
+                redis_port=parsed.port or settings.REDIS_PORT,
+                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_db=settings.REDIS_DB_APPROVALS,
+            )
+        else:
+            self._state: dict[str, dict[str, Any]] = {}
+
         self._ws_manager = None
-        self._load()
+
+        if not use_redis:
+            self._load()
 
     def set_ws_manager(self, manager):
         """Set the WebSocket manager for real-time updates."""
         self._ws_manager = manager
+        if self.use_redis and hasattr(self._state, 'set_ws_manager'):
+            self._state.set_ws_manager(manager)
 
     async def broadcast_status(self, action_id: str, status: ActionStatus):
         """Broadcast status change via WebSocket."""
@@ -36,27 +78,35 @@ class ApprovalStateTracker:
                 },
             })
 
-    def get(self, action_id: str) -> Optional[dict[str, Any]]:
+    async def get(self, action_id: str) -> Optional[dict[str, Any]]:
         """Get state for a specific action."""
+        if self.use_redis:
+            return await self._state.get(action_id)
         return self._state.get(action_id)
 
-    def get_all(self) -> dict[str, dict[str, Any]]:
+    async def get_all(self) -> dict[str, dict[str, Any]]:
         """Get all action states."""
+        if self.use_redis:
+            return await self._state.get_all()
         return self._state.copy()
 
-    def get_by_status(self, status: ActionStatus) -> list[str]:
+    async def get_by_status(self, status: ActionStatus) -> list[str]:
         """Get all action IDs with a specific status."""
+        if self.use_redis:
+            return await self._state.get_by_status(status)
         return [
             action_id
             for action_id, state in self._state.items()
             if state.get("status") == status
         ]
 
-    def get_pending_count(self) -> int:
+    async def get_pending_count(self) -> int:
         """Get count of pending actions."""
-        return len(self.get_by_status(ActionStatus.PENDING))
+        if self.use_redis:
+            return await self._state.get_pending_count()
+        return len(await self.get_by_status(ActionStatus.PENDING))
 
-    def set_status(
+    async def set_status(
         self,
         action_id: str,
         status: ActionStatus,
@@ -66,6 +116,17 @@ class ApprovalStateTracker:
         **extra_fields,
     ) -> dict[str, Any]:
         """Set the status of an action."""
+        if self.use_redis:
+            return await self._state.set_status(
+                action_id=action_id,
+                status=status,
+                user=user,
+                reason=reason,
+                command=command,
+                **extra_fields,
+            )
+
+        # File-based path
         now = datetime.now(timezone.utc).isoformat()
 
         if action_id not in self._state:
@@ -107,8 +168,11 @@ class ApprovalStateTracker:
         self._save()
         return self._state[action_id]
 
-    def delete(self, action_id: str) -> bool:
+    async def delete(self, action_id: str) -> bool:
         """Delete an action from state."""
+        if self.use_redis:
+            return await self._state.delete(action_id)
+
         if action_id in self._state:
             del self._state[action_id]
             self._save()
@@ -179,17 +243,37 @@ _approval_tracker: Optional[ApprovalStateTracker] = None
 _approval_history: Optional[ApprovalHistory] = None
 
 
-def get_approval_tracker() -> ApprovalStateTracker:
+def get_approval_tracker(use_redis: bool = False) -> ApprovalStateTracker:
     """Get or create the singleton ApprovalStateTracker instance."""
     global _approval_tracker
     if _approval_tracker is None:
-        _approval_tracker = ApprovalStateTracker()
+        _approval_tracker = ApprovalStateTracker(use_redis=use_redis)
     return _approval_tracker
 
 
-def get_approval_history() -> ApprovalHistory:
+def get_approval_history(use_redis: bool = False) -> ApprovalHistory:
     """Get or create the singleton ApprovalHistory instance."""
     global _approval_history
     if _approval_history is None:
-        _approval_history = ApprovalHistory()
+        if use_redis:
+            from app.approvals.redis_store import RedisApprovalHistory
+            from app.config import settings
+            from urllib.parse import urlparse
+
+            if settings.REDIS_URL:
+                redis_url = settings.REDIS_URL
+            else:
+                password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
+                redis_url = f"redis://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}"
+
+            parsed = urlparse(redis_url if settings.REDIS_URL else f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}")
+
+            _approval_history = RedisApprovalHistory(
+                redis_host=parsed.hostname or settings.REDIS_HOST,
+                redis_port=parsed.port or settings.REDIS_PORT,
+                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_db=settings.REDIS_DB_APPROVALS,
+            )
+        else:
+            _approval_history = ApprovalHistory()
     return _approval_history

@@ -9,9 +9,21 @@ websockets==14.*
 python-telegram-bot==21.*
 anthropic==0.40.*
 
+# Phase 9: Redis for distributed state
+redis[hiredis]>=5.0.0
+
 # Phase 5: Observability & Performance
 numpy>=1.24.0
 scipy>=1.11.0
+
+# Phase 9: OpenTelemetry Distributed Tracing
+opentelemetry-api>=1.22.0
+opentelemetry-sdk>=1.22.0
+opentelemetry-instrumentation-fastapi>=0.43b0
+opentelemetry-instrumentation-httpx>=0.43b0
+opentelemetry-instrumentation-asyncio>=0.43b0
+opentelemetry-exporter-otlp-proto-grpc>=1.22.0
+opentelemetry-resource-detector-container>=0.43b0
 
 # Testing dependencies
 pytest>=8.0.0

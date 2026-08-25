@@ -45,7 +45,11 @@
       "Bash(python -m pytest app/services/__tests__/test_anomaly_detector_enhanced.py -v)",
       "Bash(python -m pytest app/services/__tests__/test_token_optimizer.py -v)",
       "Bash(python *)",
-      "Bash(grep -E \"\\\\.py$\")"
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(gh issue *)",
+      "Bash(pip list *)",
+      "Bash(chmod +x /home/vmcuong/Downloads/devops-monitoring-tool/scripts/deploy-staging.sh)",
+      "Bash(chmod +x *)"
     ]
   }
 }

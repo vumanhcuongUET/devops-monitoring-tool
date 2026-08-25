@@ -1,9 +1,38 @@
 node_modules/
 dist/
+
+# Environment variables (NEVER commit these)
 .env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Secrets (NEVER commit these)
+*.key
+*.pem
+*.keypair
+secrets/
+credentials/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Data
 data/
 *.egg-info/
+
+# IDE
 .vscode/
 .idea/
+
+# Phase 9: Security - Additional secret patterns
+secrets.yaml
+secrets.yml
+*.secret
+*.credentials
+auth_tokens.json
+service_account.json

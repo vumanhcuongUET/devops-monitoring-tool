@@ -1,0 +1,110 @@
+---
+# Service Account for Backend (Staging Operator Role)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-staging-operator
+  namespace: devops-monitor-staging
+  labels:
+    environment: staging
+    role: operator
+
+---
+# Role for Backend Operator in Staging
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-staging-operator
+  namespace: devops-monitor-staging
+rules:
+  # Pod operations (view, modify, execute, scale, rollback)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/exec", "pods/portforward"]
+    verbs: ["get", "create"]
+
+  # Deployment operations
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "rollback"]
+
+  # Service operations
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # ConfigMap and Secret operations
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+
+  # Event operations (for monitoring)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create"]
+
+  # Namespace operations (view only)
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for Backend Operator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-staging-operator-binding
+  namespace: devops-monitor-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backend-staging-operator
+subjects:
+- kind: ServiceAccount
+  name: backend-staging-operator
+  namespace: devops-monitor-staging
+
+---
+# Service Account for Frontend (Staging Viewer Role)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-staging
+  namespace: devops-monitor-staging
+  labels:
+    environment: staging
+    role: viewer
+
+---
+# Role for Frontend (Limited access)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: frontend-staging
+  namespace: devops-monitor-staging
+rules:
+  # Minimal permissions for frontend
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+---
+# RoleBinding for Frontend
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: frontend-staging-binding
+  namespace: devops-monitor-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: frontend-staging
+subjects:
+- kind: ServiceAccount
+  name: frontend-staging
+  namespace: devops-monitor-staging

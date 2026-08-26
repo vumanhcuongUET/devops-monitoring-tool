@@ -1,0 +1,314 @@
+---
+# PostgreSQL Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: devops-monitor
+  labels:
+    app.kubernetes.io/name: postgres-backup
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: devops-monitor
+spec:
+  # Run daily at 3 AM
+  schedule: "0 3 * * *"
+  # Allow manual triggering
+  suspend: false
+  # Keep job history
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  # Job deadline
+  startingDeadlineSeconds: 3600
+
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-backup-job
+    spec:
+      # Only one job at a time
+      concurrencyPolicy: Forbid
+      # Retry on failure
+      backoffLimit: 3
+      # Job timeout
+      activeDeadlineSeconds: 3600
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: postgres-backup-pod
+        spec:
+          restartPolicy: OnFailure
+
+          serviceAccountName: backup-service-account
+
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Wait for postgres to be ready
+                  until pg_isready -h postgres -U postgres; do
+                    echo "Waiting for PostgreSQL..."
+                    sleep 2
+                  done
+
+                  # Run backup
+                  BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="devops_monitor_${BACKUP_DATE}.dump"
+
+                  echo "Starting backup: ${BACKUP_FILE}"
+
+                  # Dump database
+                  pg_dump -U postgres -h postgres -d devops_monitor \
+                    --format=custom --verbose \
+                    > /tmp/${BACKUP_FILE}
+
+                  # Compress
+                  gzip /tmp/${BACKUP_FILE}
+                  BACKUP_FILE="${BACKUP_FILE}.gz"
+
+                  # Get size
+                  BACKUP_SIZE=$(du -h /tmp/${BACKUP_FILE}.gz | cut -f1)
+                  echo "Backup size: ${BACKUP_SIZE}"
+
+                  # Upload to S3
+                  if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+                    echo "Uploading to S3..."
+                    aws s3 cp /tmp/${BACKUP_FILE}.gz \
+                      ${S3_BUCKET:-s3://devops-monitoring-backups/postgresql}/${BACKUP_FILE}
+
+                    if [ $? -eq 0 ]; then
+                      echo "Upload successful"
+                    else
+                      echo "Upload failed"
+                      exit 1
+                    fi
+                  else
+                    echo "AWS credentials not configured, skipping S3 upload"
+                  fi
+
+                  # Cleanup
+                  rm -f /tmp/${BACKUP_FILE}.gz
+
+                  echo "Backup completed successfully"
+
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+
+                # AWS credentials for S3 upload
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-aws-credentials
+                      key: access-key-id
+                      optional: true
+
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-aws-credentials
+                      key: secret-access-key
+                      optional: true
+
+                - name: AWS_DEFAULT_REGION
+                  value: "${AWS_REGION:-us-east-1}"
+
+                - name: S3_BUCKET
+                  value: "${S3_BUCKET:-s3://devops-monitoring-backups/postgresql}"
+
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 2Gi
+
+---
+# Backup Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-service-account
+  namespace: devops-monitor
+
+---
+# Backup Role (access to pods and secrets)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-role
+  namespace: devops-monitor
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/exec
+    verbs:
+      - get
+      - list
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+
+---
+# Backup RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-role-binding
+  namespace: devops-monitor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-role
+subjects:
+  - kind: ServiceAccount
+    name: backup-service-account
+    namespace: devops-monitor
+
+---
+# Backup Validation CronJob (Monthly)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup-validation
+  namespace: devops-monitor
+  labels:
+    app.kubernetes.io/name: postgres-backup-validation
+    app.kubernetes.io/component: backup
+spec:
+  # Run on the 1st of every month at 4 AM
+  schedule: "0 4 1 * *"
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-backup-validation-job
+    spec:
+      concurrencyPolicy: Forbid
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: postgres-backup-validation-pod
+        spec:
+          restartPolicy: OnFailure
+
+          serviceAccountName: backup-service-account
+
+          containers:
+            - name: validate
+              image: postgres:16-alpine
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Get a random backup from last 30 days
+                  RANDOM_DAY=$((RANDOM % 30))
+                  BACKUP_DATE=$(date -d "${RANDOM_DAY} days ago" +%Y%m%d)
+
+                  echo "Validating backup from: ${BACKUP_DATE}"
+
+                  # Find backup file
+                  BACKUP_FILE=$(aws s3 ls \
+                    ${S3_BUCKET:-s3://devops-monitoring-backups/postgresql}/ | \
+                    grep "devops_monitor_${BACKUP_DATE}" | tail -1 | awk '{print $4}')
+
+                  if [ -z "${BACKUP_FILE}" ]; then
+                    echo "No backup found for date: ${BACKUP_DATE}"
+                    exit 1
+                  fi
+
+                  echo "Found backup: ${BACKUP_FILE}"
+
+                  # Download
+                  aws s3 cp \
+                    ${S3_BUCKET:-s3://devops-monitoring-backups/postgresql}/${BACKUP_FILE} \
+                    /tmp/backup.dump.gz
+
+                  # Validate gzip
+                  if ! gunzip -t /tmp/backup.dump.gz; then
+                    echo "Backup file is corrupted!"
+                    exit 1
+                  fi
+
+                  echo "Backup file integrity verified"
+
+                  # Test restore
+                  TEMP_DB="backup_validation_$(date +%s)"
+                  pg_restore -U postgres -h postgres \
+                    --format=custom -j 2 \
+                    -d ${TEMP_DB} <(gunzip -c /tmp/backup.dump.gz) || {
+                    echo "Test restore failed!"
+                    exit 1
+                  }
+
+                  echo "Test restore successful"
+
+                  # Cleanup
+                  psql -U postgres -h postgres -c "DROP DATABASE ${TEMP_DB};"
+                  rm -f /tmp/backup.dump.gz
+
+                  echo "Backup validation completed successfully"
+
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-aws-credentials
+                      key: access-key-id
+                      optional: true
+
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-aws-credentials
+                      key: secret-access-key
+                      optional: true
+
+                - name: AWS_DEFAULT_REGION
+                  value: "${AWS_REGION:-us-east-1}"
+
+                - name: S3_BUCKET
+                  value: "${S3_BUCKET:-s3://devops-monitoring-backups/postgresql}"
+
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi

@@ -120,6 +120,18 @@ class Settings(BaseSettings):
     APPROVAL_STATE_USE_REDIS: bool = False  # Use Redis for approval state (default: file-based)
     RATE_LIMIT_USE_REDIS: bool = False  # Use Redis for rate limiting (default: in-memory)
 
+    # Phase 10: PostgreSQL Database Configuration
+    DATABASE_URL: str | None = None  # Full PostgreSQL URL (alternative to individual settings)
+    DATABASE_HOST: str = "postgres"
+    DATABASE_PORT: int = 5432
+    DATABASE_NAME: str = "devops_monitor"
+    DATABASE_USER: str = "devops_monitor"
+    DATABASE_PASSWORD: str = ""  # MUST be set in production
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 20
+    DATABASE_POOL_TIMEOUT: int = 30
+    DATABASE_POOL_RECYCLE: int = 3600
+
     # Connection Pool Settings
     ES_MAX_CONNECTIONS: int = 20
     PROM_MAX_CONNECTIONS: int = 20

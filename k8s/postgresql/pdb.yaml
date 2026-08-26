@@ -1,0 +1,12 @@
+---
+# PostgreSQL PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: postgres
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres

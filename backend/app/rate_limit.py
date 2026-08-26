@@ -191,8 +191,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         """Process request with rate limiting."""
-        # Skip rate limiting for health checks and docs
-        if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
+        # Phase 10 Sprint 1 Day 2: Bug Fix - Add OAuth2 redirect endpoint
+        # Skip rate limiting for health checks, docs, and OAuth2 redirect
+        if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"]:
             return await call_next(request)
 
         client_id = self._client_id(request)

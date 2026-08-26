@@ -1,0 +1,228 @@
+---
+# Alertmanager Configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/component: monitoring
+stringData:
+  alertmanager.yaml: |
+    global:
+      # Default resolution timeout
+      resolve_timeout: 5m
+
+      # Slack API URL (set via environment or Secret)
+      # slack_api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+
+      # SMTP configuration for email alerts
+      # smtp_smarthost: 'smtp.gmail.com:587'
+      # smtp_from: 'alerts@devops-monitor.com'
+      # smtp_auth_username: 'your-email@gmail.com'
+      # smtp_auth_password: 'your-app-password'
+
+    # Default receiver
+    receivers:
+      - name: 'default'
+        slack_configs:
+          - channel: '#alerts'
+            send_resolved: true
+            title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+            text: >-
+              {{ range .Alerts }}
+              *Alert:* {{ .Labels.alertname }}
+              *Severity:* {{ .Labels.severity }}
+              *Summary:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Runbook:* {{ .Annotations.runbook | default "N/A" }}
+              *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+              {{ end }}
+            actions:
+              - type: button
+                text: "View in Grafana"
+                url: "https://grafana.example.com/d/{{ .ExternalURL }}"
+              - type: button
+                text: "Silence"
+                url: "{{ .ExternalURL }}/#/silences/new?filter=%7B"
+
+      - name: 'critical'
+        slack_configs:
+          - channel: '#incidents-critical'
+            send_resolved: true
+            title: '🚨 {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+            text: >-
+              {{ range .Alerts }}
+              *CRITICAL ALERT*
+              *Service:* {{ .Labels.service | default "N/A" }}
+              *Tier:* {{ .Labels.tier | default "unknown" }}
+              *Summary:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Runbook:* {{ .Annotations.runbook | default "N/A" }}
+              *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+              {{ end }}
+            color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+            actions:
+              - type: button
+                text: "Acknowledge"
+                url: "https://alertmanager.example.com/#/silences/new?filter=%7B"
+              - type: button
+                text: "Runbook"
+                url: "{{ range .Alerts }}{{ .Annotations.runbook }}{{ end }}"
+
+        pagerduty_configs:
+          - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+            description: '{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+
+        email_configs:
+          - to: 'oncall@devops-monitor.com'
+            headers:
+              subject: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+            html: |
+              {{ range .Alerts }}
+              <h2>{{ .Annotations.summary }}</h2>
+              <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+              <p><strong>Service:</strong> {{ .Labels.service | default "N/A" }}</p>
+              <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+              <p><strong>Runbook:</strong> <a href="{{ .Annotations.runbook }}">View</a></p>
+              {{ end }}
+
+      - name: 'high-priority'
+        slack_configs:
+          - channel: '#alerts'
+            send_resolved: true
+            title: '⚠️ {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+            text: >-
+              {{ range .Alerts }}
+              *HIGH PRIORITY ALERT*
+              *Service:* {{ .Labels.service | default "N/A" }}
+              *Summary:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              {{ end }}
+            color: 'warning'
+
+      - name: 'ops-team'
+        slack_configs:
+          - channel: '#ops-notifications'
+            send_resolved: false
+            title: '📢 Ops Notification: {{ .CommonLabels.alertname }}'
+            text: |
+              {{ range .Alerts }}
+              {{ .Annotations.description }}
+              {{ end }}
+
+    # Routing configuration
+    route:
+      # Default receiver
+      receiver: 'default'
+
+      # Group alerts by these labels
+      group_by: ['alertname', 'cluster', 'service', 'tier']
+
+      # How long to wait before sending first notification
+      group_wait: 10s
+
+      # How long to wait before sending notification about new alerts in group
+      group_interval: 10s
+
+      # How long to wait before sending notification after last alert
+      repeat_interval: 12h
+
+      # Child routes
+      routes:
+        # Critical alerts -> critical receiver
+        - match:
+            severity: critical
+          receiver: 'critical'
+          continue: true
+
+        # High severity alerts -> high-priority receiver
+        - match:
+            severity: high
+          receiver: 'high-priority'
+          continue: true
+
+        # Operations/backup alerts -> ops-team receiver
+        - match:
+            tier: operations
+          receiver: 'ops-team'
+
+        # Database alerts -> ops-team receiver
+        - match:
+            tier: database
+          receiver: 'ops-team'
+
+        # SLO violations -> critical receiver
+        - match:
+            alertname: SLOViolation
+          receiver: 'critical'
+
+      # Inhibit rules (suppress less critical alerts when more critical are firing)
+      inhibit_rules:
+        # Inhibit warning if critical is firing for same alert
+        - source_match:
+            severity: 'critical'
+          target_match:
+            severity: 'warning'
+          equal: ['alertname', 'service', 'tier']
+
+        # Inhibit info if warning is firing for same alert
+        - source_match:
+            severity: 'warning'
+          target_match:
+            severity: 'info'
+          equal: ['alertname', 'service']
+
+        # Inherit ServiceDown from any other alert for same service
+        - source_match:
+            alertname: 'ServiceDown'
+          target_match_re:
+            alertname: '.+'
+          equal: ['service']
+
+    # Templates for custom message formatting
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+---
+# Alertmanager Template ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-templates
+  namespace: monitoring
+data:
+  default.tmpl: |
+    {{ define "slack.default.title" }}
+    {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}
+    {{ end }}
+
+    {{ define "slack.default.text" }}
+    {{ range .Alerts }}
+    *Alert:* {{ .Labels.alertname }}
+    *Severity:* {{ .Labels.severity }}
+    *Summary:* {{ .Annotations.summary }}
+    *Description:* {{ .Annotations.description }}
+    *Service:* {{ .Labels.service | default "N/A" }}
+    *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+    {{ end }}
+    {{ end }}
+
+    {{ define "pagerduty.default.description" }}
+    {{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}
+    {{ end }}
+
+    {{ define "email.default.html" }}
+    <html>
+    <body>
+      <h2>{{ .CommonLabels.alertname }}</h2>
+      {{ range .Alerts }}
+      <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+      <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+      <p><strong>Severity:</strong> {{ .Labels.severity }}</p>
+      <hr/>
+      {{ end }}
+    </body>
+    </html>
+    {{ end }}

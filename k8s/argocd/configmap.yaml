@@ -1,0 +1,86 @@
+---
+# ArgoCD ConfigMap for base configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # ArgoCD UI settings
+  application.instanceLabelKey: argocd.argoproj.io/instance
+
+  # Repository credentials template
+  credential.templates: |
+    - name: github
+      type: git
+      url: https://github.com
+
+  # OIDC configuration (optional, for SSO)
+  # url: https://argocd.example.com
+  # oidc.config: |
+  #   name: Keycloak
+  #   issuer: https://keycloak.example.com/auth/realms/argocd
+  #   clientId: argocd
+  #   clientSecret: $oidc.clientSecret
+
+  # Server-side custom resource manifests
+  resource.customizations.health: |
+    # StatefulSet health check
+    StatefulSet.apps/v1: |
+      hs = {}
+      if obj.status.replicas == obj.status.readyReplicas:
+        hs.status = "Healthy"
+      else:
+        hs.status = "Progressing"
+      hs.message = "ReadyReplicas: " + str(obj.status.readyReplicas) + "/Replicas: " + str(obj.status.replicas)
+      return hs
+
+    # PostgreSQL health check
+    PostgresDatabase.sql.example.com/v1: |
+      hs = {}
+      if obj.status.ready == "true" {
+        hs.status = "Healthy"
+      } else {
+        hs.status = "Progressing"
+      }
+      hs.message = "Database ready: " + obj.status.ready
+      return hs
+
+  # Allow empty namespace sync
+  repo.server: "https://github.com"
+
+---
+# ArgoCD RBAC ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Default policy (read-only for unauthenticated)
+  policy.default: role:readonly
+
+  # Custom policies
+  policy.csv: |
+    # Developers can sync apps in dev/staging
+    p, role:developer, applications, sync, devops-monitor/*, allow
+    p, role:developer, applications, get, devops-monitor/*, allow
+    p, role:developer, applications, create, devops-monitor/*, allow
+
+    # Ops can sync in production
+    p, role:ops, applications, sync, devops-monitor/*, allow
+    p, role:ops, applications, deploy, devops-monitor/*, allow
+    p, role:ops, applications, get, devops-monitor/*, allow
+    p, role:ops, applications, override, devops-monitor/*, allow
+
+    # Admins have full access
+    g, admin, role:admin
+
+  # Scope restrictions
+  scopes: '[crt="projects:devops-monitor"]'

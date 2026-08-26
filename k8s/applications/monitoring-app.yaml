@@ -1,0 +1,123 @@
+---
+# Monitoring Stack Application (Prometheus, Grafana, Alertmanager)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-monitoring
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-monitoring
+    app.kubernetes.io/component: monitoring
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/monitoring
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+
+  # Monitoring resources are sensitive
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+    - group: monitoring.coreos.com
+      kind: Prometheus
+      jsonPointers:
+        - /status
+    - group: monitoring.coreos.com
+      kind: Alertmanager
+      jsonPointers:
+        - /status
+    - group: monitoring.coreos.com
+      kind: ThanosRuler
+      jsonPointers:
+        - /status
+
+---
+# Prometheus Rules Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-prometheus-rules
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-prometheus-rules
+    app.kubernetes.io/component: monitoring
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/monitoring/prometheus-rules.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# Alertmanager Configuration Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-alertmanager-config
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-alertmanager-config
+    app.kubernetes.io/component: monitoring
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/monitoring/alertmanager-config.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+
+  # Alertmanager secret is sensitive
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+        - /stringData

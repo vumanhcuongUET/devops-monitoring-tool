@@ -1,0 +1,64 @@
+---
+# ArgoCD Server Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server-ingress
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/part-of: argocd
+  annotations:
+    # For NGINX Ingress Controller
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # For TLS termination at ingress (if not using ssl-passthrough)
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    # nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    # For specific host
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 443
+  # TLS configuration (if not using ssl-passthrough)
+  # tls:
+  #   - hosts:
+  #       - argocd.example.com
+  #     secretName: argocd-server-tls
+
+---
+# Alternative Ingress for HTTP (for development)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server-ingress-http
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd-http.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80

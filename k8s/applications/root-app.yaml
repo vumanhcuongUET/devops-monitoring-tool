@@ -1,0 +1,38 @@
+---
+# Root Application (App-of-Apps pattern)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-root
+    app.kubernetes.io/component: gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/applications
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,150 @@
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: postgres
+  labels:
+    app: postgres
+    tier: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: database
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "devops_monitor"
+        - name: POSTGRES_USER
+          value: "devops_monitor"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_INITDB_ARGS
+          value: "-E UTF8 --locale=en_US.UTF-8"
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgres.conf
+        - name: postgres-config
+          mountPath: /etc/postgresql/pg_hba.conf
+          subPath: pg_hba.conf
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - devops_monitor
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - |
+              pg_isready -U devops_monitor && \
+              psql -U devops_monitor -c 'SELECT 1' > /dev/null
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      # Backup sidecar container
+      - name: backup
+        image: amazon/aws-cli:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Backup sidecar ready"
+          sleep infinity
+        env:
+        - name: PGUSER
+          value: "devops_monitor"
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        - name: PGDATABASE
+          value: "devops_monitor"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: postgres-backup-credentials
+              key: aws-access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: postgres-backup-credentials
+              key: aws-secret-access-key
+        - name: AWS_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: postgres-backup-credentials
+              key: aws-bucket
+        - name: AWS_REGION
+          valueFrom:
+            secretKeyRef:
+              name: postgres-backup-credentials
+              key: aws-region
+              optional: true
+        volumeMounts:
+        - name: backup-scripts
+          mountPath: /scripts
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+      - name: backup-scripts
+        configMap:
+          name: postgres-config
+          defaultMode: 0755
+
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 10Gi

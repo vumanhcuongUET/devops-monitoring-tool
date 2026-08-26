@@ -71,15 +71,18 @@ class ConnectionPoolManager:
     """
 
     _instance: Optional["ConnectionPoolManager"] = None
-    _pools: Dict[str, httpx.Limits] = {}
-    _configs: Dict[str, PoolConfig] = {}
-    _clients: Dict[str, httpx.AsyncClient] = {}
     _lock = asyncio.Lock()
 
     def __init__(self):
         """Initialize connection pool manager (singleton)."""
         if ConnectionPoolManager._instance is not None:
             raise RuntimeError("Use get_instance() to get the singleton")
+
+        # Phase 10 Sprint 1 Day 2: Bug Fix - Move to instance variables
+        # Previously these were class-level dicts shared across all instances
+        self._pools: Dict[str, httpx.Limits] = {}
+        self._configs: Dict[str, PoolConfig] = {}
+        self._clients: Dict[str, httpx.AsyncClient] = {}
 
         # Default pool configurations
         self._configs = {

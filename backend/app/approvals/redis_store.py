@@ -11,6 +11,7 @@ Features:
 - Separate Redis database for approval state
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -240,17 +241,30 @@ class RedisApprovalStore:
         key = f"approval:state:{action_id}"
         lock_key = f"approval:lock:{action_id}"
 
-        # Acquire distributed lock
-        locked = await self.redis.set(
-            lock_key,
-            "locked",
-            nx=True,
-            ex=self.lock_ttl,
-        )
+        # Phase 10 Sprint 1 Day 1: Bug Fix - Lock acquisition with retry before throwing
+        # Try to acquire lock with retries before giving up
+        max_retries = 3
+        locked = False
 
+        for attempt in range(max_retries):
+            locked = await self.redis.set(
+                lock_key,
+                "locked",
+                nx=True,
+                ex=self.lock_ttl,
+            )
+
+            if locked:
+                break
+
+            # Wait a bit before retry (exponential backoff)
+            await asyncio.sleep(0.1 * (2 ** attempt))
+
+        # If still not locked after retries, raise explicit error
         if not locked:
             raise RuntimeError(
-                f"Approval {action_id} is being modified by another process"
+                f"Could not acquire lock for approval {action_id} after {max_retries} retries. "
+                f"Another process may be modifying this approval."
             )
 
         try:

@@ -1,0 +1,137 @@
+---
+# Backend Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-backend
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-backend
+    app.kubernetes.io/component: backend
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/backend
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-monitor
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 1m
+
+  # Ignore differences for volatile fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: ""
+      kind: Service
+      jsonPointers:
+        - /spec/clusterIP
+        - /spec/clusterIPs
+        - /spec/healthStatus
+        - /spec/ports/0/nodePort
+
+---
+# Backend Application (Staging)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-backend-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-backend-staging
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/environment: staging
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/backend
+
+    # Kustomize overrides for staging
+    kustomize:
+      images:
+        - name: devops-monitor-backend
+          newTag: staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-monitor-staging
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# Backend Application (Production)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-backend-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-backend-prod
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/backend
+
+    # Kustomize overrides for production
+    kustomize:
+      images:
+        - name: devops-monitor-backend
+          newTag: production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-monitor-prod
+
+  syncPolicy:
+    # Manual sync for production
+    automated:
+      prune: false
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m

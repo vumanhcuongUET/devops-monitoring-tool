@@ -111,6 +111,8 @@ class PrometheusClient:
         """
         Get alerts from Prometheus.
 
+        Phase 10 Sprint 1 Day 1: Bug Fix - Use pooled client instead of creating new client.
+
         Args:
             state: Filter by state ("firing", "pending", "inactive"). If None, returns all active (firing + pending).
 
@@ -118,23 +120,23 @@ class PrometheusClient:
             List of alert objects with labels, annotations, state, etc.
         """
         try:
-            async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT_SECONDS) as client:
-                params = {}
-                if state:
-                    params["state"] = state
-                else:
-                    # Default to active alerts (firing + pending)
-                    params["state"] = "active"
+            # Phase 10 Bug Fix: Use self._client (with connection pooling) instead of creating new client
+            params = {}
+            if state:
+                params["state"] = state
+            else:
+                # Default to active alerts (firing + pending)
+                params["state"] = "active"
 
-                resp = await client.get(
-                    f"{self.base_url}/api/v1/alerts",
-                    params=params,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await self._client.get(
+                "/api/v1/alerts",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
-                alerts = data.get("data", {}).get("alerts", [])
-                return alerts
+            alerts = data.get("data", {}).get("alerts", [])
+            return alerts
         except Exception as e:
             print(f"Failed to fetch alerts: {e}")
             return []

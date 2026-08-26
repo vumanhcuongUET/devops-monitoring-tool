@@ -1,0 +1,96 @@
+---
+# PostgreSQL ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: postgres
+data:
+  # PostgreSQL configuration
+  postgres.conf: |
+    # Connection settings
+    listen_addresses = '*'
+    max_connections = 100
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    maintenance_work_mem = 64MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 2621kB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+
+    # Logging
+    logging_collector = on
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_rotation_age = 1d
+    log_rotation_size = 100MB
+    log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+    log_checkpoints = on
+    log_connections = on
+    log_disconnections = on
+    log_duration = off
+    log_lock_waits = on
+
+    # Performance
+    shared_preload_libraries = 'pg_stat_statements'
+    pg_stat_statements.track = all
+    pg_stat_statements.max = 1000
+
+  # pg_hba.conf for host-based authentication
+  pg_hba.conf: |
+    # TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
+    local   all         postgres                          trust
+    local   all         devops_monitor                   md5
+    host    all         postgres    127.0.0.1/32          scram-sha-256
+    host    all         postgres    ::1/128               scram-sha-256
+    host    all         all         10.0.0.0/8            scram-sha-256
+    host    all         all         172.16.0.0/12         scram-sha-256
+    host    all         all         192.168.0.0/16        scram-sha-256
+
+  # Backup script
+  backup.sh: |
+    #!/bin/bash
+    set -e
+
+    BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="devops_monitor_${BACKUP_DATE}.dump"
+    S3_PATH="s3://${AWS_BUCKET}/postgresql/${BACKUP_FILE}"
+
+    # Dump from PostgreSQL
+    pg_dump -U ${PGUSER} -h postgres ${PGDATABASE} | gzip > /tmp/${BACKUP_FILE}.gz
+
+    # Upload to S3
+    aws s3 cp /tmp/${BACKUP_FILE}.gz ${S3_PATH}.gz
+
+    # Cleanup local file
+    rm -f /tmp/${BACKUP_FILE}.gz
+
+    echo "Backup completed: ${S3_PATH}.gz"
+
+  # Restore script
+  restore.sh: |
+    #!/bin/bash
+    set -e
+
+    BACKUP_FILE=$1
+
+    if [ -z "$BACKUP_FILE" ]; then
+      echo "Usage: $0 <backup_file>"
+      exit 1
+    fi
+
+    # Download from S3
+    aws s3 cp ${BACKUP_FILE} /tmp/restore.dump.gz
+
+    # Restore to PostgreSQL
+    gunzip < /tmp/restore.dump.gz | psql -U ${PGUSER} -h postgres ${PGDATABASE}
+
+    # Cleanup
+    rm -f /tmp/restore.dump.gz
+
+    echo "Restore completed from: ${BACKUP_FILE}"

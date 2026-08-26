@@ -1,0 +1,113 @@
+---
+# PostgreSQL Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-postgres
+    app.kubernetes.io/component: database
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/postgresql
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-monitor
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+
+  # Ignore differences for PostgreSQL (stateful resource)
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates/0/status
+        - /status/currentReplicas
+        - /status/currentRevision
+        - /status/updateRevision
+        - /status/observedGeneration
+
+---
+# PostgreSQL Backup CronJob Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-postgres-backup
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-postgres-backup
+    app.kubernetes.io/component: backup
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/postgresql/backup-cronjob.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-monitor
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# PostgreSQL Application (Production)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-monitor-postgres-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: devops-monitor-postgres-prod
+    app.kubernetes.io/component: database
+    app.kubernetes.io/environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-monitor
+
+  source:
+    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
+    targetRevision: main
+    path: k8s/postgresql
+    helm:
+      values: |
+        replicaCount: 2
+        persistence:
+          enabled: true
+          size: 50Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-monitor-prod
+
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

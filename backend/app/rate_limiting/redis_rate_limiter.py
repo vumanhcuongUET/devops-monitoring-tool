@@ -112,8 +112,10 @@ class RedisRateLimiter:
             # Count current requests in window
             pipe.zcard(redis_key)
 
-            # Add current request with timestamp as score
-            pipe.zadd(redis_key, {str(now): now})
+            # Phase 10 Sprint 1 Day 1: Bug Fix - Handle bytes for Redis with decode_responses=False
+            # When decode_responses=False (line 74), zadd expects bytes for keys, not strings
+            # We encode the timestamp key to bytes
+            pipe.zadd(redis_key, {str(now).encode(): now})
 
             # Set expiry on the key (window + 1 second for buffer)
             pipe.expire(redis_key, window_seconds + 1)

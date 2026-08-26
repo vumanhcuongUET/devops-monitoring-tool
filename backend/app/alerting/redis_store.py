@@ -144,23 +144,46 @@ class RedisAlertStore:
         """
         Update alert state with atomic operation.
 
+        Phase 10 Sprint 1 Day 1: Bug Fix - Lock acquisition failure now raises error.
+
         Args:
             rule_id: Alert rule ID
             updates: Fields to update
 
         Returns:
             Updated alert state
+
+        Raises:
+            RuntimeError: If lock cannot be acquired after retries
         """
         key = f"alert:state:{rule_id}"
         lock_key = f"alert:lock:{rule_id}"
 
-        # Acquire distributed lock
-        locked = await self.redis.set(
-            lock_key,
-            "locked",
-            nx=True,
-            ex=self.lock_ttl,
-        )
+        # Phase 10 Bug Fix: Implement lock acquisition with retry and explicit error
+        # Try to acquire lock with a few retries before giving up
+        max_retries = 3
+        locked = False
+
+        for attempt in range(max_retries):
+            locked = await self.redis.set(
+                lock_key,
+                "locked",
+                nx=True,
+                ex=self.lock_ttl,
+            )
+
+            if locked:
+                break
+
+            # Wait a bit before retry (exponential backoff)
+            await asyncio.sleep(0.1 * (2 ** attempt))
+
+        # If still not locked after retries, raise explicit error
+        if not locked:
+            raise RuntimeError(
+                f"Could not acquire lock for alert {rule_id} after {max_retries} retries. "
+                f"Another process may be modifying this alert."
+            )
 
         try:
             # Get existing state
@@ -219,6 +242,10 @@ class RedisAlertStore:
         """
         Get all alert states.
 
+        Phase 10 Sprint 1 Day 2: Bug Fix - Handle race condition between scan and mget.
+        Between collecting keys and fetching values, keys could be deleted or added.
+        We handle this by processing each key-value pair safely.
+
         Returns:
             Dictionary mapping rule_id to state
         """
@@ -232,16 +259,27 @@ class RedisAlertStore:
             if not keys:
                 return {}
 
-            # Fetch all values
+            # Fetch all values in one call
             values = await self.redis.mget(keys)
 
-            # Build result dict
+            # Phase 10 Bug Fix: Handle race condition more robustly
+            # If a key was deleted between scan and mget, its value is None
+            # We safely handle this by checking each pair
             result = {}
-            for key, value in zip(keys, values):
-                if value:
-                    # Extract rule_id from key
-                    rule_id = key.replace("alert:state:", "")
-                    result[rule_id] = json.loads(value)
+            for i, key in enumerate(keys):
+                # Safely get value even if lengths don't match
+                if i < len(values):
+                    value = values[i]
+                    if value:
+                        try:
+                            # Extract rule_id from key
+                            rule_id = key.replace("alert:state:", "")
+                            result[rule_id] = json.loads(value)
+                        except (json.JSONDecodeError, KeyError) as e:
+                            logger.warning(f"RedisAlertStore: Skipping malformed state for {key}: {e}")
+                else:
+                    # Race condition: more keys than values (shouldn't happen with mget)
+                    logger.warning(f"RedisAlertStore: Missing value for key {key}, skipping")
 
             return result
 

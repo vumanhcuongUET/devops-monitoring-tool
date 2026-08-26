@@ -49,7 +49,10 @@
       "Bash(gh issue *)",
       "Bash(pip list *)",
       "Bash(chmod +x /home/vmcuong/Downloads/devops-monitoring-tool/scripts/deploy-staging.sh)",
-      "Bash(chmod +x *)"
+      "Bash(chmod +x *)",
+      "Bash(grep -rn \"raise NotImplementedError\\\\|pass #.*$\\\\|TODO:\" /home/vmcuong/Downloads/devops-monitoring-tool/backend/app/ --include=\"*.py\")",
+      "Bash(grep *)",
+      "Bash(awk -F'::' '{print $1}')"
     ]
   }
 }

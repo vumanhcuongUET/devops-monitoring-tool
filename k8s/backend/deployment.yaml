@@ -4,7 +4,10 @@ metadata:
   name: monitor-backend
   namespace: devops-monitor
 spec:
-  replicas: 2
+  # Phase 12 debt: 1 replica — AlertEngine + WS broadcast are in-process with no
+  # leader election / pub-sub fanout; 2 replicas duplicate alerts and drop realtime
+  # events (review H1, 2026-08-29). Split out an alert-worker when scaling is needed.
+  replicas: 1
   selector:
     matchLabels:
       app: monitor-backend

@@ -21,13 +21,6 @@ AGENT_TIMEOUTS = Counter(
     "Agent analyze() timeouts",
     ["agent_name"],
 )
-# ponytail: AgentResponse carries no token usage — cost is wired when
-# BaseAgent surfaces response.usage. Metric exists so the alert fires once it does.
-AGENT_COST = Counter(
-    "agent_cost_usd_total",
-    "Estimated agent spend in USD",
-    ["agent_name"],
-)
 ORCHESTRATOR_UP = Gauge(
     "devops_monitor_orchestrator_up",
     "1 if the agent orchestrator loaded with agents attached",

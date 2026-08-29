@@ -1,126 +1,120 @@
 ---
-# Prometheus Rules for Multi-Agent AI System (Phase 10 Sprint 3)
-# Recording rules aggregate agent invocation/cost metrics; alerts page on
-# SLA breaches defined in docs/phase-10-multi-agent-guide.md
-apiVersion: v1
-kind: ConfigMap
+# Prometheus Rules for Multi-Agent AI System (Phase 10 Sprint 3; instrumented 2026-08-29)
+# Shipped as a PrometheusRule CRD — this stack runs kube-prometheus-stack, which loads
+# PrometheusRule objects only; a plain ConfigMap here is never mounted (review finding R4).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
 metadata:
   name: agent-metrics-rules
   namespace: monitoring
   labels:
+    release: prometheus-operator
     app.kubernetes.io/name: agent-metrics-rules
     app.kubernetes.io/component: monitoring
-data:
-  agent-metrics.yaml: |
-    groups:
-      # Agent Activity Recording Rules
-      - name: agent_metrics
-        interval: 30s
-        rules:
-          - record: agent:invocations_rate5m
-            expr: |
-              sum(rate(agent_invocations_total[5m])) by (agent_name)
+spec:
+  groups:
+    # Agent Activity Recording Rules
+    - name: agent_metrics
+      interval: 30s
+      rules:
+        - record: agent:invocations_rate5m
+          expr: |
+            sum(rate(agent_invocations_total[5m])) by (agent_name)
 
-          - record: agent:errors_rate5m
-            expr: |
-              sum(rate(agent_invocations_total{status="error"}[5m])) by (agent_name)
+        - record: agent:errors_rate5m
+          expr: |
+            sum(rate(agent_invocations_total{status="error"}[5m])) by (agent_name)
 
-          - record: agent:error_ratio5m
-            expr: |
-              agent:errors_rate5m / agent:invocations_rate5m
+        - record: agent:error_ratio5m
+          expr: |
+            agent:errors_rate5m / agent:invocations_rate5m
 
-          - record: agent:duration_p95_5m
-            expr: |
-              histogram_quantile(0.95,
-                sum(rate(agent_duration_seconds_bucket[5m])) by (le, agent_name)
-              )
+        - record: agent:duration_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(agent_duration_seconds_bucket[5m])) by (le, agent_name)
+            )
 
-          - record: agent:cost_per_minute
-            expr: |
-              sum by (agent_name) (rate(agent_cost_usd_total[5m])) * 60
+    # Multi-Agent Availability
+    - name: agent_availability
+      interval: 30s
+      rules:
+        - alert: OrchestratorDown
+          expr: |
+            devops_monitor_orchestrator_up == 0
+          for: 2m
+          labels:
+            severity: critical
+            tier: ai-agents
+          annotations:
+            summary: "Multi-agent orchestrator is down"
+            description: "The agent orchestrator has been unreachable for 2 minutes"
 
-      # Multi-Agent Availability
-      - name: agent_availability
-        interval: 30s
-        rules:
-          - alert: OrchestratorDown
-            expr: |
-              devops_monitor_orchestrator_up == 0
-            for: 2m
-            labels:
-              severity: critical
-              tier: ai-agents
-            annotations:
-              summary: "Multi-agent orchestrator is down"
-              description: "The agent orchestrator has been unreachable for 2 minutes"
+        - alert: OrchestratorMetricsMissing
+          expr: |
+            absent(devops_monitor_orchestrator_up)
+          for: 5m
+          labels:
+            severity: critical
+            tier: ai-agents
+          annotations:
+            summary: "Orchestrator metrics absent from Prometheus"
+            description: "Backend not exposing agent metrics (pod down or scrape broken)"
 
-          - alert: OrchestratorMetricsMissing
-            expr: |
-              absent(devops_monitor_orchestrator_up)
-            for: 5m
-            labels:
-              severity: critical
-              tier: ai-agents
-            annotations:
-              summary: "Orchestrator metrics absent from Prometheus"
-              description: "Backend not exposing agent metrics (pod down or scrape broken)"
+        - alert: HighAgentErrorRate
+          expr: |
+            agent:error_ratio5m > 0.10
+          for: 5m
+          labels:
+            severity: high
+            tier: ai-agents
+          annotations:
+            summary: "High error rate for agent {{ $labels.agent_name }}"
+            description: "Agent {{ $labels.agent_name }} error ratio is {{ $value | humanizePercentage }} (>10%) over 5m"
+            runbook: "docs/on-call-procedures.md#ai-agents"
 
-          - alert: HighAgentErrorRate
-            expr: |
-              agent:error_ratio5m > 0.10
-            for: 5m
-            labels:
-              severity: high
-              tier: ai-agents
-            annotations:
-              summary: "High error rate for agent {{ $labels.agent_name }}"
-              description: "Agent {{ $labels.agent_name }} error ratio is {{ $value | humanizePercentage }} (>10%) over 5m"
-              runbook: "docs/on-call-procedures.md#ai-agents"
+        # Business hours are Asia/Ho_Chi_Minh (UTC+7): local 07:00-22:00
+        # equals UTC 00:00-15:00 — hour() always evaluates in UTC (review R5).
+        # absent() carries no labels, so the annotation cannot name the agent.
+        - alert: AgentUnavailable
+          expr: |
+            absent(agent:invocations_rate5m) and on() hour() >= 0 and hour() <= 15
+          for: 15m
+          labels:
+            severity: warning
+            tier: ai-agents
+          annotations:
+            summary: "Agent metrics receive no traffic during business hours"
+            description: "No agent invocations recorded in 15 minutes during Asia/Ho_Chi_Minh business hours"
 
-          - alert: AgentUnavailable
-            expr: |
-              absent(agent:invocations_rate5m) and on() hour() >= 7 and hour() <= 22
-            for: 15m
-            labels:
-              severity: warning
-              tier: ai-agents
-            annotations:
-              summary: "Agent {{ $labels.agent_name }} receives no traffic"
-              description: "No invocations recorded in 15 minutes during business hours"
+    # Agent Latency
+    - name: agent_performance
+      interval: 30s
+      rules:
+        - alert: HighAgentLatency
+          expr: |
+            agent:duration_p95_5m > 10
+          for: 5m
+          labels:
+            severity: warning
+            tier: ai-agents
+          annotations:
+            summary: "High latency for agent {{ $labels.agent_name }}"
+            description: "Agent {{ $labels.agent_name }} P95 latency above 10s ({{ $value | humanizeDuration }})"
 
-      # Agent Latency & Cost
-      - name: agent_performance
-        interval: 30s
-        rules:
-          - alert: HighAgentLatency
-            expr: |
-              agent:duration_p95_5m > 10
-            for: 5m
-            labels:
-              severity: warning
-              tier: ai-agents
-            annotations:
-              summary: "High latency for agent {{ $labels.agent_name }}"
-              description: "Agent {{ $labels.agent_name }} P95 latency above 10s ({{ $value | humanizeDuration }})"
+        - alert: AgentTimeoutSpike
+          expr: |
+            sum(rate(agent_timeouts_total[5m])) by (agent_name) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            tier: ai-agents
+          annotations:
+            summary: "Timeout spike for agent {{ $labels.agent_name }}"
+            description: "More than 6 timeouts/minute for agent {{ $labels.agent_name }}"
 
-          - alert: AgentTimeoutSpike
-            expr: |
-              sum(rate(agent_timeouts_total[5m])) by (agent_name) > 0.1
-            for: 5m
-            labels:
-              severity: warning
-              tier: ai-agents
-            annotations:
-              summary: "Timeout spike for agent {{ $labels.agent_name }}"
-              description: "More than 6 timeouts/minute for agent {{ $labels.agent_name }}"
-
-          - alert: HighAgentCost
-            expr: |
-              sum(agent:cost_per_minute) > 0.0167
-            for: 10m
-            labels:
-              severity: warning
-              tier: finops
-            annotations:
-              summary: "AI agent spend exceeding $1/hour"
-              description: "Aggregate agent cost projects over $1/hour at {{ $value | humanize }} USD/minute"
+    # Cost: agent_cost_usd_total is intentionally not emitted yet — BaseAgent
+    # discards response.usage, so a cost series would be absent and
+    # HighAgentCost could never fire (silent monitoring failure). Re-add the
+    # metric + a cost_per_minute rule and the HighAgentCost alert together,
+    # once cost is wired in app/agents/base.py.

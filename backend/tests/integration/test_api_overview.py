@@ -49,7 +49,7 @@ class TestOverviewAPI:
 
         data = response.json()
 
-        for name, system in data["systems"].items():
+        for _name, system in data["systems"].items():
             assert isinstance(system, dict)
             assert "status" in system
             assert system["status"] in ["healthy", "degraded", "down"]
@@ -104,6 +104,6 @@ class TestOverviewAPI:
 
         data = response.json()
 
-        for name, system in data["systems"].items():
+        for _name, system in data["systems"].items():
             # Systems should expose status details
             assert "status" in system

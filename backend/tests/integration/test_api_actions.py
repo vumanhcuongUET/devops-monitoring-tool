@@ -173,7 +173,7 @@ class TestActionsAPI:
 
     def test_approve_action_success(self, client, mock_action_engine):
         """Test approving action."""
-        from app.models.actions import Action, ActionStatus
+        from app.models.actions import ActionStatus
 
         mock_action_engine.approve_action = AsyncMock(
             return_value=make_action(status=ActionStatus.APPROVED, approved_by="john.doe")
@@ -205,7 +205,7 @@ class TestActionsAPI:
 
     def test_reject_action_success(self, client, mock_action_engine):
         """Test rejecting action."""
-        from app.models.actions import Action, ActionStatus
+        from app.models.actions import ActionStatus
 
         mock_action_engine.reject_action = AsyncMock(
             return_value=make_action(status=ActionStatus.REJECTED, rejected_by="jane.doe")
@@ -225,7 +225,7 @@ class TestActionsAPI:
 
     def test_execute_action_success(self, client, mock_action_engine):
         """Test executing action."""
-        from app.models.actions import Action, ActionStatus, ExecutionResult
+        from app.models.actions import ActionStatus
 
         mock_action_engine.execute_action = AsyncMock(
             return_value=make_action(status=ActionStatus.EXECUTED, executed_by="john.doe")
@@ -245,7 +245,7 @@ class TestActionsAPI:
 
     def test_execute_action_dry_run(self, client, mock_action_engine):
         """Test executing action with dry run."""
-        from app.models.actions import Action, ActionStatus, ExecutionResult
+        from app.models.actions import ActionStatus
 
         mock_action_engine.execute_action = AsyncMock(
             return_value=make_action(status=ActionStatus.EXECUTED, executed_by="john.doe")
@@ -263,7 +263,7 @@ class TestActionsAPI:
 
     def test_bulk_create_actions(self, client, mock_action_engine):
         """Test bulk action creation."""
-        from app.models.actions import Action, ActionStatus, CommandType
+        from app.models.actions import ActionStatus
 
         mock_action_engine.create_action_from_recommendation = AsyncMock(
             return_value=make_action(status=ActionStatus.PENDING)

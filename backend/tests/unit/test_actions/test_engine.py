@@ -133,6 +133,7 @@ def action_engine(
     engine.approval_history.add = AsyncMock()
     engine.permission_checker = mock_permission_checker
     engine.env_aware_executor = mock_env_executor
+    engine.feedback = MagicMock()
     return engine
 
 

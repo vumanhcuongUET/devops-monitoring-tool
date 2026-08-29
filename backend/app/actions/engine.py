@@ -15,6 +15,7 @@ from app.actions.executor import get_command_executor
 from app.actions.environment_executor import get_executor
 from app.approvals.store import get_approval_tracker, get_approval_history
 from app.audit.logger import get_audit_logger
+from app.feedback.collector import get_feedback_collector
 from app.config import settings
 from app.governance.permission_checker import get_permission_checker
 from app.governance.ai_rbac import get_ai_permission_matrix, AIPermission
@@ -66,6 +67,7 @@ class ActionEngine:
         self.registry = get_registry()
         self.permission_checker = get_permission_checker()
         self.env_aware_executor = get_executor()
+        self.feedback = get_feedback_collector()
 
     async def create_action_from_recommendation(
         self,
@@ -242,6 +244,10 @@ class ActionEngine:
         })
 
         logger.info(f"Action {action_id} approved by {request.approved_by}")
+
+        # Phase 11: feed the learning loop (/autonomous/learning/* reads this)
+        self.feedback.record_approval(action_id, request.approved_by, {"comment": request.comment})
+
         # Build action kwargs from state, filtering None values
         action_kwargs = _action_kwargs_from_state(state, {
             "id": action_id,
@@ -287,6 +293,9 @@ class ActionEngine:
         })
 
         logger.info(f"Action {action_id} rejected by {request.rejected_by}: {request.reason}")
+
+        # Phase 11: feed the learning loop (/autonomous/learning/* reads this)
+        self.feedback.record_rejection(action_id, request.rejected_by, reason=request.reason)
         # Build action kwargs from state, filtering None values
         action_kwargs = _action_kwargs_from_state(state, {
             "id": action_id,
@@ -432,6 +441,13 @@ class ActionEngine:
             logger.info(
                 f"Action {action_id} executed by {request.executed_by} in {environment}: "
                 f"{'SUCCESS' if success else 'FAILED'}"
+            )
+
+            # Phase 11: feed the learning loop (/autonomous/learning/* reads this)
+            self.feedback.record_execution(
+                action_id,
+                success,
+                {"duration_seconds": duration, "dry_run": request.dry_run},
             )
 
             # Rollback handling for failed actions (Phase 8 Day 8)

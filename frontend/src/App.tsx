@@ -4,7 +4,7 @@ import { Routes, Route } from 'react-router-dom'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppShell } from './components/layout/AppShell'
 import { LoadingSkeleton } from './components/common/LoadingSkeleton'
-import { useAlertNotifications } from './hooks/useAlertNotifications'
+import { useAlertNotifications } from './hooks/useWebSocket'
 
 // Code split pages with lazy loading
 // Pages export named symbols (except Skills/Governance) — wrap for React.lazy

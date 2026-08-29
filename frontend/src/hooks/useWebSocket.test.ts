@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useWebSocket } from './useWebSocket'
 
-// Mock WebSocket
+// Real class so `new WebSocket()` works (old stub was a plain object — never
+// constructible, every test failed to connect)
 class MockWebSocket {
   url: string
   readyState: number = 0 // CONNECTING = 0
@@ -17,6 +18,7 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url
+    currentWs = this
     // Simulate connection opening
     setTimeout(() => {
       this.readyState = 1 // OPEN
@@ -63,14 +65,8 @@ let currentWs: MockWebSocket | null = null
 
 describe('useWebSocket', () => {
   beforeEach(() => {
-    // Mock global WebSocket
-    vi.stubGlobal('WebSocket', {
-      prototype: MockWebSocket.prototype,
-      new: (url: string) => {
-        currentWs = new MockWebSocket(url)
-        return currentWs
-      }
-    })
+    // Mock global WebSocket with a constructible class
+    vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket)
   })
 
   afterEach(() => {
@@ -193,7 +189,6 @@ describe('useWebSocket', () => {
 
   it('closes WebSocket on unmount', async () => {
     const { unmount } = renderHook(() => useWebSocket())
-
     await waitFor(() => {
       expect(currentWs).toBeDefined()
     })
@@ -206,24 +201,19 @@ describe('useWebSocket', () => {
   })
 
   it('does not reconnect after unmount', async () => {
-    vi.useFakeTimers()
-
     const { unmount } = renderHook(() => useWebSocket())
 
     await waitFor(() => {
       expect(currentWs).toBeDefined()
     })
+    const firstWs = currentWs
 
     unmount()
 
-    act(() => {
-      vi.advanceTimersByTime(6000) // Advance past reconnect delay
-    })
-
-    // Should not attempt to reconnect after unmount
-    expect(currentWs).toBeDefined() // No new WebSocket created
-
-    vi.useRealTimers()
+    // Intentional close nulls onclose — no reconnect scheduled, no new socket
+    await new Promise((r) => setTimeout(r, 50))
+    expect(currentWs).toBe(firstWs)
+    expect(firstWs!.onclose).toBeNull()
   })
 
   it('handles multiple data updates', async () => {

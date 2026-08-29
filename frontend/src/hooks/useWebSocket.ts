@@ -1,99 +1,143 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { WS_URL } from '../utils/constants';
-import type { OverviewResponse } from '../types';
+import type { OverviewResponse, AlertEvent } from '../types';
 import toast from 'react-hot-toast';
 
+type WsMessage = { type: string; data: unknown };
+type MessageListener = (msg: WsMessage) => void;
+type StateListener = (connected: boolean) => void;
+
+// Single shared WebSocket for the whole app (overview, actions, alerts
+// previously opened one connection each). Refcounted: opens on first
+// subscriber, closes when the last one unmounts.
+const messageListeners = new Set<MessageListener>();
+const stateListeners = new Set<StateListener>();
+let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let connected = false;
+
+function notifyState(value: boolean) {
+  connected = value;
+  for (const listener of stateListeners) listener(value);
+}
+
+function dispatchMessage(msg: WsMessage) {
+  // Phase 2: Action events
+  if (msg.type === 'action_created') {
+    toast(`New action created: ${(msg.data as { id: string }).id}`, { icon: '⚡', duration: 3000 });
+  } else if (msg.type === 'action_approved') {
+    toast(`Action ${(msg.data as { id: string }).id} approved`, { icon: '✅' });
+  } else if (msg.type === 'action_rejected') {
+    toast(`Action ${(msg.data as { id: string }).id} rejected`, { icon: '❌' });
+  } else if (msg.type === 'action_executed') {
+    toast(`Action ${(msg.data as { id: string }).id} executed successfully`, { icon: '🚀' });
+  } else if (msg.type === 'action_failed') {
+    toast(`Action ${(msg.data as { id: string }).id} execution failed`, { icon: '💥' });
+  } else if (msg.type === 'bulk_actions_created') {
+    toast(`${(msg.data as { count: number }).count} actions created from Triage Card`, { icon: '⚡' });
+  }
+
+  for (const listener of messageListeners) listener(msg);
+}
+
+function connect() {
+  if (ws) return;
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => notifyState(true);
+  ws.onmessage = (event) => {
+    try {
+      dispatchMessage(JSON.parse(event.data));
+    } catch {
+      // ignore malformed messages
+    }
+  };
+  ws.onclose = () => {
+    ws = null;
+    notifyState(false);
+    reconnectTimer = setTimeout(connect, 5000);
+  };
+  ws.onerror = () => ws?.close();
+}
+
+function disconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  const closing = ws;
+  ws = null;
+  if (closing) {
+    closing.onclose = null;  // intentional close — don't schedule reconnect
+    closing.close();
+  }
+  notifyState(false);
+}
+
+function subscribeMessages(listener: MessageListener): () => void {
+  messageListeners.add(listener);
+  if (!ws) connect();
+  return () => {
+    messageListeners.delete(listener);
+    if (messageListeners.size === 0 && stateListeners.size === 0) disconnect();
+  };
+}
+
+function subscribeState(listener: StateListener): () => void {
+  stateListeners.add(listener);
+  if (!ws) connect();
+  listener(connected);
+  return () => {
+    stateListeners.delete(listener);
+    if (messageListeners.size === 0 && stateListeners.size === 0) disconnect();
+  };
+}
+
+/** Overview data stream (shared socket). */
 export function useWebSocket() {
   const [data, setData] = useState<OverviewResponse | null>(null);
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isCleaningUpRef = useRef(false);
+  const [connectedState, setConnectedState] = useState(false);
 
-  const connect = useCallback(() => {
-    // Prevent new connections during cleanup
-    if (isCleaningUpRef.current) return;
-
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
-
-    ws.onopen = () => setConnected(true);
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-
-        // Handle overview updates
-        if (msg.type === 'overview_update' || msg.type === 'status_update') {
-          setData(msg.data);
-        }
-
-        // Handle Phase 2: Action events
-        if (msg.type === 'action_created') {
-          toast(`New action created: ${msg.data.id}`, {
-            icon: '⚡',
-            duration: 3000,
-          });
-        } else if (msg.type === 'action_approved') {
-          toast(`Action ${msg.data.id} approved`, {
-            icon: '✅',
-          });
-        } else if (msg.type === 'action_rejected') {
-          toast(`Action ${msg.data.id} rejected`, {
-            icon: '❌',
-          });
-        } else if (msg.type === 'action_executed') {
-          toast(`Action ${msg.data.id} executed successfully`, {
-            icon: '🚀',
-          });
-        } else if (msg.type === 'action_failed') {
-          toast(`Action ${msg.data.id} execution failed`, {
-            icon: '💥',
-          });
-        } else if (msg.type === 'bulk_actions_created') {
-          toast(`${msg.data.count} actions created from Triage Card`, {
-            icon: '⚡',
-          });
-        }
-      } catch {
-        // ignore malformed messages
+  useEffect(() => {
+    const offMessages = subscribeMessages((msg) => {
+      if (msg.type === 'overview_update' || msg.type === 'status_update') {
+        setData(msg.data as OverviewResponse);
       }
+    });
+    const offState = subscribeState(setConnectedState);
+    return () => {
+      offMessages();
+      offState();
     };
+  }, []);
 
-    ws.onclose = () => {
-      setConnected(false);
-      // Only reconnect if not cleaning up
-      if (!isCleaningUpRef.current) {
-        reconnectTimerRef.current = setTimeout(() => {
-          if (!isCleaningUpRef.current) {
-            connect();
-          }
-        }, 5000);
-      }
-    };
+  return { data, connected: connectedState };
+}
 
-    ws.onerror = () => ws.close();
+type AlertHandler = (event: AlertEvent) => void;
+
+/** Alert events + toast notifications (shared socket). */
+export function useAlertNotifications(onAlert?: AlertHandler) {
+  const handlerRef = useRef(onAlert);
+  const stableHandler = useCallback((msg: WsMessage) => {
+    if (msg.type !== 'alert_fired' && msg.type !== 'alert_resolved') return;
+    const alertEvent = msg.data as AlertEvent;
+    const isFiring = msg.type === 'alert_fired';
+
+    toast(`${isFiring ? '🔴' : '🟢'} ${alertEvent.rule_name}: ${alertEvent.message}`, {
+      duration: isFiring ? 8000 : 4000,
+      style: {
+        background: isFiring ? 'var(--color-down)' : 'var(--color-healthy)',
+        color: '#fff',
+      },
+    });
+
+    handlerRef.current?.(alertEvent);
   }, []);
 
   useEffect(() => {
-    connect();
+    handlerRef.current = onAlert;
+  }, [onAlert]);
 
-    return () => {
-      isCleaningUpRef.current = true;
-
-      // Clear reconnect timer
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-
-      // Close WebSocket
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
-  }, [connect]);
-
-  return { data, connected };
+  useEffect(() => subscribeMessages(stableHandler), [stableHandler]);
 }

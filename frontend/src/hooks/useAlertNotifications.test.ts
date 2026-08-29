@@ -2,9 +2,9 @@
  * Unit tests for useAlertNotifications hook.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useAlertNotifications } from './useAlertNotifications'
+import { useAlertNotifications } from './useWebSocket'
 import type { AlertEvent } from '../types'
 
 // Mock toast
@@ -24,6 +24,7 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url
+    currentWs = this
     setTimeout(() => {
       this.readyState = 1
     }, 0)
@@ -47,13 +48,7 @@ let currentWs: MockWebSocket | null = null
 
 describe('useAlertNotifications', () => {
   beforeEach(() => {
-    vi.stubGlobal('WebSocket', {
-      prototype: MockWebSocket.prototype,
-      new: (url: string) => {
-        currentWs = new MockWebSocket(url)
-        return currentWs
-      }
-    })
+    vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket)
   })
 
   afterEach(() => {
@@ -278,8 +273,6 @@ describe('useAlertNotifications', () => {
   })
 
   it('disconnects when last listener unmounts', async () => {
-    vi.useFakeTimers()
-
     const { unmount: unmount1 } = renderHook(() => useAlertNotifications(vi.fn()))
     const { unmount: unmount2 } = renderHook(() => useAlertNotifications(vi.fn()))
 
@@ -294,12 +287,8 @@ describe('useAlertNotifications', () => {
     expect(closeSpy).not.toHaveBeenCalled()
 
     unmount2()
-    // Now should disconnect
-    await waitFor(() => {
-      expect(closeSpy).toHaveBeenCalled()
-    })
-
-    vi.useRealTimers()
+    // Synchronous refcounted disconnect on last unmount
+    expect(closeSpy).toHaveBeenCalled()
   })
 
   it('updates handler reference on change', async () => {

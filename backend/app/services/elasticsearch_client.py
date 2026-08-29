@@ -14,10 +14,11 @@ class ElasticsearchClient:
             kwargs["basic_auth"] = (settings.ELASTICSEARCH_USERNAME, settings.ELASTICSEARCH_PASSWORD)
 
         # Phase 9: Add connection pooling
+        # NOTE: no max_connections kwarg — es-py 8.x AsyncElasticsearch rejects it
+        # (TypeError at init = startup crash; review finding N1, 2026-08-29).
         self.client = AsyncElasticsearch(
             settings.ELASTICSEARCH_URL,
             request_timeout=settings.REQUEST_TIMEOUT_SECONDS,
-            max_connections=getattr(settings, "ES_MAX_CONNECTIONS", 20),
             max_retries=3,
             retry_on_timeout=True,
             http_compress=True,

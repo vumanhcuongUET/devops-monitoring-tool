@@ -211,7 +211,7 @@ class BaseSkill(ABC):
                     wait_time = 2 ** attempt  # Exponential backoff
                     await asyncio.sleep(wait_time)
                 else:
-                    raise last_error
+                    raise last_error from e
 
     def _log(self, level: str, message: str, **kwargs) -> None:
         """Log a message with skill context.

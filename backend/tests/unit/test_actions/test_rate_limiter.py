@@ -132,7 +132,7 @@ class TestRateLimiter:
         action_type = "restart"
 
         # Execute max actions
-        for i in range(3):
+        for _i in range(3):
             rate_limiter.record_action(project, action_type)
 
         # Should be rate limited
@@ -152,7 +152,7 @@ class TestRateLimiter:
         project = "test-project"
 
         # Execute max restart actions
-        for i in range(3):
+        for _i in range(3):
             rate_limiter.record_action(project, "restart")
 
         # Should be rate limited for restart
@@ -168,7 +168,7 @@ class TestRateLimiter:
         action_type = "restart"
 
         # Execute max actions for project-1
-        for i in range(3):
+        for _i in range(3):
             rate_limiter.record_action("project-1", action_type)
 
         # Should be rate limited for project-1
@@ -187,7 +187,7 @@ class TestRateLimiter:
         action_type = "restart"
 
         # Execute max actions
-        for i in range(3):
+        for _i in range(3):
             rate_limiter.record_action(project, action_type)
 
         # Should still be allowed due to bypass
@@ -375,7 +375,7 @@ class TestActionChaining:
         action_type = "restart"
 
         # Execute 3 actions (at chain limit)
-        for i in range(3):
+        for _i in range(3):
             chain_limiter.record_action(project, action_type)
 
         # 4th action should be blocked by chain limit
@@ -390,7 +390,7 @@ class TestActionChaining:
         action_type = "restart"
 
         # Execute actions at chain limit
-        for i in range(3):
+        for _i in range(3):
             chain_limiter.record_action(project, action_type)
 
         # Wait for chain break period
@@ -407,7 +407,7 @@ class TestActionChaining:
         project = "test-project"
 
         # Execute 3 restart actions (at chain limit)
-        for i in range(3):
+        for _i in range(3):
             chain_limiter.record_action(project, "restart")
 
         # Should be blocked for restart

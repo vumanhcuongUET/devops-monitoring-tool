@@ -38,7 +38,7 @@ async def list_skills(
             "total": len(skills),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{skill_id}/analyze")
@@ -77,9 +77,9 @@ async def execute_skill(
         }
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/{skill_id}/recommendations/{execution_id}")
@@ -112,7 +112,7 @@ async def get_skill_recommendations(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/executions")
@@ -145,7 +145,7 @@ async def list_executions(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/statistics")
@@ -162,4 +162,4 @@ async def get_skill_statistics() -> dict[str, Any]:
         return stats
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

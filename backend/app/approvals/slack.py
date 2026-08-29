@@ -72,7 +72,7 @@ class SlackApprovalNotifier:
             RiskLevel.LOW: "#36A64F",       # Green
             RiskLevel.SAFE: "#36A64F",      # Green
         }
-        color = risk_colors.get(action.risk_level, "#FFCC00")
+        _color = risk_colors.get(action.risk_level, "#FFCC00")
 
         # Risk level emoji
         risk_emojis = {

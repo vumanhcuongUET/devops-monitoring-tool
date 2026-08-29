@@ -458,7 +458,7 @@ class TracingAnalyzerSkill(BaseSkill):
             return {"critical_path_duration_ms": 0, "critical_path_spans": []}
 
         # Build critical path from root to leaf
-        spans_by_id = {s["span_id"]: s for s in longest_trace.get("spans", [])}
+        _spans_by_id = {s["span_id"]: s for s in longest_trace.get("spans", [])}
         root_spans = [s for s in longest_trace["spans"] if s.get("parent_span_id") is None]
 
         critical_spans = []

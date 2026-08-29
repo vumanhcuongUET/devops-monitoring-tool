@@ -25,7 +25,7 @@ async def get_autonomous_status() -> dict[str, Any]:
         return executor.get_action_status()
     except Exception as e:
         logger.error(f"Failed to get autonomous status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/learning/summary")
@@ -43,7 +43,7 @@ async def get_learning_summary(window_days: int = 30) -> dict[str, Any]:
         return analyzer.get_learning_summary()
     except Exception as e:
         logger.error(f"Failed to get learning summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/learning/confidence-report")
@@ -113,4 +113,4 @@ async def get_confidence_report(window_days: int = 30) -> dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Failed to get confidence report: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

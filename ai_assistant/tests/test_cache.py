@@ -161,7 +161,7 @@ class TestCachedDecorator:
                 return data["value"]
 
             result1 = process_dict({"value": 100})
-            result2 = process_dict({"value": 100})
+            _result2 = process_dict({"value": 100})
 
             assert result1 == 100
             assert call_count[0] == 1

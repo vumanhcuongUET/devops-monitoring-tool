@@ -225,8 +225,8 @@ class TestCompressionIntegration:
         # 60 data points (1 per minute for 1 hour)
         values = list(range(60))
 
-        original_size = len(values) * 10  # Rough estimate
-        compressed = compressor.compress_values(values, "test")
+        _original_size = len(values) * 10  # Rough estimate
+        _compressed = compressor.compress_values(values, "test")
 
         # Compressed should have ~11 values instead of 60
         compression_ratio = len(values) / 11  # ~5.5x reduction
@@ -262,7 +262,7 @@ class TestTrendEdgeCases:
         """Test single value returns unknown trend."""
         values = [42]
 
-        trend = compressor.detect_trend(values, window_size=1)
+        _trend = compressor.detect_trend(values, window_size=1)
 
         # With window_size=1, single value should work
         # But standard window_size=5 should return unknown
@@ -308,7 +308,7 @@ class TestPerformance:
         values = [float(i % 100) for i in range(1000)]
 
         start = time.time()
-        trend = compressor.detect_trend(values)
+        _trend = compressor.detect_trend(values)
         elapsed_ms = (time.time() - start) * 1000
 
         assert elapsed_ms < 20, f"Trend detection took {elapsed_ms}ms"

@@ -224,7 +224,7 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         # Check for log frequency anomalies
         if len(logs) > 100:
-            timestamps = [log.get("timestamp", "") for log in logs]
+            _timestamps = [log.get("timestamp", "") for log in logs]
             # Simple implementation: check for gaps in timestamps
             # (Full implementation would use statistical methods)
 
@@ -287,7 +287,7 @@ Provide analysis focusing on root causes and actionable recommendations.
     def _prepare_log_sample(self, logs: list[dict], max_lines: int = 100) -> str:
         """Prepare a readable sample of logs for analysis."""
         sample = []
-        for i, log in enumerate(logs[:max_lines]):
+        for _i, log in enumerate(logs[:max_lines]):
             timestamp = log.get("timestamp", "")
             level = log.get("level", "")
             message = log.get("message", "")

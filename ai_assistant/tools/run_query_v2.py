@@ -629,7 +629,7 @@ def main():
         sf_stats = get_single_flight_stats()
 
         # Calculate hit rate if possible
-        hit_count = cache_stats.get("size", 0)  # Approximate
+        _hit_count = cache_stats.get("size", 0)  # Approximate
         optimization_stats = {
             "cache": cache_stats,
             "single_flight": sf_stats,

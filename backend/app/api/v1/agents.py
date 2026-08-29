@@ -97,7 +97,7 @@ async def analyze(request: AgentAnalysisRequest) -> dict:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Context is not JSON-serializable: {e}",
-        )
+        ) from e
     if context_size > MAX_CONTEXT_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -120,7 +120,7 @@ async def analyze(request: AgentAnalysisRequest) -> dict:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {type(e).__name__}",
-        )
+        ) from e
 
     if "error" in result and not result.get("agents_used"):
         raise HTTPException(

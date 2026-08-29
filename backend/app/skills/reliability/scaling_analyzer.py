@@ -435,11 +435,11 @@ class ScalingAnalyzerSkill(BaseSkill):
         issues = []
 
         # Deduct for hitting limits too frequently
-        at_max_count = 0
-        at_min_count = 0
+        _at_max_count = 0
+        _at_min_count = 0
 
         # Calculate time at min/max (would be in real scaling events)
-        for day_events in scaling_events.get("events_by_day", []):
+        for _day_events in scaling_events.get("events_by_day", []):
             # Mock calculation
             pass
 

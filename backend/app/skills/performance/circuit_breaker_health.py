@@ -639,7 +639,7 @@ class CircuitBreakerHealthSkill(BaseSkill):
 
         for circuit in circuits:
             config = circuit.get("config", {})
-            metrics = circuit.get("metrics", {})
+            _metrics = circuit.get("metrics", {})
 
             # Check failure threshold
             failure_threshold = config.get("failure_threshold", self.DEFAULT_THRESHOLDS["failure_threshold"])

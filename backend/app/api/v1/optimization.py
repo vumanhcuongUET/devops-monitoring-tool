@@ -280,9 +280,9 @@ async def get_pattern(request: PatternGetRequest):
         }
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting pattern: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error getting pattern: {e!s}") from e
 
 
 @router.get("/rate-limiter/stats", response_model=RateLimiterStatsResponse)

@@ -243,7 +243,7 @@ class SLAComplianceSkill(BaseSkill):
         # Check current month
         if not current_compliance["overall_compliant"]:
             availability = current_compliance["availability"]["current"]
-            target = sla_terms["availability_target"]
+            _target = sla_terms["availability_target"]
 
             # Determine credit tier
             if availability >= 99.0:

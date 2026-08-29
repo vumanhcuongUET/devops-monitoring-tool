@@ -277,7 +277,7 @@ class AgentOrchestrator:
             return True
 
         # Check for critical findings with low confidence
-        for agent_name, agent_data in aggregated["agents"].items():
+        for _agent_name, agent_data in aggregated["agents"].items():
             if (
                 agent_data.get("confidence", 0) < 0.7
                 and agent_data.get("insights", {}).get("overall_risk") == "critical"

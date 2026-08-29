@@ -77,7 +77,7 @@ class RedisCache:
                 _get_logger().warning(f"Redis cache unavailable, operations will be no-ops: {e}")
                 _get_metrics().increment("redis_cache_unavailable")
             else:
-                raise RuntimeError(f"Redis cache required but unavailable: {e}")
+                raise RuntimeError(f"Redis cache required but unavailable: {e}") from e
 
     @property
     def available(self) -> bool:

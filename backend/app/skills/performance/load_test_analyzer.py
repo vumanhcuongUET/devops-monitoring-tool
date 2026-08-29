@@ -572,7 +572,7 @@ class LoadTestAnalyzerSkill(BaseSkill):
         """
         rps = test_results.get("requests_per_second", 0)
         error_rate = test_results.get("error_rate_percent", 0)
-        p95 = test_results.get("response_times", {}).get("p95_ms", 0)
+        _p95 = test_results.get("response_times", {}).get("p95_ms", 0)
 
         # Calculate headroom (simplified)
         # Assuming failure at 2x current RPS or when error rate hits 5%
@@ -635,7 +635,7 @@ class LoadTestAnalyzerSkill(BaseSkill):
         score = 100.0
 
         # Deduct for each metric not in OK status
-        for metric_name, metric_data in performance.items():
+        for _metric_name, metric_data in performance.items():
             status = metric_data.get("status", "ok")
             if status == "critical":
                 score -= 20

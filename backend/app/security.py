@@ -148,7 +148,7 @@ class SSRFProtection:
             return list(ips)
 
         except socket.gaierror as e:
-            raise ValueError(f"DNS resolution failed for {hostname}: {e}")
+            raise ValueError(f"DNS resolution failed for {hostname}: {e}") from e
 
     @classmethod
     def _validate_ips(cls, ips: list[str], hostname: str) -> tuple[bool, str]:
@@ -262,7 +262,7 @@ def is_url_allowed(url: str) -> bool:
         except socket.gaierror:
             return False
 
-        for family, _, _, _, sockaddr in addr_info:
+        for _family, _, _, _, sockaddr in addr_info:
             ip = ipaddress.ip_address(sockaddr[0])
             for network in _BLOCKED_NETWORKS:
                 if ip in network:

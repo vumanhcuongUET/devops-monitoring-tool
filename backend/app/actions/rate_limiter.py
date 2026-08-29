@@ -112,7 +112,7 @@ class RateLimiter:
 
         # Trigger chain monitor for alerting (Phase 8 Day 6)
         # Check chain status and trigger alerts if approaching or at limit
-        chain_event = self._chain_monitor.check_chain(
+        _chain_event = self._chain_monitor.check_chain(
             project=project,
             action_type=action_type,
             chain_count=chain_count,

@@ -255,9 +255,9 @@ You communicate in Vietnamese by default, unless the user specifically requests 
             )
 
         except anthropic.APIError as e:
-            raise ValueError(f"Claude API error: {e}")
+            raise ValueError(f"Claude API error: {e}") from e
         except Exception as e:
-            raise ValueError(f"Triage card generation failed: {e}")
+            raise ValueError(f"Triage card generation failed: {e}") from e
 
     def _extract_json_from_message(self, message: Message) -> str:
         """Extract JSON content from Claude response."""
@@ -300,7 +300,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         try:
             data = json.loads(response_text)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {response_text[:500]}...")
+            raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {response_text[:500]}...") from e
 
         # Build findings
         findings = []

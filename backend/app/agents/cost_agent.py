@@ -190,9 +190,9 @@ Provide analysis with specific recommendations and estimated savings.
             resource_type = resource.get("type", "unknown")
 
             # Get current specs
-            cpu_request = resource.get("spec", {}).get("cpu_request", 0)
+            _cpu_request = resource.get("spec", {}).get("cpu_request", 0)
             cpu_limit = resource.get("spec", {}).get("cpu_limit", 0)
-            mem_request = resource.get("spec", {}).get("memory_request", 0)
+            _mem_request = resource.get("spec", {}).get("memory_request", 0)
             mem_limit = resource.get("spec", {}).get("memory_limit", 0)
 
             # Get actual usage

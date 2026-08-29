@@ -284,7 +284,7 @@ def track_time(metric_name: str, labels: Optional[Dict[str, str]] = None):
                 get_metrics().observe(f"{metric_name}_duration_seconds", duration, labels)
                 get_metrics().increment(f"{metric_name}_total", labels=labels)
                 return result
-            except Exception as e:
+            except Exception as _e:
                 duration = time.time() - start_time
                 get_metrics().observe(f"{metric_name}_duration_seconds", duration, labels)
                 get_metrics().increment(f"{metric_name}_errors", labels=labels)

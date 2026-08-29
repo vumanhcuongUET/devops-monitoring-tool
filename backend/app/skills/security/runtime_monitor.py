@@ -451,7 +451,7 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
             },
         ]
 
-        for i in range(num_events):
+        for _i in range(num_events):
             template = random.choice(event_templates)
             event = {
                 "timestamp": (datetime.now(timezone.utc) -

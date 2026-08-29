@@ -59,7 +59,7 @@ class KubernetesAdapter:
                 self._client = KubernetesClient()
             except Exception as e:
                 if not fallback_enabled:
-                    raise RuntimeError(f"Failed to initialize KubernetesClient: {e}")
+                    raise RuntimeError(f"Failed to initialize KubernetesClient: {e}") from e
 
     @property
     def available(self) -> bool:

@@ -250,7 +250,7 @@ class TestXXEPrevention:
 
         # Our system doesn't parse XML, so this is less relevant
         # But if XML parsing is added, XXE prevention is critical
-        for pattern in xxe_patterns:
+        for _pattern in xxe_patterns:
             # Placeholder for future XML parsing security
             # XML parsers should disable external entities
             pass

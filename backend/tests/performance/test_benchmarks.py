@@ -379,7 +379,7 @@ class TestLoadCapacity:
         # Make 50 requests over time
         latencies = []
 
-        for i in range(50):
+        for _i in range(50):
             start = time.time()
             await make_request()
             latencies.append(time.time() - start)

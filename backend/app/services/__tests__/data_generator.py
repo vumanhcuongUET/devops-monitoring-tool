@@ -106,7 +106,7 @@ class TestDataGenerator:
         # Generate logs across time window
         start_time = datetime.now(timezone.utc) - timedelta(minutes=duration_minutes)
 
-        for i in range(total_count):
+        for _i in range(total_count):
             timestamp = start_time + timedelta(
                 seconds=random.randint(0, duration_minutes * 60)
             )
@@ -385,7 +385,7 @@ class TestDataGenerator:
         templates = error_templates.get(incident_type, ['GenericError'])
 
         errors = []
-        for i in range(5):
+        for _i in range(5):
             error_type = random.choice(templates)
             errors.append({
                 'error': error_type,

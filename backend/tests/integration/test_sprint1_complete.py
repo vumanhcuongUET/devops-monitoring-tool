@@ -152,7 +152,7 @@ class TestSprint1Complete:
         """Test performance meets Sprint 1 targets."""
         results = []
 
-        for i in range(20):
+        for _i in range(20):
             incident = generator.generate_incident(
                 incident_type='high_latency',
                 severity='medium'

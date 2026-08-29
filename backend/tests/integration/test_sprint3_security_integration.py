@@ -235,7 +235,7 @@ class TestActionChainingIntegration:
         limiter.update_config(test_config)
 
         # Perform 3 actions to reach chain limit
-        for i in range(3):
+        for _i in range(3):
             limiter.record_action("meinvoice", "restart", "test-user")
 
         # Should be blocked by chain limit

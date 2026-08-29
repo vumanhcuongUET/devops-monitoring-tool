@@ -312,12 +312,12 @@ class SkillRegistry:
             self._status[skill_id] = SkillStatus.FAILED
             error = SkillTimeoutError(skill_id, f"Execution timed out after {config.timeout_seconds}s")
             logger.error(str(error))
-            raise error
+            raise error from None
 
         except Exception as e:
             self._status[skill_id] = SkillStatus.FAILED
             logger.error(f"Skill {skill_id} failed: {e}")
-            raise SkillExecutionError(skill_id, str(e))
+            raise SkillExecutionError(skill_id, str(e)) from e
 
     async def get_recommendations(
         self,
@@ -487,9 +487,9 @@ def discover_skills() -> None:
         SkillCategory.PERFORMANCE: performance,
     }
 
-    for category, module in category_modules.items():
+    for _category, module in category_modules.items():
         # Find all modules in the category package
-        for importer, modname, ispkg in pkgutil.iter_modules(module.__path__):
+        for _importer, modname, _ispkg in pkgutil.iter_modules(module.__path__):
             if modname.startswith("_"):
                 continue
 

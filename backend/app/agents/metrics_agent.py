@@ -244,7 +244,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
             std = variance**0.5
 
             # Find values beyond 2 standard deviations
-            for i, value in enumerate(values):
+            for _i, value in enumerate(values):
                 if abs(value - mean) > 2 * std:
                     anomalies.append(
                         {

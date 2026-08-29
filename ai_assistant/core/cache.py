@@ -113,7 +113,7 @@ class SimpleCache:
             Dictionary with cache stats
         """
         expired_count = 0
-        for (value, timestamp) in self._cache.values():
+        for (_value, timestamp) in self._cache.values():
             if self._is_expired(timestamp):
                 expired_count += 1
 

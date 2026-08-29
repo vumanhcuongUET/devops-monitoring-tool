@@ -170,7 +170,7 @@ class ModelSelector:
 
         # Check each model
         for tier in ["fast", "balanced", "capable"]:
-            model = self.MODELS[tier]
+            _model = self.MODELS[tier]
             input_cost = (estimated_tokens / 1_000_000) * self.COST_PER_INPUT[tier]
             output_cost = (
                 (estimated_tokens / 10 / 1_000_000) * self.COST_PER_OUTPUT[tier]

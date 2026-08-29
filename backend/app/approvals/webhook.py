@@ -63,7 +63,7 @@ def verify_slack_signature(
             )
     except (ValueError, TypeError):
         logger.warning(f"Invalid timestamp format: {timestamp}")
-        raise HTTPException(status_code=401, detail="Invalid timestamp format")
+        raise HTTPException(status_code=401, detail="Invalid timestamp format") from None
 
     # Calculate expected signature
     # Slack format: base64(hmac_sha256(signing_secret, base_version + ":" + timestamp + ":" + body))
@@ -255,13 +255,13 @@ async def slack_approval_webhook(
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Slack payload: {e}")
-        raise HTTPException(status_code=400, detail="Invalid payload format")
+        raise HTTPException(status_code=400, detail="Invalid payload format") from e
     except HTTPException:
         # Re-raise HTTP exceptions with original status code
         raise
     except Exception as e:
         logger.error(f"Error processing Slack webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/webhook/teams")
@@ -459,12 +459,12 @@ async def teams_approval_webhook(
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Teams payload: {e}")
-        raise HTTPException(status_code=400, detail="Invalid payload format")
+        raise HTTPException(status_code=400, detail="Invalid payload format") from e
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error processing Teams webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/health")

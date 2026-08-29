@@ -456,7 +456,7 @@ class ConnectionPoolManager:
                     await pool.start()
 
         # Schedule the pool creation and start
-        task = asyncio.create_task(_create_and_start())
+        _task = asyncio.create_task(_create_and_start())
 
         return pool
 
@@ -595,7 +595,7 @@ class RateLimiter:
 
             # Get rate limit for endpoint
             endpoint_config = self.endpoint_limits.get(endpoint, {})
-            rate = endpoint_config.get("rate", self.default_rate)
+            _rate = endpoint_config.get("rate", self.default_rate)
             burst = endpoint_config.get("burst", self.burst)  # Use endpoint-specific burst
 
             # Get or create token bucket

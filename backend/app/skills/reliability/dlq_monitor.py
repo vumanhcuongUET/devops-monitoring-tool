@@ -499,7 +499,7 @@ class DLQMonitorSkill(BaseSkill):
             action_stats[action_type]["total"] += 1
 
         # Calculate failure rates
-        for action_type, stats in action_stats.items():
+        for _action_type, stats in action_stats.items():
             stats["failure_rate"] = stats["failed"] / stats["total"] if stats["total"] > 0 else 0
 
         return action_stats

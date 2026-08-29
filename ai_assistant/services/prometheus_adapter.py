@@ -59,7 +59,7 @@ class PrometheusAdapter:
                 self._client = PrometheusClient()
             except Exception as e:
                 if not fallback_enabled:
-                    raise RuntimeError(f"Failed to initialize PrometheusClient: {e}")
+                    raise RuntimeError(f"Failed to initialize PrometheusClient: {e}") from e
 
     @property
     def available(self) -> bool:

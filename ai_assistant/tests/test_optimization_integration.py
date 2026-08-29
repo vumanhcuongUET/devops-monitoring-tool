@@ -21,7 +21,7 @@ class TestCacheIntegration:
 
     def test_cache_reduces_duplicate_queries(self):
         """Verify that cached queries prevent duplicate execution."""
-        cache = SimpleCache(ttl=60)
+        _cache = SimpleCache(ttl=60)
         call_count = 0
 
         @cached(ttl=60)
@@ -42,7 +42,7 @@ class TestCacheIntegration:
 
     def test_cache_respects_time_range(self):
         """Verify that different time_ranges don't share cache."""
-        cache = SimpleCache(ttl=60)
+        _cache = SimpleCache(ttl=60)
         call_count = 0
 
         @cached(ttl=60)
@@ -74,7 +74,7 @@ class TestSingleFlightDeduplication:
 
     def test_single_flight_deduplication(self):
         """Verify that concurrent same-key queries deduplicate."""
-        sf = SingleFlight()
+        _sf = SingleFlight()
         call_count = 0
 
         @single_flight(lambda project, section: f"{project}:{section}")
@@ -111,7 +111,7 @@ class TestSingleFlightDeduplication:
 
     def test_single_flight_different_keys(self):
         """Verify that different keys result in separate calls."""
-        sf = SingleFlight()
+        _sf = SingleFlight()
         call_count = 0
 
         @single_flight(lambda project, section: f"{project}:{section}")
@@ -218,8 +218,8 @@ class TestFeatureFlags:
                 call_count += 1
                 return "result"
 
-            result1 = test_func()
-            result2 = test_func()
+            _result1 = test_func()
+            _result2 = test_func()
 
             # Both should execute (cache disabled)
             assert call_count == 2
@@ -249,8 +249,8 @@ class TestEndToEndIntegration:
 
     def test_cache_single_flight_combination(self):
         """Test that caching and single-flight work together."""
-        cache = SimpleCache(ttl=60)
-        sf = SingleFlight()
+        _cache = SimpleCache(ttl=60)
+        _sf = SingleFlight()
         call_count = 0
 
         @cached(ttl=60)

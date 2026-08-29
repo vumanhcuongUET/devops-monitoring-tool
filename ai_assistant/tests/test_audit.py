@@ -90,7 +90,7 @@ class TestAuditLogger:
 
     def test_init_creates_directory(self):
         """Test that initialization creates log directory."""
-        logger = AuditLogger(log_dir=self.log_dir)
+        _logger = AuditLogger(log_dir=self.log_dir)
         assert self.log_dir.exists()
         assert self.log_dir.is_dir()
 

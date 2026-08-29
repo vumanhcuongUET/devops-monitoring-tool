@@ -218,7 +218,7 @@ class TestDistributedRateLimiting:
             assert allowed_count == 5
 
             # All responses should have consistent info
-            for allowed, info in results:
+            for _allowed, info in results:
                 assert info["limit"] == 5
                 assert "remaining" in info
                 assert "reset" in info

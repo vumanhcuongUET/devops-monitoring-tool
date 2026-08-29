@@ -65,7 +65,7 @@ class ElasticsearchAdapter:
                 self._client = ElasticsearchClient()
             except Exception as e:
                 if not fallback_enabled:
-                    raise RuntimeError(f"Failed to initialize ElasticsearchClient: {e}")
+                    raise RuntimeError(f"Failed to initialize ElasticsearchClient: {e}") from e
 
     @property
     def available(self) -> bool:

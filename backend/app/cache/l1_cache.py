@@ -230,7 +230,7 @@ class RequestCacheMiddleware:
         L1Cache().clear()
 
         # Wrap send to capture response
-        start_time = time.time()
+        _start_time = time.time()
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":

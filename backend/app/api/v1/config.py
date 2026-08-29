@@ -146,10 +146,10 @@ async def validate_configuration(request: ConfigValidationRequest):
         return result
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid config type: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid config type: {e}") from e
     except Exception as e:
         logger.error(f"Validation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/versions")
@@ -202,7 +202,7 @@ async def create_version(request: VersionCreateRequest):
 
     except Exception as e:
         logger.error(f"Version creation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/versions/{project}")
@@ -235,7 +235,7 @@ async def list_versions(
 
     except Exception as e:
         logger.error(f"Version list error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/versions/rollback")
@@ -280,10 +280,10 @@ async def rollback_version(request: VersionRollbackRequest):
         }
 
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Rollback error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/versions/diff")
@@ -310,7 +310,7 @@ async def diff_versions(request: VersionDiffRequest):
 
     except Exception as e:
         logger.error(f"Diff error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/versions/{project}/history")
@@ -349,7 +349,7 @@ async def get_version_history(
 
     except Exception as e:
         logger.error(f"Version history error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/audit/trail")
@@ -406,7 +406,7 @@ async def get_audit_trail(
 
     except Exception as e:
         logger.error(f"Audit trail error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/audit/summary")
@@ -436,7 +436,7 @@ async def get_audit_summary(
 
     except Exception as e:
         logger.error(f"Audit summary error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/git/branch")
@@ -468,7 +468,7 @@ async def create_git_branch(request: GitBranchCreateRequest):
 
     except Exception as e:
         logger.error(f"Branch creation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/git/pr")
@@ -497,7 +497,7 @@ async def create_pull_request(request: PullRequestCreateRequest):
 
     except Exception as e:
         logger.error(f"PR creation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/git/sync")
@@ -535,7 +535,7 @@ async def sync_from_git(
 
     except Exception as e:
         logger.error(f"Git sync error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/git/status")
@@ -555,7 +555,7 @@ async def get_git_status():
 
     except Exception as e:
         logger.error(f"Git status error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/security/scan")
@@ -583,7 +583,7 @@ async def scan_config_for_secrets(config: dict[str, Any]):
 
     except Exception as e:
         logger.error(f"Security scan error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/security/sanitize")
@@ -613,10 +613,10 @@ async def sanitize_config(
         return {"config": sanitized, "level": level}
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Sanitize error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/health")

@@ -235,7 +235,7 @@ class EnvironmentAwareCommandExecutor:
                 try:
                     cmd_args = shlex.split(command)
                 except ValueError as e:
-                    raise ValueError(f"Failed to parse command: {e}")
+                    raise ValueError(f"Failed to parse command: {e}") from e
 
                 # Prepend kubectl context switching if context is specified
                 if context:
@@ -284,7 +284,7 @@ class EnvironmentAwareCommandExecutor:
                 except asyncio.TimeoutError:
                     process.kill()
                     await process.wait()
-                    raise subprocess.TimeoutExpired(command, timeout_seconds)
+                    raise subprocess.TimeoutExpired(command, timeout_seconds) from None
 
                 result = ExecutionResult(
                     success=process.returncode == 0,

@@ -215,7 +215,7 @@ class AnomalyDetectorSkill(BaseSkill):
 
         recommendations = []
         data = result.data
-        anomalies = data.get("anomalies", [])
+        _anomalies = data.get("anomalies", [])
         severity = data.get("severity_analysis", {})
 
         # High severity anomalies
@@ -331,7 +331,7 @@ class AnomalyDetectorSkill(BaseSkill):
         try:
             # Query Prometheus for time series data
             query = f'rate({metric}{{project="{project}"}}[5m])'
-            result = await self.prometheus_client.query(query)
+            _result = await self.prometheus_client.query(query)
 
             # Extract values from result
             # In real implementation, parse Prometheus response format

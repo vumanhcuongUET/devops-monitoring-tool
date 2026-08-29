@@ -70,7 +70,7 @@ class OptimizerAdapter:
                 self._optimizer = TokenOptimizer(OptimizationConfig())
             except Exception as e:
                 if not fallback_enabled:
-                    raise RuntimeError(f"Failed to initialize TokenOptimizer: {e}")
+                    raise RuntimeError(f"Failed to initialize TokenOptimizer: {e}") from e
         else:
             # Backend unavailable
             if not fallback_enabled:

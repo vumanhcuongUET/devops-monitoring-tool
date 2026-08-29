@@ -323,7 +323,7 @@ class SastScannerSkill(BaseSkill):
         """
         # Simple detection based on file extensions
 
-        common_files = {
+        _common_files = {
             "python": [".py", "requirements.txt", "setup.py", "pyproject.toml"],
             "javascript": [".js", "package.json", "yarn.lock"],
             "typescript": [".ts", "tsconfig.json"],

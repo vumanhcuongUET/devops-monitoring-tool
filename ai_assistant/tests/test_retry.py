@@ -137,7 +137,7 @@ class TestCircuitBreaker:
         """Test circuit opens after failure threshold."""
         cb = CircuitBreaker("test", CircuitBreakerConfig(failure_threshold=3))
 
-        for i in range(3):
+        for _i in range(3):
             cb.record_failure()
 
         assert cb.state == CircuitState.OPEN

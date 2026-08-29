@@ -499,7 +499,7 @@ class TestPerformance:
         }
 
         start = time.time()
-        results = sampler.sample_logs_smart(logs, incident_config, max_results=50)
+        _results = sampler.sample_logs_smart(logs, incident_config, max_results=50)
         elapsed_ms = (time.time() - start) * 1000
 
         assert elapsed_ms < 100, f"Sampling 100 logs took {elapsed_ms}ms"
@@ -519,7 +519,7 @@ class TestPerformance:
         }
 
         start = time.time()
-        results = sampler.sample_logs_smart(logs, incident_config, max_results=50)
+        _results = sampler.sample_logs_smart(logs, incident_config, max_results=50)
         elapsed_ms = (time.time() - start) * 1000
 
         assert elapsed_ms < 300, f"Sampling 1000 logs took {elapsed_ms}ms"

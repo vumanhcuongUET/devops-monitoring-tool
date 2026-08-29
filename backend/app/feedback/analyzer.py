@@ -205,7 +205,7 @@ class FeedbackAnalyzer:
         patterns = self.analyze_approval_rates()
         needs_review = []
 
-        for action_type, pattern in patterns.items():
+        for _action_type, pattern in patterns.items():
             # Flag for review if:
             # 1. Low confidence (<70% approval)
             # 2. OR high rejection rate (>30%)

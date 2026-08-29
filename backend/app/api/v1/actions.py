@@ -81,7 +81,7 @@ async def create_action(request: Request, body: CreateActionRequest) -> ActionRe
         return ActionResponse(success=False, error=str(e))
     except Exception as e:
         logger.error(f"Unexpected error creating action: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("", response_model=ActionListResponse)
@@ -103,7 +103,7 @@ async def list_actions(
         return await engine.list_actions(project=project, status=status, limit=limit)
     except Exception as e:
         logger.error(f"Failed to list actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/{action_id}", response_model=ActionResponse)
@@ -122,7 +122,7 @@ async def get_action(request: Request, action_id: str) -> ActionResponse:
         raise
     except Exception as e:
         logger.error(f"Failed to get action {action_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{action_id}/approve", response_model=ActionResponse)
@@ -152,7 +152,7 @@ async def approve_action(
         return ActionResponse(success=False, error=str(e))
     except Exception as e:
         logger.error(f"Unexpected error approving action {action_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{action_id}/reject", response_model=ActionResponse)
@@ -182,7 +182,7 @@ async def reject_action(
         return ActionResponse(success=False, error=str(e))
     except Exception as e:
         logger.error(f"Unexpected error rejecting action {action_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{action_id}/execute", response_model=ActionResponse)
@@ -213,7 +213,7 @@ async def execute_action(
         return ActionResponse(success=False, error=str(e))
     except Exception as e:
         logger.error(f"Unexpected error executing action {action_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/bulk", response_model=BulkActionResponse)
@@ -286,7 +286,7 @@ async def create_bulk_actions(
 
     except Exception as e:
         logger.error(f"Failed to create bulk actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/stats/summary")
@@ -306,4 +306,4 @@ async def get_action_stats(request: Request) -> dict:
         }
     except Exception as e:
         logger.error(f"Failed to get action stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

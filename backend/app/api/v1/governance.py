@@ -30,7 +30,7 @@ async def list_permissions() -> dict[str, Any]:
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/permissions/check")
@@ -61,7 +61,7 @@ async def check_permission(request: dict[str, Any]) -> dict[str, Any]:
         return result.to_dict()
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/policies/validate")
@@ -98,7 +98,7 @@ async def validate_policy(request: dict[str, Any]) -> dict[str, Any]:
         return result.to_dict()
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/policies")
@@ -109,7 +109,7 @@ async def list_policies() -> dict[str, Any]:
         Dictionary with policy list
     """
     try:
-        client = get_opa_client()
+        _client = get_opa_client()
 
         # This would query OPA for active policies
         # For now, return the defined policies
@@ -143,7 +143,7 @@ async def list_policies() -> dict[str, Any]:
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/compliance")
@@ -170,7 +170,7 @@ async def get_compliance_status(
         return compliance
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/audit")
@@ -205,7 +205,7 @@ async def get_audit_log(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/service-account/{project}")
@@ -256,4 +256,4 @@ async def get_service_account_config(project: str) -> dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

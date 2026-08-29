@@ -83,7 +83,7 @@ class RedisSingleFlight:
                 _get_logger().warning(f"Redis single-flight unavailable, falling back to direct execution: {e}")
                 _get_metrics().increment("redis_single_flight_unavailable")
             else:
-                raise RuntimeError(f"Redis single-flight required but unavailable: {e}")
+                raise RuntimeError(f"Redis single-flight required but unavailable: {e}") from e
 
     @property
     def available(self) -> bool:

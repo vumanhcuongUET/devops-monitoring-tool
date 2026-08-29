@@ -62,7 +62,7 @@ class ApmAdapter:
                 self._client = ApmClient(es_client=es_client)
             except Exception as e:
                 if not fallback_enabled:
-                    raise RuntimeError(f"Failed to initialize ApmClient: {e}")
+                    raise RuntimeError(f"Failed to initialize ApmClient: {e}") from e
 
     @property
     def available(self) -> bool:

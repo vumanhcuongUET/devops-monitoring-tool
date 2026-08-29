@@ -145,7 +145,7 @@ class TokenOptimizer:
         original_tokens = self._estimate_tokens(context_data)
 
         # Determine token budget
-        budget = token_budget or self._get_budget_for_severity(severity)
+        _budget = token_budget or self._get_budget_for_severity(severity)
 
         # Apply optimization strategies sequentially
         optimized_context = context_data.copy()
@@ -350,11 +350,11 @@ class TokenOptimizer:
             if isinstance(logs_data, dict):
                 # TestDataGenerator format: {"logs": [...], "total": N, ...}
                 logs_list = logs_data.get("logs", [])
-                original_count = len(logs_list)
+                _original_count = len(logs_list)
             else:
                 # Direct list format
                 logs_list = logs_data
-                original_count = len(logs_list)
+                _original_count = len(logs_list)
 
             # Sample the logs
             sampled_logs = await self._log_sampler.sample_logs(

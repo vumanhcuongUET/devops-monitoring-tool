@@ -63,7 +63,7 @@ class TestElasticsearchAdapter:
 
     def test_get_cluster_health(self, mock_elasticsearch_client):
         """Test cluster health method."""
-        adapter = ElasticsearchAdapter()
+        _adapter = ElasticsearchAdapter()
 
         mock_health = ElasticsearchAdapter()
         mock_health._client = mock_elasticsearch_client

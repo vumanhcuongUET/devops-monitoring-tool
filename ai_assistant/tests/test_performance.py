@@ -320,7 +320,7 @@ class TestChainHashingPerformance:
 
         # Chain hashing happens for each log entry
         start = time.perf_counter()
-        for i in range(100):
+        for _i in range(100):
             entry = AuditLogEntry(
                 event_type="test",
                 actor="user1",

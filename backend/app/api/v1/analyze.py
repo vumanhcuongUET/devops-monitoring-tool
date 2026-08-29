@@ -218,7 +218,7 @@ async def analyze_health(request: Request):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"LLM service not available: {e}",
-        )
+        ) from e
 
 
 @router.post("/analyze/stream")

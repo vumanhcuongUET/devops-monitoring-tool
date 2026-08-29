@@ -183,10 +183,21 @@ class ActionEngine:
             command=command,
         )
 
-        # Add to approval tracker
+        # Add to approval tracker — full snapshot so get/list can rebuild the Action
         await self.approval_tracker.set_status(
             action_id=action_id,
             status=action.status,
+            command=command,
+            command_type=action.command_type.value,
+            parsed_params=action.parsed_params.model_dump(mode="json"),
+            project=action.project,
+            title=action.title,
+            description=action.description,
+            triage_card_id=request.triage_card_id,
+            recommendation_id=request.recommendation_id,
+            risk_level=action.risk_level.value,
+            estimated_impact=action.estimated_impact,
+            context=action.context,
         )
 
         # Add to history

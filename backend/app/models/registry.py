@@ -93,3 +93,7 @@ class RegistryConfig(BaseModel):
         None,
         description="Global RBAC constraints applied to all projects"
     )
+
+    def get_project(self, name: str) -> Optional[ProjectConfig]:
+        """Get a project by name (None if not registered)."""
+        return next((p for p in self.projects if p.name == name), None)

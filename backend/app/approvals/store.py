@@ -192,7 +192,7 @@ class ApprovalStateTracker:
         """Save state to file."""
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         with open(STATE_FILE, "w") as f:
-            json.dump(self._state, f, indent=2)
+            json.dump(self._state, f, indent=2, default=str)
 
 
 class ApprovalHistory:
@@ -235,7 +235,7 @@ class ApprovalHistory:
         """Save history to file."""
         os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
         with open(HISTORY_FILE, "w") as f:
-            json.dump(self._entries, f, indent=2)
+            json.dump(self._entries, f, indent=2, default=str)
 
 
 # Singleton instances

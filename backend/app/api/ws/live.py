@@ -54,7 +54,7 @@ class ConnectionManager:
             self.active.remove(ws)
 
     async def broadcast(self, data: dict):
-        msg = json.dumps(data)
+        msg = json.dumps(data, default=str)  # model_dump() may carry datetimes
         for ws in self.active[:]:
             try:
                 await ws.send_text(msg)

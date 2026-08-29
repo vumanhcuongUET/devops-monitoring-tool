@@ -6,11 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.main import app
 from app.models.actions import ActionStatus, RiskLevel
+from app.config import settings
 
 
 @pytest.fixture
-def client():
-    """Create test client."""
+def client(monkeypatch):
+    """Create test client (auth disabled — auth behavior covered in its own tests)."""
+    monkeypatch.setattr(settings, "AUTH_ENABLED", False)
     return TestClient(app)
 
 

@@ -9,9 +9,11 @@ import yaml
 
 from app.models.registry import ProjectConfig, RegistryConfig
 
-REGISTRY_DIR = "projects"
-DEFAULT_REGISTRY_FILE = "backend/app/registry/default_projects.yaml"
-REGISTRY_CACHE_FILE = "data/registry_cache.json"
+# Anchored to backend/ (not CWD) so the loader works regardless of launch dir
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+REGISTRY_DIR = _REPO_ROOT / "projects"
+DEFAULT_REGISTRY_FILE = Path(__file__).resolve().parent / "default_projects.yaml"
+REGISTRY_CACHE_FILE = _REPO_ROOT / "data" / "registry_cache.json"
 
 
 def load_registry() -> RegistryConfig:

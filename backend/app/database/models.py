@@ -132,3 +132,27 @@ class Session(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class ApprovalEvent(Base):
+    """
+    Append-only approval event log (Phase 12 debt: DB mirror, review F2).
+
+    One row per approval-lifecycle event (created/approved/rejected/executed).
+    The operational log (app/approvals/store.py) stays bounded in file/Redis;
+    this table is the durable, queryable copy.
+    """
+
+    __tablename__ = "approval_events"
+
+    id = Column(String(64), primary_key=True)
+    action_id = Column(String(64), nullable=False, index=True)
+    event = Column(String(32), nullable=False)
+    actor = Column(String(255), nullable=True)
+    timestamp = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    details = Column(JSON, nullable=True)

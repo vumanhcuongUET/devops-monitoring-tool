@@ -54,6 +54,9 @@ class AuditLogger:
             **kwargs
         )
         self._append_entry(entry)
+        # Best-effort PostgreSQL mirror (review F2); file stays primary
+        from app.database.mirror import schedule_mirror, mirror_audit_entry
+        schedule_mirror(mirror_audit_entry(entry))
         return entry
 
     def log_action_created(

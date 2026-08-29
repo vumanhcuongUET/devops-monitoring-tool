@@ -209,6 +209,9 @@ class ApprovalHistory:
         self._entries.insert(0, event)
         self._entries = self._entries[: self._max_entries]
         self._save()
+        # Best-effort PostgreSQL mirror (review F2); file stays primary
+        from app.database.mirror import schedule_mirror, mirror_approval_event
+        schedule_mirror(mirror_approval_event(event))
 
     def get_for_action(self, action_id: str) -> list[dict]:
         """Get all events for a specific action."""

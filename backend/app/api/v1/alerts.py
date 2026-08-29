@@ -30,8 +30,11 @@ def _save_rules(rules: list[dict]):
 
 
 @router.get("/rules", response_model=list[AlertRule])
-async def list_rules():
-    return _load_rules()
+async def list_rules(source: str | None = None):
+    rules = _load_rules()
+    if source:
+        rules = [r for r in rules if r.get("source") == source]
+    return rules
 
 
 @router.post("/rules", response_model=AlertRule, status_code=201)

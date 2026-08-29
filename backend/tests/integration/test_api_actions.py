@@ -21,8 +21,6 @@ def client(monkeypatch):
 def mock_action_engine():
     """Mock ActionEngine."""
     engine = AsyncMock()
-    engine.list_actions = MagicMock()
-    engine.get_action = MagicMock()
     return engine
 
 
@@ -34,14 +32,36 @@ def mock_registry():
     return registry
 
 
+def make_action(**overrides):
+    """Build a fully valid Action; partial literals fail pydantic validation."""
+    from app.models.actions import Action, CommandParams, CommandType
+
+    base = dict(
+        id="act-123",
+        command_type=CommandType.KUBECTL,
+        command="kubectl get pods",
+        parsed_params=CommandParams(command_type=CommandType.KUBECTL, action="get"),
+        project="meinvoice",
+        title="Check pod status",
+        description="Verify pod health",
+        risk_level=RiskLevel.SAFE,
+        status=ActionStatus.PENDING,
+    )
+    base.update(overrides)
+    return Action(**base)
+
+
 class TestActionsAPI:
     """Test Actions API endpoints."""
 
     @pytest.fixture(autouse=True)
-    def setup_mocks(self, mock_action_engine, mock_registry):
-        """Setup common mocks."""
-        app.state.action_engine = mock_action_engine
-        app.state.registry = mock_registry
+    def setup_mocks(self, monkeypatch, mock_action_engine, mock_registry):
+        """Setup common mocks.
+
+        Endpoints resolve the engine via the get_action_engine() singleton,
+        not app.state -- patch the singleton or the mocks never apply.
+        """
+        monkeypatch.setattr("app.actions.engine._action_engine", mock_action_engine)
 
         # Reset mocks before each test
         mock_action_engine.reset_mock()
@@ -132,11 +152,9 @@ class TestActionsAPI:
 
     def test_get_action_success(self, client, mock_action_engine):
         """Test getting action by ID."""
-        mock_action_engine.get_action.return_value = {
-            "id": "act-123",
-            "status": "approved",
-            "command": "kubectl get pods",
-        }
+        mock_action_engine.get_action.return_value = make_action(
+            status=ActionStatus.APPROVED
+        ).model_dump(mode="json")
 
         response = client.get("/api/v1/actions/act-123")
 
@@ -158,11 +176,7 @@ class TestActionsAPI:
         from app.models.actions import Action, ActionStatus
 
         mock_action_engine.approve_action = AsyncMock(
-            return_value=Action(
-                id="act-123",
-                status=ActionStatus.APPROVED,
-                approved_by="john.doe",
-            )
+            return_value=make_action(status=ActionStatus.APPROVED, approved_by="john.doe")
         )
 
         response = client.post(
@@ -194,11 +208,7 @@ class TestActionsAPI:
         from app.models.actions import Action, ActionStatus
 
         mock_action_engine.reject_action = AsyncMock(
-            return_value=Action(
-                id="act-123",
-                status=ActionStatus.REJECTED,
-                rejected_by="john.doe",
-            )
+            return_value=make_action(status=ActionStatus.REJECTED, rejected_by="jane.doe")
         )
 
         response = client.post(
@@ -218,17 +228,7 @@ class TestActionsAPI:
         from app.models.actions import Action, ActionStatus, ExecutionResult
 
         mock_action_engine.execute_action = AsyncMock(
-            return_value=Action(
-                id="act-123",
-                status=ActionStatus.EXECUTED,
-                executed_by="john.doe",
-                execution_result=ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout="Command successful",
-                    stderr="",
-                ),
-            )
+            return_value=make_action(status=ActionStatus.EXECUTED, executed_by="john.doe")
         )
 
         response = client.post(
@@ -248,17 +248,7 @@ class TestActionsAPI:
         from app.models.actions import Action, ActionStatus, ExecutionResult
 
         mock_action_engine.execute_action = AsyncMock(
-            return_value=Action(
-                id="act-123",
-                status=ActionStatus.EXECUTED,
-                executed_by="john.doe",
-                execution_result=ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout="[DRY RUN] Command validated",
-                    stderr="",
-                ),
-            )
+            return_value=make_action(status=ActionStatus.EXECUTED, executed_by="john.doe")
         )
 
         response = client.post(
@@ -276,16 +266,7 @@ class TestActionsAPI:
         from app.models.actions import Action, ActionStatus, CommandType
 
         mock_action_engine.create_action_from_recommendation = AsyncMock(
-            return_value=Action(
-                id="act-123",
-                status=ActionStatus.PENDING,
-                command_type=CommandType.KUBECTL,
-                command="kubectl get pods",
-                project="meinvoice",
-                title="Test",
-                description="Test action",
-                risk_level=RiskLevel.SAFE,
-            )
+            return_value=make_action(status=ActionStatus.PENDING)
         )
 
         response = client.post(
@@ -356,11 +337,17 @@ class TestActionsAPIIntegration:
         """Test complete action workflow through API."""
 
         from app.actions.engine import get_action_engine
+        from app.actions.parser import CommandParser
+        from app.actions.validator import CommandValidator
 
-        # Setup real engine with mocked dependencies
+        # Setup real engine with isolated parser/validator instances --
+        # the engine is a singleton, so mutating its parser/validator
+        # (shared singletons) leaks into every later test.
         engine = get_action_engine()
+        original_parser, original_validator = engine.parser, engine.validator
+        engine.parser = CommandParser()
+        engine.validator = CommandValidator()
 
-        # Mock the parser and validator
         engine.parser.parse = MagicMock(
             return_value=MagicMock(
                 command_type="kubectl",
@@ -369,7 +356,6 @@ class TestActionsAPIIntegration:
                 namespace="default",
             )
         )
-
         engine.validator.validate = MagicMock(
             return_value=MagicMock(
                 is_valid=True,
@@ -388,5 +374,7 @@ class TestActionsAPIIntegration:
                 "project": "test-project",
             },
         )
+
+        engine.parser, engine.validator = original_parser, original_validator
 
         assert create_response.status_code in [200, 201]

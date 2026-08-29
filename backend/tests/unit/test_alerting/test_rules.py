@@ -39,8 +39,9 @@ class TestAlertRules:
             ]
         }
 
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("yaml.safe_load", return_value=mock_yaml_data):
+        with patch("app.alerting.rules.RULES_FILE", "/nonexistent/alert_rules.json"), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("yaml.safe_load", return_value=mock_yaml_data):
                 rules = load_rules()
 
                 assert len(rules) == 1

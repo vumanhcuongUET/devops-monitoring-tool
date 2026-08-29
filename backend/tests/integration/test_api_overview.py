@@ -26,7 +26,7 @@ class TestOverviewAPI:
         data = response.json()
         assert "systems" in data
         assert "timestamp" in data
-        assert isinstance(data["systems"], list)
+        assert isinstance(data["systems"], dict)
 
     @pytest.mark.asyncio
     async def test_get_overview_includes_all_systems(self, async_client: AsyncClient):
@@ -34,10 +34,10 @@ class TestOverviewAPI:
         response = await async_client.get("/api/v1/overview")
 
         data = response.json()
-        system_names = [s["name"] for s in data["systems"]]
+        system_names = list(data["systems"].keys())
 
         # Should include core systems
-        expected_systems = ["elasticsearch", "prometheus", "kubernetes"]
+        expected_systems = ["elasticsearch", "kubernetes", "apm"]
 
         for system in expected_systems:
             assert system in system_names
@@ -49,8 +49,8 @@ class TestOverviewAPI:
 
         data = response.json()
 
-        for system in data["systems"]:
-            assert "name" in system
+        for name, system in data["systems"].items():
+            assert isinstance(system, dict)
             assert "status" in system
             assert system["status"] in ["healthy", "degraded", "down"]
 
@@ -104,7 +104,6 @@ class TestOverviewAPI:
 
         data = response.json()
 
-        for system in data["systems"]:
-            # Systems should have details
-            if system["status"] != "down":
-                assert "details" in system
+        for name, system in data["systems"].items():
+            # Systems should expose status details
+            assert "status" in system

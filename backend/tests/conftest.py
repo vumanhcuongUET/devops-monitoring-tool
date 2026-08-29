@@ -101,9 +101,13 @@ def mock_prometheus_client() -> MagicMock:
         "data": {"alerts": []}
     })
     mock.get_alerts_stats = AsyncMock(return_value={
-        "by_namespace": {},
-        "total_firing": 0,
-        "total_pending": 0
+        "default": {
+            "total": 0,
+            "firing": 0,
+            "pending": 0,
+            "by_severity": {},
+            "alerts": [],
+        }
     })
 
     return mock
@@ -179,10 +183,15 @@ async def test_app(
     # Create a new app instance for testing
     test_app_instance = FastAPI(title="DevOps AI Agentics 2026 - Test")
 
+    # Mount the real routes -- without the api_router every request 404s
+    from app.api.router import api_router
+
+    test_app_instance.include_router(api_router)
+
     # Store mock clients in app.state
     test_app_instance.state.es_client = mock_elasticsearch_client
     test_app_instance.state.apm_client = mock_apm_client
-    test_app_instance.state.prom_client = mock_prometheus_client
+    test_app_instance.state.prometheus_client = mock_prometheus_client
     test_app_instance.state.k8s_client = mock_kubernetes_client
     test_app_instance.state.slo_client = mock_slo_client
     test_app_instance.state.llm_client = mock_llm_client

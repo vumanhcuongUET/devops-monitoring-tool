@@ -37,7 +37,7 @@ def mock_redis():
             try:
                 return next(self.aiter)
             except StopIteration:
-                raise StopAsyncIteration
+                raise StopAsyncIteration from None
 
     redis = AsyncMock()
     redis.get = AsyncMock(return_value=None)

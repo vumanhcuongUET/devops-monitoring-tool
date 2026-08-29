@@ -552,6 +552,6 @@ class TestIntegrationScenarios:
             await cached_service.get_overview(project)
 
         # All should be cached now
-        for project in critical_projects:
+        for _project in critical_projects:
             # Would check cache here
             pass

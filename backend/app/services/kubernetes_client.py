@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from typing import Any
 
 from kubernetes import client
 from kubernetes import config as k8s_config
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class KubernetesClient:
@@ -19,12 +22,18 @@ class KubernetesClient:
             # get_default_copy() preserves the auth loaded above; a bare
             # Configuration() has no credentials and every call would 401.
             configuration = client.Configuration.get_default_copy()
-            configuration.connection_pool_size = getattr(settings, "K8S_MAX_CONNECTIONS", 10)
+            configuration.connection_pool_size = settings.K8S_MAX_CONNECTIONS
 
             self.core = client.CoreV1Api(configuration)
             self.apps = client.AppsV1Api(configuration)
             self._available = True
-        except Exception:
+        except Exception as exc:
+            # Security recheck 2026-08-29: init failure was silent — empty K8s
+            # pages with zero diagnostic signal. Log once at init.
+            logger.warning(
+                "Kubernetes client init failed; K8s endpoints return empty data: %s",
+                exc,
+            )
             self.core = None
             self.apps = None
             self._available = False

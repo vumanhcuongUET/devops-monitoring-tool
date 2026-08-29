@@ -54,6 +54,17 @@ data:
               summary: "Multi-agent orchestrator is down"
               description: "The agent orchestrator has been unreachable for 2 minutes"
 
+          - alert: OrchestratorMetricsMissing
+            expr: |
+              absent(devops_monitor_orchestrator_up)
+            for: 5m
+            labels:
+              severity: critical
+              tier: ai-agents
+            annotations:
+              summary: "Orchestrator metrics absent from Prometheus"
+              description: "Backend not exposing agent metrics (pod down or scrape broken)"
+
           - alert: HighAgentErrorRate
             expr: |
               agent:error_ratio5m > 0.10
@@ -68,7 +79,7 @@ data:
 
           - alert: AgentUnavailable
             expr: |
-              agent:invocations_rate5m == 0 and on() hour() >= 7 and hour() <= 22
+              absent(agent:invocations_rate5m) and on() hour() >= 7 and hour() <= 22
             for: 15m
             labels:
               severity: warning

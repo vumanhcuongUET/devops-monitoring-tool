@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import fastapi.responses
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.router import api_router
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware(BaseHTTPMiddleware):
     """Enforce auth on all routes except whitelisted ones."""
 
-    PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
+    PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
 
     async def dispatch(self, request, call_next):
         if not settings.AUTH_ENABLED:
@@ -230,12 +231,16 @@ async def lifespan(app: FastAPI):
         agent_orchestrator = AgentOrchestrator(model_selector=ModelSelector())
         agents_api.set_agent_instances(agent_orchestrator)
         app.state.agent_orchestrator = agent_orchestrator
+        from app.metrics import ORCHESTRATOR_UP
+        ORCHESTRATOR_UP.set(1)
         logger.info(
             "Phase 10 Sprint 3: Multi-agent orchestrator initialized "
             f"({'API key set' if settings.ANTHROPIC_API_KEY else 'WARNING: ANTHROPIC_API_KEY missing'})"
         )
     except Exception as e:
         agents_api.set_agent_instances(None)
+        from app.metrics import ORCHESTRATOR_UP
+        ORCHESTRATOR_UP.set(0)
         logger.warning(f"Phase 10 Sprint 3: Agent orchestrator initialization failed: {e}")
 
     if settings.AUTH_ENABLED and not settings.AUTH_SECRET:
@@ -296,6 +301,10 @@ app.add_middleware(
 
 app.include_router(api_router)
 app.include_router(ws_router)
+# Phase 12 debt: Prometheus agent metrics (review finding A1) — the
+# agent-metrics.yaml alerts query these series. Auth-exempt via PUBLIC_PATHS;
+# scrape target is cluster-internal.
+app.mount("/metrics", make_asgi_app())
 
 
 @app.get("/health")

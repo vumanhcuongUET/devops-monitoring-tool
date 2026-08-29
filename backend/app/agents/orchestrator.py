@@ -6,6 +6,7 @@ Implements consensus voting and result aggregation.
 """
 
 import asyncio
+import time
 import logging
 from datetime import datetime
 from typing import Any
@@ -193,13 +194,18 @@ class AgentOrchestrator:
         self, agent: BaseAgent, context: dict[str, Any]
     ) -> AgentResponse:
         """Run a single agent with timeout and error handling."""
+        from app.metrics import AGENT_DURATION, AGENT_INVOCATIONS, AGENT_TIMEOUTS
+
+        started = time.monotonic()
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 agent.analyze(context),
                 timeout=agent.timeout,
             )
         except asyncio.TimeoutError:
             logger.error(f"Agent {agent.name} timed out")
+            AGENT_INVOCATIONS.labels(agent.name, "timeout").inc()
+            AGENT_TIMEOUTS.labels(agent.name).inc()
             return AgentResponse(
                 agent_name=agent.name,
                 insights={},
@@ -207,8 +213,12 @@ class AgentOrchestrator:
                 error="Analysis timed out",
             )
         except Exception as e:
+            AGENT_INVOCATIONS.labels(agent.name, "error").inc()
             logger.error(f"Agent {agent.name} failed: {e}")
             raise
+        AGENT_DURATION.labels(agent.name).observe(time.monotonic() - started)
+        AGENT_INVOCATIONS.labels(agent.name, "success").inc()
+        return result
 
     def _aggregate_results(
         self, agent_results: list[AgentResponse]

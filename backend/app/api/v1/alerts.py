@@ -2,11 +2,14 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.models.alerts import AlertRule, AlertStatsRequest, ClusterAlertStats, NamespaceAlertStats
+from app.models.alerts import (
+    AlertRule,
+    ClusterAlertStats,
+    NamespaceAlertStats,
+)
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -71,7 +74,7 @@ async def get_history():
 @router.get("/prometheus/stats", response_model=ClusterAlertStats)
 async def get_prometheus_alert_stats(
     request: Request,
-    namespaces: Optional[str] = None,
+    namespaces: str | None = None,
     include_pending: bool = True,
     top_n: int = 5,
 ):

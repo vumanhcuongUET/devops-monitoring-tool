@@ -6,12 +6,10 @@ to enable continuous learning and confidence improvement.
 
 import json
 import logging
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Any, Dict
-from collections import defaultdict
-
-from app.models.actions import ActionStatus
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +22,8 @@ class FeedbackEvent:
         action_id: str,
         event_type: str,
         timestamp: datetime,
-        user: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        user: str | None = None,
+        details: dict[str, Any] | None = None,
     ):
         self.action_id = action_id
         self.event_type = event_type  # "approved", "rejected", "executed", "failed"
@@ -33,7 +31,7 @@ class FeedbackEvent:
         self.user = user
         self.details = details or {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
             "action_id": self.action_id,
@@ -55,7 +53,7 @@ class FeedbackCollector:
         """
         self.storage_path = Path(storage_path)
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self._feedback: Dict[str, list[FeedbackEvent]] = defaultdict(list)
+        self._feedback: dict[str, list[FeedbackEvent]] = defaultdict(list)
         self._load_feedback()
 
     def _load_feedback(self):
@@ -105,7 +103,7 @@ class FeedbackCollector:
         self,
         action_id: str,
         user: str,
-        approval_details: Optional[Dict[str, Any]] = None,
+        approval_details: dict[str, Any] | None = None,
     ):
         """Record an action approval.
 
@@ -127,8 +125,8 @@ class FeedbackCollector:
         self,
         action_id: str,
         user: str,
-        reason: Optional[str] = None,
-        rejection_details: Optional[Dict[str, Any]] = None,
+        reason: str | None = None,
+        rejection_details: dict[str, Any] | None = None,
     ):
         """Record an action rejection.
 
@@ -154,7 +152,7 @@ class FeedbackCollector:
         self,
         action_id: str,
         success: bool,
-        execution_details: Optional[Dict[str, Any]] = None,
+        execution_details: dict[str, Any] | None = None,
     ):
         """Record an action execution result.
 
@@ -184,7 +182,7 @@ class FeedbackCollector:
         """
         return self._feedback.get(action_id, [])
 
-    def get_all_feedback(self) -> Dict[str, list[FeedbackEvent]]:
+    def get_all_feedback(self) -> dict[str, list[FeedbackEvent]]:
         """Get all feedback history.
 
         Returns:
@@ -195,7 +193,7 @@ class FeedbackCollector:
     def get_recent_feedback(
         self,
         limit: int = 100,
-        event_type: Optional[str] = None,
+        event_type: str | None = None,
     ) -> list[FeedbackEvent]:
         """Get recent feedback events.
 
@@ -220,7 +218,7 @@ class FeedbackCollector:
 
 
 # Singleton instance
-_collector: Optional[FeedbackCollector] = None
+_collector: FeedbackCollector | None = None
 
 
 def get_feedback_collector() -> FeedbackCollector:

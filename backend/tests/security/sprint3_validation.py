@@ -7,10 +7,8 @@ Purpose: Validate all Sprint 3 deliverables are complete and working
 Run: python backend/tests/security/sprint3_validation.py
 """
 
-import os
 import sys
 from pathlib import Path
-
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -267,7 +265,6 @@ class Sprint3Validator:
 
         try:
             # Check imports work
-            from app.security import SSRFProtection
             from app.config import settings
 
             self.print_result("All imports successful", True)

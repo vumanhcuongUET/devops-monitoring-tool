@@ -4,8 +4,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.models.audit import (
     AuditEntry,
@@ -29,14 +28,14 @@ class AuditLogger:
     def log_event(
         self,
         event_type: AuditEventType,
-        user: Optional[str] = None,
-        action_id: Optional[str] = None,
-        triage_card_id: Optional[str] = None,
-        project: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-        chain_of_thought: Optional[list[ChainOfThoughtEntry]] = None,
-        execution_duration_seconds: Optional[float] = None,
-        success: Optional[bool] = None,
+        user: str | None = None,
+        action_id: str | None = None,
+        triage_card_id: str | None = None,
+        project: str | None = None,
+        details: dict[str, Any] | None = None,
+        chain_of_thought: list[ChainOfThoughtEntry] | None = None,
+        execution_duration_seconds: float | None = None,
+        success: bool | None = None,
         **kwargs
     ) -> AuditEntry:
         """Log an audit event."""
@@ -60,11 +59,11 @@ class AuditLogger:
     def log_action_created(
         self,
         action_id: str,
-        triage_card_id: Optional[str],
+        triage_card_id: str | None,
         project: str,
         command: str,
-        user: Optional[str] = None,
-        chain_of_thought: Optional[list[ChainOfThoughtEntry]] = None,
+        user: str | None = None,
+        chain_of_thought: list[ChainOfThoughtEntry] | None = None,
     ) -> AuditEntry:
         """Log action creation event."""
         return self.log_event(
@@ -81,7 +80,7 @@ class AuditLogger:
         self,
         action_id: str,
         approved_by: str,
-        comment: Optional[str] = None,
+        comment: str | None = None,
     ) -> AuditEntry:
         """Log action approval event."""
         return self.log_event(
@@ -111,7 +110,7 @@ class AuditLogger:
         executed_by: str,
         success: bool,
         duration_seconds: float,
-        output: Optional[str] = None,
+        output: str | None = None,
     ) -> AuditEntry:
         """Log action execution event."""
         return self.log_event(
@@ -142,7 +141,7 @@ class AuditLogger:
         action_type: str,
         chain_count: int,
         chain_limit: int,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> AuditEntry:
         """Log when action chain limit is exceeded."""
         return self.log_event(
@@ -164,7 +163,7 @@ class AuditLogger:
         project: str,
         action_type: str,
         rate_limit: int,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> AuditEntry:
         """Log when rate limit is exceeded."""
         return self.log_event(
@@ -185,7 +184,7 @@ class AuditLogger:
         project: str,
         action_type: str,
         cooldown_remaining: int,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> AuditEntry:
         """Log when cooldown period is active."""
         return self.log_event(
@@ -284,7 +283,7 @@ class AuditLogger:
 
 
 # Singleton instance
-_audit_logger: Optional[AuditLogger] = None
+_audit_logger: AuditLogger | None = None
 
 
 def get_audit_logger() -> AuditLogger:

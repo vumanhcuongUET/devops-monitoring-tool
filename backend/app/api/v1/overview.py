@@ -5,10 +5,10 @@ from fastapi import APIRouter, Request
 
 from app.models.common import HealthStatus
 from app.models.overview import (
-    KubernetesHealth,
-    ElasticsearchHealth,
     ApmHealth,
+    ElasticsearchHealth,
     InfrastructureHealth,
+    KubernetesHealth,
     OverviewResponse,
 )
 

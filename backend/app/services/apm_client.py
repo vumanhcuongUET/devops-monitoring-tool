@@ -2,8 +2,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.services.elasticsearch_client import ElasticsearchClient
 from app.config import settings
+from app.services.elasticsearch_client import ElasticsearchClient
 
 
 class ApmClient:

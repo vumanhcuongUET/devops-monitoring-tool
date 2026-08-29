@@ -2,7 +2,6 @@
 
 import re
 import shlex
-from typing import Optional
 
 from app.models.actions import CommandParams, CommandType
 
@@ -98,7 +97,7 @@ class CommandParser:
             return command.split()
 
     def _parse_flags(self, parts: list, i: int, params: CommandParams,
-                     boolean_flags: Optional[set] = None) -> None:
+                     boolean_flags: set | None = None) -> None:
         """Shared flag/argument loop: fills params.flags/args from parts[i:].
 
         Handles --flag=value, --flag value, boolean flags, and --namespace.
@@ -265,7 +264,7 @@ class CommandParser:
 
 
 # Singleton instance
-_parser: Optional[CommandParser] = None
+_parser: CommandParser | None = None
 
 
 def get_command_parser() -> CommandParser:

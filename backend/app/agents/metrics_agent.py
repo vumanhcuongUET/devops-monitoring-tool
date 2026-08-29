@@ -8,11 +8,10 @@ Specializes in:
 - SLO/SLI calculations
 """
 
-from typing import Dict, Any, List
-from datetime import datetime, timedelta
 import logging
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ RECOMMENDATION: [Actionable recommendation]
 Be quantitative where possible. Use specific thresholds and time windows.
 """
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze metrics data for trends and issues.
 
@@ -172,7 +171,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
                 error=str(e),
             )
 
-    def _get_metric(self, metrics: Dict, metric_name: str, metric_type: str) -> Any:
+    def _get_metric(self, metrics: dict, metric_name: str, metric_type: str) -> Any:
         """Get a specific metric value.
 
         Accepts both structured entries ({"value": X}) and plain scalars.
@@ -190,7 +189,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
         else:
             return value if value is not None else "N/A"
 
-    def _detect_trends(self, metrics: Dict) -> List[Dict]:
+    def _detect_trends(self, metrics: dict) -> list[dict]:
         """Detect trends in metric data."""
         trends = []
 
@@ -227,7 +226,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 
         return trends
 
-    def _detect_anomalies(self, metrics: Dict) -> List[Dict]:
+    def _detect_anomalies(self, metrics: dict) -> list[dict]:
         """Detect anomalies in metrics."""
         anomalies = []
 
@@ -259,7 +258,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
         return anomalies
 
     @staticmethod
-    def _usage_ratio(metrics: Dict, metric_name: str) -> float:
+    def _usage_ratio(metrics: dict, metric_name: str) -> float:
         """Normalize a usage metric to a 0-1 ratio.
 
         Structured entries ({"value": 0.85}) carry a ratio directly;
@@ -272,7 +271,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
         except (TypeError, ValueError):
             return 0.0
 
-    def _assess_capacity(self, metrics: Dict) -> List[Dict]:
+    def _assess_capacity(self, metrics: dict) -> list[dict]:
         """Assess capacity utilization."""
         capacity = []
 
@@ -302,7 +301,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 
         return capacity
 
-    def _format_trends(self, trends: List[Dict]) -> str:
+    def _format_trends(self, trends: list[dict]) -> str:
         """Format trends for display."""
         if not trends:
             return "No significant trends detected"
@@ -318,7 +317,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 
         return "\n".join(lines)
 
-    def _format_anomalies(self, anomalies: List[Dict]) -> str:
+    def _format_anomalies(self, anomalies: list[dict]) -> str:
         """Format anomalies for display."""
         if not anomalies:
             return "No anomalies detected"
@@ -335,7 +334,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 
         return "\n".join(lines)
 
-    def _format_capacity(self, capacity: List[Dict]) -> str:
+    def _format_capacity(self, capacity: list[dict]) -> str:
         """Format capacity status for display."""
         lines = []
         for cap in capacity:
@@ -346,7 +345,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 
         return "\n".join(lines)
 
-    def _format_slo_targets(self, slo_targets: Dict) -> str:
+    def _format_slo_targets(self, slo_targets: dict) -> str:
         """Format SLO targets for display."""
         if not slo_targets:
             return "No SLO targets defined"

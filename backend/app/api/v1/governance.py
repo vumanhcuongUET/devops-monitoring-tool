@@ -1,12 +1,12 @@
 """Governance API endpoints for Phase 3: RBAC and Policy Management."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Any, Optional
+from typing import Any
 
-from app.auth import api_key_auth
-from app.governance.ai_rbac import get_ai_permission_matrix, get_permission_summary
-from app.governance.permission_checker import get_permission_checker
+from fastapi import APIRouter, HTTPException
+
+from app.governance.ai_rbac import get_permission_summary
 from app.governance.opa_client import get_opa_client
+from app.governance.permission_checker import get_permission_checker
 
 router = APIRouter(prefix="/governance", tags=["governance"])
 
@@ -148,7 +148,7 @@ async def list_policies() -> dict[str, Any]:
 
 @router.get("/compliance")
 async def get_compliance_status(
-    project: Optional[str] = None,
+    project: str | None = None,
     environment: str = "production",
 ) -> dict[str, Any]:
     """Get overall compliance status.
@@ -175,9 +175,9 @@ async def get_compliance_status(
 
 @router.get("/audit")
 async def get_audit_log(
-    skill_id: Optional[str] = None,
-    project: Optional[str] = None,
-    environment: Optional[str] = None,
+    skill_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
     limit: int = 100,
 ) -> dict[str, Any]:
     """Get governance audit log.

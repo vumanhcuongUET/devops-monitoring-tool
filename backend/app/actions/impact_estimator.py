@@ -1,11 +1,10 @@
 """Impact estimation for actions before execution."""
 
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +22,8 @@ class ResourceImpact:
     """Impact on a specific resource type."""
     resource_type: str  # "pods", "deployments", "services", etc.
     affected_count: int  # Number of resources that will be affected
-    namespace: Optional[str] = None  # Namespace if scoped
-    details: Dict[str, Any] = field(default_factory=dict)  # Additional details
+    namespace: str | None = None  # Namespace if scoped
+    details: dict[str, Any] = field(default_factory=dict)  # Additional details
 
 
 @dataclass
@@ -34,10 +33,10 @@ class ImpactEstimate:
     command: str
     total_affected_resources: int  # Total count of all affected resources
     impact_level: ImpactLevel
-    resource_impacts: List[ResourceImpact]  # Breakdown by resource type
-    estimated_duration_seconds: Optional[float] = None  # Estimated execution time
-    risk_factors: List[str] = field(default_factory=list)  # Identified risk factors
-    recommendations: List[str] = field(default_factory=list)  # Safety recommendations
+    resource_impacts: list[ResourceImpact]  # Breakdown by resource type
+    estimated_duration_seconds: float | None = None  # Estimated execution time
+    risk_factors: list[str] = field(default_factory=list)  # Identified risk factors
+    recommendations: list[str] = field(default_factory=list)  # Safety recommendations
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -63,7 +62,7 @@ class ImpactEstimator:
     - Risk factors and safety recommendations
     """
 
-    def __init__(self, thresholds: Optional[ImpactThresholds] = None):
+    def __init__(self, thresholds: ImpactThresholds | None = None):
         """Initialize the impact estimator.
 
         Args:
@@ -75,7 +74,7 @@ class ImpactEstimator:
         self,
         action_id: str,
         command: str,
-        k8s_client: Optional[Any] = None,  # Kubernetes client (optional)
+        k8s_client: Any | None = None,  # Kubernetes client (optional)
         dry_run: bool = True,
     ) -> ImpactEstimate:
         """Estimate the impact of executing a command.
@@ -133,7 +132,7 @@ class ImpactEstimator:
             recommendations=recommendations,
         )
 
-    def _parse_command(self, command: str) -> Dict[str, Any]:
+    def _parse_command(self, command: str) -> dict[str, Any]:
         """Parse a command into its components.
 
         Args:
@@ -178,7 +177,7 @@ class ImpactEstimator:
 
         return result
 
-    def _is_cluster_wide_operation(self, parsed: Dict[str, Any]) -> bool:
+    def _is_cluster_wide_operation(self, parsed: dict[str, Any]) -> bool:
         """Check if operation affects the entire cluster."""
         flags = parsed.get("flags", {})
 
@@ -205,7 +204,7 @@ class ImpactEstimator:
 
         return False
 
-    def _is_namespace_wide_operation(self, parsed: Dict[str, Any]) -> bool:
+    def _is_namespace_wide_operation(self, parsed: dict[str, Any]) -> bool:
         """Check if operation affects an entire namespace."""
         operation = parsed.get("operation", "")
         args = parsed.get("args", [])
@@ -228,10 +227,10 @@ class ImpactEstimator:
 
     def _calculate_resource_impacts(
         self,
-        parsed: Dict[str, Any],
-        k8s_client: Optional[Any],
+        parsed: dict[str, Any],
+        k8s_client: Any | None,
         dry_run: bool,
-    ) -> List[ResourceImpact]:
+    ) -> list[ResourceImpact]:
         """Calculate impact on specific resource types.
 
         Args:
@@ -271,10 +270,10 @@ class ImpactEstimator:
         self,
         k8s_client: Any,
         operation: str,
-        resource_type: Optional[str],
-        namespace: Optional[str],
-        args: List[str],
-    ) -> List[ResourceImpact]:
+        resource_type: str | None,
+        namespace: str | None,
+        args: list[str],
+    ) -> list[ResourceImpact]:
         """Get real resource counts from Kubernetes.
 
         Args:
@@ -349,10 +348,10 @@ class ImpactEstimator:
     def _get_heuristic_impacts(
         self,
         operation: str,
-        resource_type: Optional[str],
-        namespace: Optional[str],
-        args: List[str],
-    ) -> List[ResourceImpact]:
+        resource_type: str | None,
+        namespace: str | None,
+        args: list[str],
+    ) -> list[ResourceImpact]:
         """Get heuristic impact estimates.
 
         Args:
@@ -455,11 +454,11 @@ class ImpactEstimator:
 
     def _identify_risk_factors(
         self,
-        parsed: Dict[str, Any],
+        parsed: dict[str, Any],
         total_affected: int,
         is_cluster_wide: bool,
         is_namespace_wide: bool,
-    ) -> List[str]:
+    ) -> list[str]:
         """Identify risk factors for the action.
 
         Args:
@@ -506,9 +505,9 @@ class ImpactEstimator:
     def _generate_recommendations(
         self,
         impact_level: ImpactLevel,
-        risk_factors: List[str],
-        parsed: Dict[str, Any],
-    ) -> List[str]:
+        risk_factors: list[str],
+        parsed: dict[str, Any],
+    ) -> list[str]:
         """Generate safety recommendations based on impact.
 
         Args:
@@ -551,7 +550,7 @@ class ImpactEstimator:
 
     def _estimate_duration(
         self,
-        parsed: Dict[str, Any],
+        parsed: dict[str, Any],
         total_affected: int,
     ) -> float:
         """Estimate execution duration in seconds.
@@ -603,10 +602,10 @@ class ImpactEstimator:
 
 
 # Global singleton instance
-_impact_estimator: Optional[ImpactEstimator] = None
+_impact_estimator: ImpactEstimator | None = None
 
 
-def get_impact_estimator(thresholds: Optional[ImpactThresholds] = None) -> ImpactEstimator:
+def get_impact_estimator(thresholds: ImpactThresholds | None = None) -> ImpactEstimator:
     """Get or create the global ImpactEstimator instance.
 
     Args:

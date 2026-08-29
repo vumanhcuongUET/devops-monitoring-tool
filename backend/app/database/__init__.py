@@ -6,7 +6,7 @@ Purpose: PostgreSQL integration with SQLAlchemy + TimescaleDB
 """
 
 from app.database.base import Base
-from app.database.models import AuditLog, ApprovalHistory, Session
+from app.database.models import ApprovalHistory, AuditLog, Session
 from app.database.session import (
     check_connection,
     close_engine,
@@ -34,22 +34,22 @@ __all__ = [
 
 # TimescaleDB (optional import - requires TimescaleDB extension)
 try:
-    from app.database.timescaledb import (
-        Metric,
-        MetricRepository,
+    from app.database.timescaledb import (  # noqa: F401
         DAILY_METRICS_VIEW,
         DAILY_REFRESH_POLICY,
         HOURLY_METRICS_VIEW,
         HOURLY_REFRESH_POLICY,
+        Metric,
+        MetricRepository,
     )
 
     __all__.extend([
-        "Metric",
-        "MetricRepository",
         "DAILY_METRICS_VIEW",
         "DAILY_REFRESH_POLICY",
         "HOURLY_METRICS_VIEW",
         "HOURLY_REFRESH_POLICY",
+        "Metric",
+        "MetricRepository",
     ])
 except ImportError:
     pass

@@ -13,7 +13,6 @@ Features:
 
 import logging
 import time
-from typing import Optional
 
 try:
     import redis.asyncio as redis
@@ -51,7 +50,7 @@ class RedisRateLimiter:
         self,
         redis_host: str = "localhost",
         redis_port: int = 6379,
-        redis_password: Optional[str] = None,
+        redis_password: str | None = None,
         redis_db: int = 2,  # DB for rate limiting
     ):
         """
@@ -259,7 +258,7 @@ class RedisRateLimiterMiddleware:
         limiter: RedisRateLimiter,
         default_requests: int = 100,
         default_window: int = 60,
-        key_generator: Optional[callable] = None,
+        key_generator: callable | None = None,
     ):
         """
         Initialize rate limit middleware.

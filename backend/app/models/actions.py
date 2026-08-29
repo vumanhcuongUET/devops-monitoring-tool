@@ -2,7 +2,8 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -41,10 +42,10 @@ class CommandParams(BaseModel):
     """Parsed parameters from a command."""
 
     command_type: CommandType
-    resource_type: Optional[str] = None  # e.g., "pod", "deployment", "service"
-    resource_name: Optional[str] = None
-    namespace: Optional[str] = None
-    action: Optional[str] = None  # e.g., "get", "delete", "restart", "scale"
+    resource_type: str | None = None  # e.g., "pod", "deployment", "service"
+    resource_name: str | None = None
+    namespace: str | None = None
+    action: str | None = None  # e.g., "get", "delete", "restart", "scale"
     flags: dict[str, str] = Field(default_factory=dict)
     args: list[str] = Field(default_factory=list)
 
@@ -53,11 +54,11 @@ class ExecutionResult(BaseModel):
     """Result of executing an action."""
 
     success: bool
-    exit_code: Optional[int] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-    duration_seconds: Optional[float] = None
-    error_message: Optional[str] = None
+    exit_code: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    duration_seconds: float | None = None
+    error_message: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -66,8 +67,8 @@ class Action(BaseModel):
 
     # Core identification
     id: str = Field(..., description="Unique action ID")
-    triage_card_id: Optional[str] = Field(None, description="Source Triage Card ID")
-    recommendation_id: Optional[str] = Field(None, description="Source recommendation ID")
+    triage_card_id: str | None = Field(None, description="Source Triage Card ID")
+    recommendation_id: str | None = Field(None, description="Source recommendation ID")
 
     # Command details
     command_type: CommandType = Field(..., description="Type of command")
@@ -85,16 +86,16 @@ class Action(BaseModel):
 
     # Approval state
     status: ActionStatus = Field(default=ActionStatus.PENDING, description="Current status")
-    approved_by: Optional[str] = Field(None, description="User who approved (if applicable)")
-    approved_at: Optional[datetime] = Field(None, description="Approval timestamp")
-    rejected_by: Optional[str] = Field(None, description="User who rejected (if applicable)")
-    rejected_at: Optional[datetime] = Field(None, description="Rejection timestamp")
-    rejection_reason: Optional[str] = Field(None, description="Reason for rejection")
+    approved_by: str | None = Field(None, description="User who approved (if applicable)")
+    approved_at: datetime | None = Field(None, description="Approval timestamp")
+    rejected_by: str | None = Field(None, description="User who rejected (if applicable)")
+    rejected_at: datetime | None = Field(None, description="Rejection timestamp")
+    rejection_reason: str | None = Field(None, description="Reason for rejection")
 
     # Execution
-    executed_by: Optional[str] = Field(None, description="User who triggered execution")
-    executed_at: Optional[datetime] = Field(None, description="Execution timestamp")
-    execution_result: Optional[ExecutionResult] = Field(None, description="Execution output")
+    executed_by: str | None = Field(None, description="User who triggered execution")
+    executed_at: datetime | None = Field(None, description="Execution timestamp")
+    execution_result: ExecutionResult | None = Field(None, description="Execution output")
 
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
@@ -116,7 +117,7 @@ class ApproveActionRequest(BaseModel):
     """Request to approve an action."""
 
     approved_by: str = Field(..., description="User approving the action")
-    comment: Optional[str] = Field(None, description="Optional approval comment")
+    comment: str | None = Field(None, description="Optional approval comment")
 
 
 class RejectActionRequest(BaseModel):

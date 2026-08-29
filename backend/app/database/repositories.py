@@ -10,13 +10,12 @@ Features:
 - Session repository with cleanup
 """
 
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select, and_
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import AuditLog, ApprovalHistory, Session
+from app.database.models import ApprovalHistory, AuditLog, Session
 
 
 class AuditLogRepository:
@@ -30,9 +29,9 @@ class AuditLogRepository:
         actor: str,
         action: str,
         resource_type: str,
-        resource_id: Optional[str] = None,
+        resource_id: str | None = None,
         environment: str = "production",
-        details: Optional[dict] = None,
+        details: dict | None = None,
         status: str = "success",
     ) -> AuditLog:
         """
@@ -120,7 +119,7 @@ class AuditLogRepository:
 
     async def get_recent(
         self,
-        environment: Optional[str] = None,
+        environment: str | None = None,
         hours: int = 24,
         limit: int = 1000,
     ) -> list[AuditLog]:
@@ -160,7 +159,7 @@ class ApprovalHistoryRepository:
         project: str,
         action_type: str,
         proposed_by: str,
-        command: Optional[str] = None,
+        command: str | None = None,
     ) -> ApprovalHistory:
         """
         Create a new approval history entry.
@@ -192,7 +191,7 @@ class ApprovalHistoryRepository:
         action_id: str,
         approved_by: str,
         status: str = "approved",
-    ) -> Optional[ApprovalHistory]:
+    ) -> ApprovalHistory | None:
         """
         Update approval history with approval information.
 
@@ -295,7 +294,7 @@ class SessionRepository:
         await self.session.flush()
         return session
 
-    async def get(self, session_id: str) -> Optional[Session]:
+    async def get(self, session_id: str) -> Session | None:
         """
         Get a session by ID.
 

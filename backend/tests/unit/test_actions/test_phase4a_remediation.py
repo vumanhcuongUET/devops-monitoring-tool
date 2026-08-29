@@ -1,18 +1,19 @@
 """Unit tests for Phase 4A Remediation Actions."""
 
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
 
 from app.actions.remediation_actions import (
-    ClearStuckPodsAction,
-    CleanupFailedJobsAction,
     AdjustHPAMinReplicasAction,
+    CleanupFailedJobsAction,
+    ClearStuckPodsAction,
     RemediationActionFactory,
     RemediationActionType,
 )
 from app.models.actions import ExecutionResult
-from app.models.alerts import AlertEvent, AlertRule, AlertSeverity
+from app.models.alerts import AlertEvent, AlertSeverity
 
 
 class TestClearStuckPodsAction:
@@ -43,17 +44,18 @@ class TestClearStuckPodsAction:
             "items": [
                 {
                     "metadata": {"name": "stuck-pod-1"},
-                    "status": {"phase": "Terminating"},
-                    "status": {"startTime": datetime.now(timezone.utc).isoformat()},
+                    "status": {
+                        "phase": "Terminating",
+                        "startTime": datetime.now(timezone.utc).isoformat()}
                 },
                 {
                     "metadata": {"name": "stuck-pod-2"},
                     "status": {
                         "containerStatuses": [
                             {"waiting": {"reason": "ImagePullBackOff"}}
-                        ]
+                        ],
+                        "startTime": (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(),
                     },
-                    "status": {"startTime": (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()},
                 },
             ]
         }

@@ -8,9 +8,10 @@ Phase 6: AI Input Optimization & Cost Efficiency
 Enhanced for Day 4: Advanced trend detection and compression
 """
 
-from typing import Any, List, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
+
 import numpy as np
 
 
@@ -101,7 +102,7 @@ class TimeSeriesCompressor:
 
     async def compress_single_series(
         self,
-        data_points: List[tuple],
+        data_points: list[tuple],
         metric_name: str = "unknown"
     ) -> CompressionResult:
         """
@@ -155,7 +156,7 @@ class TimeSeriesCompressor:
 
         return False
 
-    def _compress_time_series(self, data_points: List[tuple]) -> dict:
+    def _compress_time_series(self, data_points: list[tuple]) -> dict:
         """
         Compress time-series to percentile statistics.
 
@@ -189,7 +190,7 @@ class TimeSeriesCompressor:
 
         return result
 
-    def _calculate_percentiles(self, values: List[float]) -> PercentileStats:
+    def _calculate_percentiles(self, values: list[float]) -> PercentileStats:
         """Calculate percentile statistics from values."""
         if not values:
             return PercentileStats(
@@ -289,7 +290,7 @@ class TimeSeriesCompressor:
 
     def detect_trend(
         self,
-        values: List[float],
+        values: list[float],
         window_size: int = 5
     ) -> str:
         """
@@ -357,7 +358,7 @@ class TimeSeriesCompressor:
         except Exception:
             return Trend.UNKNOWN.value
 
-    def compress_values(self, values: List[float], metric_name: str = "metric") -> dict:
+    def compress_values(self, values: list[float], metric_name: str = "metric") -> dict:
         """
         Compress values to key statistics (NEW for Day 4).
 

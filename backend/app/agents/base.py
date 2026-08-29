@@ -5,12 +5,13 @@ Abstract base class for all specialized AI agents.
 Defines the interface and common functionality.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-from datetime import datetime
 import logging
+from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Any
 
 from anthropic import AsyncAnthropic
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,11 @@ class AgentResponse:
     def __init__(
         self,
         agent_name: str,
-        insights: Dict[str, Any],
+        insights: dict[str, Any],
         confidence: float = 0.8,
-        recommendations: Optional[list] = None,
-        error: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        recommendations: list | None = None,
+        error: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.agent_name = agent_name
         self.insights = insights
@@ -36,7 +37,7 @@ class AgentResponse:
         self.metadata = metadata or {}
         self.timestamp = datetime.utcnow()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert response to dictionary."""
         return {
             "agent": self.agent_name,
@@ -72,7 +73,7 @@ class BaseAgent(ABC):
         self.model = model
         self.timeout = timeout
         self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._prompt_cache: Optional[str] = None
+        self._prompt_cache: str | None = None
 
     @abstractmethod
     def get_prompt_template(self) -> str:
@@ -82,10 +83,9 @@ class BaseAgent(ABC):
         This defines the agent's expertise, behavior, and output format.
         Should be a clear, specific prompt that guides the model's behavior.
         """
-        pass
 
     @abstractmethod
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze context and return insights.
 
@@ -96,7 +96,6 @@ class BaseAgent(ABC):
         Returns:
             AgentResponse with insights, confidence, and recommendations
         """
-        pass
 
     async def _query_claude(
         self,
@@ -131,7 +130,7 @@ class BaseAgent(ABC):
             logger.error(f"Error querying Claude for agent {self.name}: {e}")
             raise
 
-    def _validate_context(self, context: Dict[str, Any], required_keys: list) -> bool:
+    def _validate_context(self, context: dict[str, Any], required_keys: list) -> bool:
         """
         Validate that context contains required keys.
 
@@ -206,7 +205,7 @@ class BaseAgent(ABC):
 
         return recommendations
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """
         Check agent health and readiness.
 

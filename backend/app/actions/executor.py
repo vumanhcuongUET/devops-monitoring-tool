@@ -3,11 +3,9 @@
 import asyncio
 import logging
 import shlex
-import subprocess
 from datetime import datetime, timezone
-from typing import Optional, List
 
-from app.models.actions import CommandType, ExecutionResult
+from app.models.actions import ExecutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +106,7 @@ class CommandExecutor:
     async def execute_kubectl(
         self,
         args: list[str],
-        namespace: Optional[str] = None,
+        namespace: str | None = None,
         dry_run: bool = False,
     ) -> ExecutionResult:
         """Execute a kubectl command with proper context."""
@@ -123,7 +121,7 @@ class CommandExecutor:
     async def execute_helm(
         self,
         args: list[str],
-        namespace: Optional[str] = None,
+        namespace: str | None = None,
         dry_run: bool = False,
     ) -> ExecutionResult:
         """Execute a helm command."""
@@ -294,7 +292,7 @@ class CommandExecutor:
 
 
 # Singleton instance
-_executor: Optional[CommandExecutor] = None
+_executor: CommandExecutor | None = None
 
 
 def get_command_executor() -> CommandExecutor:

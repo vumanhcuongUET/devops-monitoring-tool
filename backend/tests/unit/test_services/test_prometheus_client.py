@@ -7,8 +7,9 @@ Tests the Prometheus client functionality including:
 - Alerts and alerts statistics
 """
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 
 @pytest.mark.unit

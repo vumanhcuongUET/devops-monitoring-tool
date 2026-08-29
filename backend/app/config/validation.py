@@ -4,12 +4,13 @@ Configuration Validation Module
 Provides schema-based validation for all configuration types.
 """
 
-from typing import Dict, Any, List, Tuple, Optional
-from pydantic import BaseModel, validator
-from enum import Enum
-import yaml
-from pathlib import Path
 import logging
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ logger = logging.getLogger(__name__)
 class ValidationResult(BaseModel):
     """Result of configuration validation."""
     is_valid: bool
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
     config_type: str
 
 
@@ -248,10 +249,10 @@ class ConfigValidator:
         }
     }
 
-    def __init__(self, schema_path: Optional[str] = None):
+    def __init__(self, schema_path: str | None = None):
         """Initialize validator with optional external schema path."""
         self.schema_path = schema_path
-        self.external_schemas: Dict[str, Dict] = {}
+        self.external_schemas: dict[str, dict] = {}
 
         if schema_path:
             self._load_external_schemas()
@@ -274,7 +275,7 @@ class ConfigValidator:
 
     def validate_config(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         config_type: ConfigType
     ) -> ValidationResult:
         """Validate configuration against schema."""
@@ -308,9 +309,9 @@ class ConfigValidator:
 
     def _validate_schema(
         self,
-        config: Dict[str, Any],
-        schema: Dict[str, Any]
-    ) -> List[str]:
+        config: dict[str, Any],
+        schema: dict[str, Any]
+    ) -> list[str]:
         """Validate config against JSON schema."""
         errors = []
 
@@ -379,9 +380,9 @@ class ConfigValidator:
     def _custom_validations(
         self,
         config_type: ConfigType,
-        config: Dict[str, Any],
-        warnings: List[str]
-    ) -> List[str]:
+        config: dict[str, Any],
+        warnings: list[str]
+    ) -> list[str]:
         """Custom business logic validations."""
         errors = []
 

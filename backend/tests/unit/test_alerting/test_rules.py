@@ -7,13 +7,11 @@ Tests the alert rules functionality including:
 - Rule validation
 """
 
-import pytest
-import json
-import tempfile
-import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from app.alerting.rules import load_rules, save_rules, DEFAULT_RULES_FILE, RULES_FILE
+import pytest
+
+from app.alerting.rules import load_rules, save_rules
 from app.models.alerts import AlertRule, AlertSeverity
 
 
@@ -89,18 +87,17 @@ class TestAlertRules:
             )
         ]
 
-        with patch("os.makedirs"):
-            with patch("builtins.open", MagicMock()):
-                with patch("json.dump") as mock_dump:
-                    save_rules(rules)
+        with patch("os.makedirs"), patch("builtins.open", MagicMock()):
+            with patch("json.dump") as mock_dump:
+                save_rules(rules)
 
-                    # Verify json.dump was called
-                    mock_dump.assert_called_once()
-                    # Check that rules were converted to dicts
-                    call_args = mock_dump.call_args
-                    dumped_rules = call_args[0][0]
-                    assert len(dumped_rules) == 1
-                    assert dumped_rules[0]["id"] == "saved-rule-001"
+                # Verify json.dump was called
+                mock_dump.assert_called_once()
+                # Check that rules were converted to dicts
+                call_args = mock_dump.call_args
+                dumped_rules = call_args[0][0]
+                assert len(dumped_rules) == 1
+                assert dumped_rules[0]["id"] == "saved-rule-001"
 
     def test_load_rules_with_empty_file(self):
         """Test that load_rules returns empty list when no rules file."""
@@ -139,17 +136,16 @@ class TestAlertRules:
             )
         ]
 
-        with patch("os.makedirs"):
-            with patch("builtins.open", MagicMock()):
-                with patch("json.dump") as mock_dump:
-                    save_rules(rules)
+        with patch("os.makedirs"), patch("builtins.open", MagicMock()):
+            with patch("json.dump") as mock_dump:
+                save_rules(rules)
 
-                    # Verify json.dump was called with dict representation
-                    call_args = mock_dump.call_args
-                    dumped_rules = call_args[0][0]
-                    assert isinstance(dumped_rules, list)
-                    assert isinstance(dumped_rules[0], dict)
-                    assert dumped_rules[0]["severity"] == AlertSeverity.CRITICAL
+                # Verify json.dump was called with dict representation
+                call_args = mock_dump.call_args
+                dumped_rules = call_args[0][0]
+                assert isinstance(dumped_rules, list)
+                assert isinstance(dumped_rules[0], dict)
+                assert dumped_rules[0]["severity"] == AlertSeverity.CRITICAL
 
     def test_alert_rule_model_defaults(self):
         """Test AlertRule model has correct defaults."""

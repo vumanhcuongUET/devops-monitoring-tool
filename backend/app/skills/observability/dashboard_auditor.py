@@ -5,7 +5,7 @@ Identifies missing dashboards, duplicate detection, and health checks.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -70,7 +70,7 @@ class DashboardAuditorSkill(BaseSkill):
         },
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the dashboard auditor skill.
 
         Args:
@@ -84,7 +84,7 @@ class DashboardAuditorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run dashboard audit analysis.
 
@@ -328,7 +328,7 @@ class DashboardAuditorSkill(BaseSkill):
 
         return len(errors) == 0, errors
 
-    async def _get_dashboards(self, namespace: Optional[str]) -> list[dict[str, Any]]:
+    async def _get_dashboards(self, namespace: str | None) -> list[dict[str, Any]]:
         """Get list of dashboards from Grafana.
 
         Args:
@@ -489,7 +489,7 @@ class DashboardAuditorSkill(BaseSkill):
             title = dashboard.get("title", "").lower()
 
             # Check for similar titles
-            for existing_title in seen.keys():
+            for existing_title in seen:
                 similarity = self._calculate_similarity(title, existing_title)
                 if similarity > 0.8:  # 80% similarity threshold
                     duplicates.append(
@@ -538,7 +538,7 @@ class DashboardAuditorSkill(BaseSkill):
         Returns:
             List of stale dashboards
         """
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
 
         stale = []
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=stale_days)

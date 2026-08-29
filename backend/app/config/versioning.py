@@ -5,15 +5,14 @@ Provides version management with Git integration, rollback capabilities,
 and change tracking.
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
-from enum import Enum
 import hashlib
 import json
-import os
-from pathlib import Path
-from dataclasses import dataclass, asdict
 import logging
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +30,15 @@ class ConfigVersion:
     """Configuration version metadata."""
     version: str
     timestamp: datetime
-    config: Dict[str, Any]
+    config: dict[str, Any]
     checksum: str
     author: str
     message: str
     change_type: ChangeType
     size_bytes: int
-    parent_version: Optional[str] = None
+    parent_version: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "version": self.version,
@@ -54,7 +53,7 @@ class ConfigVersion:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConfigVersion":
+    def from_dict(cls, data: dict[str, Any]) -> "ConfigVersion":
         """Create from dictionary."""
         return cls(
             version=data["version"],
@@ -83,12 +82,12 @@ class ConfigVersionManager:
         self.versions_path = self.storage_path / "versions"
         self.versions_path.mkdir(parents=True, exist_ok=True)
         self.git_ops = git_ops
-        self._current_versions: Dict[str, str] = {}
+        self._current_versions: dict[str, str] = {}
 
     async def create_version(
         self,
         project: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         author: str,
         message: str,
         change_type: ChangeType = ChangeType.UPDATE,
@@ -207,7 +206,7 @@ class ConfigVersionManager:
         project: str,
         version_a: str,
         version_b: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Compare two versions.
 
         Args:
@@ -252,7 +251,7 @@ class ConfigVersionManager:
         project: str,
         limit: int = 50,
         offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List versions for a project.
 
         Args:
@@ -286,9 +285,9 @@ class ConfigVersionManager:
     async def get_version_history(
         self,
         project: str,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None
-    ) -> List[ConfigVersion]:
+        since: datetime | None = None,
+        until: datetime | None = None
+    ) -> list[ConfigVersion]:
         """Get version history for a project within a time range.
 
         Args:
@@ -348,9 +347,9 @@ class ConfigVersionManager:
 
     def _calculate_diff(
         self,
-        config_a: Dict[str, Any],
-        config_b: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        config_a: dict[str, Any],
+        config_b: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Calculate differences between configs."""
         changes = []
 
@@ -402,7 +401,7 @@ class ConfigVersionManager:
         self,
         project: str,
         version_id: str
-    ) -> Optional[ConfigVersion]:
+    ) -> ConfigVersion | None:
         """Get specific version."""
         project_dir = self.versions_path / project
         version_file = project_dir / f"{version_id}.json"
@@ -418,7 +417,7 @@ class ConfigVersionManager:
             logger.error(f"Failed to load version {version_id}: {e}")
             return None
 
-    async def _list_versions(self, project: str) -> List[ConfigVersion]:
+    async def _list_versions(self, project: str) -> list[ConfigVersion]:
         """List all versions for a project, sorted by timestamp."""
         project_dir = self.versions_path / project
 
@@ -439,12 +438,12 @@ class ConfigVersionManager:
         versions.sort(key=lambda v: v.timestamp, reverse=True)
         return versions
 
-    async def _get_latest_version(self, project: str) -> Optional[str]:
+    async def _get_latest_version(self, project: str) -> str | None:
         """Get latest version number."""
         versions = await self._list_versions(project)
         return versions[0].version if versions else None
 
-    async def _update_current_config(self, project: str, config: Dict[str, Any]):
+    async def _update_current_config(self, project: str, config: dict[str, Any]):
         """Update current configuration file."""
         config_file = self.storage_path / "projects" / project / "config.yaml"
 

@@ -6,7 +6,7 @@ dependency health, and timeout issues in microservices architecture.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -53,7 +53,7 @@ class TracingAnalyzerSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the tracing analyzer skill.
 
         Args:
@@ -68,7 +68,7 @@ class TracingAnalyzerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run trace analysis.
 
@@ -294,7 +294,7 @@ class TracingAnalyzerSkill(BaseSkill):
 
     async def _query_traces(
         self,
-        trace_id: Optional[str],
+        trace_id: str | None,
         service_name: str,
         time_range_hours: int,
         min_duration_ms: int,

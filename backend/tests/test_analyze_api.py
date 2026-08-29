@@ -20,7 +20,6 @@ from datetime import datetime
 
 import httpx
 
-
 # Configuration
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 API_KEY = os.getenv("API_KEY", "test-api-key")  # Replace with actual API key
@@ -68,7 +67,7 @@ async def test_analyze_incident():
         data = response.json()
         if data.get("success"):
             triage_card = data.get("triage_card")
-            print(f"✅ Triage Card generated successfully!")
+            print("✅ Triage Card generated successfully!")
             print(f"\n📋 Summary: {triage_card.get('summary', 'N/A')}")
             print(f"🚨 Severity: {triage_card.get('severity', 'N/A')}")
             print(f"📊 Status: {triage_card.get('status', 'N/A')}")

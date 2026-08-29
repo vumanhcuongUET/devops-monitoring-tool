@@ -1,15 +1,15 @@
 """Right-sizing Skill - Optimize resource sizes based on actual usage."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,14 +31,14 @@ class RightSizingSkill(BaseSkill):
     priority = SkillPriority.MEDIUM
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze resources for right-sizing opportunities.
 
@@ -82,7 +82,7 @@ class RightSizingSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Right-sizing analysis failed: {str(e)}"],
+                errors=[f"Right-sizing analysis failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -129,7 +129,7 @@ class RightSizingSkill(BaseSkill):
     async def _analyze_compute(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Analyze compute resources for right-sizing."""
         return {"resources": [], "monthly_savings": 0}
@@ -137,7 +137,7 @@ class RightSizingSkill(BaseSkill):
     async def _analyze_storage(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Analyze storage resources for right-sizing."""
         return {"resources": [], "monthly_savings": 0}

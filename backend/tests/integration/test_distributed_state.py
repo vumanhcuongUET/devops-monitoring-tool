@@ -6,8 +6,8 @@ Tests for Redis-based distributed state (alerts, approvals, rate limiting)
 """
 
 import asyncio
+
 import pytest
-import time
 
 # Mark all tests in this module as integration tests
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
@@ -175,7 +175,7 @@ class TestDistributedApprovalState:
             try:
                 await store.set_status(action_id, "approved", user="user1")
                 # Should not reach here
-                assert False, "Should have raised RuntimeError"
+                raise AssertionError("Should have raised RuntimeError")
             except RuntimeError as e:
                 assert "being modified" in str(e).lower()
 
@@ -296,8 +296,8 @@ class TestDistributedStateIntegration:
         """Test that different components use separate Redis databases."""
         from app.alerting.redis_store import RedisAlertStore
         from app.approvals.redis_store import RedisApprovalStore
-        from app.rate_limiting.redis_rate_limiter import RedisRateLimiter
         from app.config import settings
+        from app.rate_limiting.redis_rate_limiter import RedisRateLimiter
 
         # Verify each component uses its own DB
         assert settings.REDIS_DB_ALERTS == 0

@@ -14,9 +14,8 @@ Features:
 import asyncio
 import json
 import logging
-import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 try:
     import redis.asyncio as redis
@@ -47,7 +46,7 @@ class RedisApprovalStore:
         self,
         redis_host: str = "localhost",
         redis_port: int = 6379,
-        redis_password: Optional[str] = None,
+        redis_password: str | None = None,
         redis_db: int = 1,  # Separate DB for approvals
         ttl_seconds: int = 604800,  # 7 days default
         lock_ttl: int = 30,  # 30 seconds lock timeout
@@ -95,7 +94,7 @@ class RedisApprovalStore:
                 },
             })
 
-    async def get(self, action_id: str) -> Optional[dict[str, Any]]:
+    async def get(self, action_id: str) -> dict[str, Any] | None:
         """
         Get approval state for an action.
 
@@ -138,7 +137,7 @@ class RedisApprovalStore:
 
             # Build result dict
             result = {}
-            for key, value in zip(keys, values):
+            for key, value in zip(keys, values, strict=False):
                 if value:
                     key_s = key.decode() if isinstance(key, bytes) else key
                     val_s = value.decode() if isinstance(value, bytes) else value
@@ -187,9 +186,9 @@ class RedisApprovalStore:
         self,
         action_id: str,
         status: ActionStatus,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        command: Optional[str] = None,
+        user: str | None = None,
+        reason: str | None = None,
+        command: str | None = None,
         **extra_fields,
     ) -> dict[str, Any]:
         """
@@ -223,9 +222,9 @@ class RedisApprovalStore:
         self,
         action_id: str,
         updates: dict[str, Any],
-        command: Optional[str] = None,
-        created_by: Optional[str] = None,
-        extra_fields: Optional[dict[str, Any]] = None,
+        command: str | None = None,
+        created_by: str | None = None,
+        extra_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Update approval state with atomic operation and distributed lock.
@@ -354,7 +353,7 @@ class RedisApprovalStore:
             logger.error(f"RedisApprovalStore: Error deleting {action_id}: {e}")
             return False
 
-    async def acquire_lock(self, action_id: str, ttl: Optional[int] = None) -> bool:
+    async def acquire_lock(self, action_id: str, ttl: int | None = None) -> bool:
         """
         Acquire distributed lock for approval modification.
 
@@ -422,7 +421,7 @@ class RedisApprovalHistory:
         self,
         redis_host: str = "localhost",
         redis_port: int = 6379,
-        redis_password: Optional[str] = None,
+        redis_password: str | None = None,
         redis_db: int = 1,  # Same DB as approvals
         max_entries: int = 100,
         retention_days: int = 7,

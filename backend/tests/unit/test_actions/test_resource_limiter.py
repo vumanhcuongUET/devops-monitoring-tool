@@ -1,15 +1,14 @@
 """Unit tests for ResourceLimiter."""
 
-import pytest
 from unittest.mock import Mock
-from datetime import datetime, timezone
+
+import pytest
 
 from app.actions.resource_limiter import (
     ResourceLimiter,
-    ResourceType,
-    ResourceThreshold,
     ResourceStatus,
-    ResourceCheckResult,
+    ResourceThreshold,
+    ResourceType,
     get_resource_limiter,
 )
 

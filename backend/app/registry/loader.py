@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -63,7 +62,7 @@ def _save_cache(registry: RegistryConfig):
         json.dump(registry.model_dump(), f, indent=2)
 
 
-def get_project_config(project_name: str) -> Optional[ProjectConfig]:
+def get_project_config(project_name: str) -> ProjectConfig | None:
     """Get configuration for a specific project."""
     registry = load_registry()
     for project in registry.projects:
@@ -85,7 +84,7 @@ def reload_registry() -> RegistryConfig:
 
 
 # Singleton cache
-_registry_cache: Optional[RegistryConfig] = None
+_registry_cache: RegistryConfig | None = None
 
 
 def get_registry() -> RegistryConfig:

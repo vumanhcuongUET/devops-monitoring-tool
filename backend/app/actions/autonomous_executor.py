@@ -4,24 +4,21 @@ This module provides the orchestration layer for autonomous remediation,
 including rate limiting, safety checks, and audit logging.
 """
 
-import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Any, Dict
-from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
+from app.actions.rate_limiter import AutonomousRateLimiter
 from app.actions.remediation_actions import (
     RemediationActionFactory,
     RemediationActionType,
 )
-from app.models.alerts import AlertEvent, AlertRule
 from app.models.actions import ExecutionResult
-from app.actions.rate_limiter import AutonomousRateLimiter
+from app.models.alerts import AlertEvent, AlertRule
+
+from app.audit.logger import AuditLogger
 
 # Backwards-compat alias (class now lives in app.actions.rate_limiter)
 RateLimiter = AutonomousRateLimiter
-from app.audit.logger import AuditLogger, AuditEventType
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +36,7 @@ class SafetyChecker:
     RISK_REQUIRING_APPROVAL = {"critical", "high"}
 
     @classmethod
-    def check_environment(cls, environment: str) -> tuple[bool, Optional[str]]:
+    def check_environment(cls, environment: str) -> tuple[bool, str | None]:
         """Check if environment allows autonomous actions.
 
         Args:
@@ -54,7 +51,7 @@ class SafetyChecker:
         return True, None
 
     @classmethod
-    def check_risk_level(cls, risk_level: str) -> tuple[bool, Optional[str]]:
+    def check_risk_level(cls, risk_level: str) -> tuple[bool, str | None]:
         """Check if risk level requires approval.
 
         Args:
@@ -69,7 +66,7 @@ class SafetyChecker:
         return True, None
 
     @classmethod
-    def check_cooldown(cls, action_type: str, last_execution: Optional[datetime]) -> tuple[bool, Optional[str]]:
+    def check_cooldown(cls, action_type: str, last_execution: datetime | None) -> tuple[bool, str | None]:
         """Check if sufficient cooldown has passed since last execution.
 
         Args:
@@ -98,7 +95,7 @@ class AutonomousExecutor:
         """Initialize autonomous executor."""
         self.rate_limiter = AutonomousRateLimiter(max_per_hour=3)
         self.audit_logger = AuditLogger()
-        self._last_executions: Dict[str, datetime] = {}
+        self._last_executions: dict[str, datetime] = {}
 
     async def execute_autonomous_action(
         self,
@@ -255,7 +252,7 @@ class AutonomousExecutor:
 
 
 # Singleton instance
-_executor: Optional[AutonomousExecutor] = None
+_executor: AutonomousExecutor | None = None
 
 
 def get_autonomous_executor() -> AutonomousExecutor:

@@ -9,15 +9,15 @@ This skill analyzes alert patterns to:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class AlertOptimizerSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the Alert Optimizer skill."""
         super().__init__(config)
 
@@ -54,7 +54,7 @@ class AlertOptimizerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze alert patterns and optimization opportunities.
 
@@ -124,8 +124,8 @@ class AlertOptimizerSkill(BaseSkill):
     async def _get_alert_history(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        context: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """Get alert history for analysis.
 
         Returns:
@@ -167,8 +167,8 @@ class AlertOptimizerSkill(BaseSkill):
     async def _get_alert_rules(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        context: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """Get current alert rules.
 
         Returns:
@@ -192,7 +192,7 @@ class AlertOptimizerSkill(BaseSkill):
             },
         ]
 
-    def _identify_noise_alerts(self, alert_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _identify_noise_alerts(self, alert_history: list[dict[str, Any]]) -> dict[str, Any]:
         """Identify noisy alerts that fire frequently.
 
         Returns:
@@ -219,7 +219,7 @@ class AlertOptimizerSkill(BaseSkill):
             "noise_percentage": round(len(noise_alerts) / max(len(alert_counts), 1) * 100, 1),
         }
 
-    def _detect_duplicate_alerts(self, alert_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _detect_duplicate_alerts(self, alert_history: list[dict[str, Any]]) -> dict[str, Any]:
         """Detect duplicate or overlapping alerts.
 
         Returns:
@@ -259,7 +259,7 @@ class AlertOptimizerSkill(BaseSkill):
             "duplicates": duplicates,
         }
 
-    def _detect_alert_storms(self, alert_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _detect_alert_storms(self, alert_history: list[dict[str, Any]]) -> dict[str, Any]:
         """Detect alert storms (many alerts firing in short time).
 
         Returns:
@@ -291,9 +291,9 @@ class AlertOptimizerSkill(BaseSkill):
 
     def _analyze_rule_efficiency(
         self,
-        alert_history: List[Dict[str, Any]],
-        alert_rules: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        alert_history: list[dict[str, Any]],
+        alert_rules: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Analyze alert rule efficiency.
 
         Returns:
@@ -329,11 +329,11 @@ class AlertOptimizerSkill(BaseSkill):
 
     def _generate_optimization_recommendations(
         self,
-        noise_alerts: Dict[str, Any],
-        duplicate_alerts: Dict[str, Any],
-        alert_storms: Dict[str, Any],
-        rule_efficiency: Dict[str, Any],
-    ) -> List[Recommendation]:
+        noise_alerts: dict[str, Any],
+        duplicate_alerts: dict[str, Any],
+        alert_storms: dict[str, Any],
+        rule_efficiency: dict[str, Any],
+    ) -> list[Recommendation]:
         """Generate alert optimization recommendations.
 
         Returns:
@@ -412,8 +412,8 @@ class AlertOptimizerSkill(BaseSkill):
 
     def _calculate_confidence(
         self,
-        alert_history: List[Dict[str, Any]],
-        alert_rules: List[Dict[str, Any]],
+        alert_history: list[dict[str, Any]],
+        alert_rules: list[dict[str, Any]],
     ) -> float:
         """Calculate confidence in the analysis.
 

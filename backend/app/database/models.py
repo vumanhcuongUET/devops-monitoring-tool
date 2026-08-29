@@ -11,7 +11,6 @@ Features:
 """
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import (
     JSON,
@@ -22,7 +21,6 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.sql import func
 
 from app.database.base import Base
 

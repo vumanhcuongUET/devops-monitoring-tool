@@ -1,8 +1,7 @@
 """Rate limiter middleware - supports both in-memory and Redis-based limiting."""
-import time
 import logging
+import time
 from collections import defaultdict
-from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -37,7 +36,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         app,
         requests_per_minute: int = 60,
         burst: int = 20,
-        trusted_proxies: Optional[list[str]] = None,
+        trusted_proxies: list[str] | None = None,
         use_redis: bool = False,
     ):
         super().__init__(app)
@@ -114,7 +113,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         direct_ip = request.client.host if request.client else "unknown"
         return f"ip:{direct_ip}"
 
-    async def _is_limited_redis(self, client_id: str) -> tuple[bool, Optional[dict]]:
+    async def _is_limited_redis(self, client_id: str) -> tuple[bool, dict | None]:
         """Check Redis-based rate limit.
 
         Returns:
@@ -150,7 +149,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window.append(now)
         return False
 
-    async def _is_limited_memory(self, client_id: str) -> tuple[bool, Optional[dict]]:
+    async def _is_limited_memory(self, client_id: str) -> tuple[bool, dict | None]:
         """Check in-memory rate limit with info dict.
 
         Returns:

@@ -5,16 +5,15 @@ Phase 6: AI Input Optimization & Cost Efficiency
 Day 2: Enhanced testing for anomaly detection capabilities
 """
 
-import pytest
-import asyncio
 from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.services.__tests__.data_generator import TestDataGenerator
 from app.services.anomaly_detector import (
     AnomalyDetector,
-    AnomalyThresholds,
-    AnomalyResult,
-    AnomalyScore
+    AnomalyScore,
 )
-from app.services.__tests__.data_generator import TestDataGenerator
 from app.services.token_optimizer import OptimizationConfig
 
 

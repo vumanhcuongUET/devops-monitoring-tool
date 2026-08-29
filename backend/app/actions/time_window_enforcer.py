@@ -2,9 +2,9 @@
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, time
-from typing import Optional, Dict, Any, List
+from datetime import datetime, time, timezone
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -26,21 +26,21 @@ class SafeHoursWindow:
     start_hour: int = 9  # Start hour (24-hour format)
     end_hour: int = 17  # End hour (24-hour format)
     timezone: str = "UTC"  # Timezone for the window
-    allowed_days: Optional[List[int]] = None  # 0=Monday, 6=Sunday (for CUSTOM type)
+    allowed_days: list[int] | None = None  # 0=Monday, 6=Sunday (for CUSTOM type)
     emergency_override: bool = False  # Allow override for emergencies
-    environments: List[str] = field(default_factory=lambda: ["production"])  # Which envs apply
+    environments: list[str] = field(default_factory=lambda: ["production"])  # Which envs apply
 
 
 @dataclass
 class WindowCheckResult:
     """Result of checking if an action is within safe hours."""
     is_allowed: bool
-    window_name: Optional[str] = None
+    window_name: str | None = None
     reason: str = ""
     current_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    window_start: Optional[time] = None
-    window_end: Optional[time] = None
-    next_allowed_time: Optional[datetime] = None
+    window_start: time | None = None
+    window_end: time | None = None
+    next_allowed_time: datetime | None = None
     emergency_override_available: bool = False
 
 
@@ -56,8 +56,8 @@ class TimeWindowEnforcer:
 
     def __init__(self):
         """Initialize the time window enforcer."""
-        self._windows: Dict[str, SafeHoursWindow] = {}
-        self._environment_windows: Dict[str, str] = {}  # env -> window name
+        self._windows: dict[str, SafeHoursWindow] = {}
+        self._environment_windows: dict[str, str] = {}  # env -> window name
 
         # Load default windows
         self._load_default_windows()
@@ -149,7 +149,7 @@ class TimeWindowEnforcer:
     def check_time_window(
         self,
         environment: str,
-        action_time: Optional[datetime] = None,
+        action_time: datetime | None = None,
         allow_emergency_override: bool = False,
     ) -> WindowCheckResult:
         """Check if an action is allowed at the given time.
@@ -295,7 +295,7 @@ class TimeWindowEnforcer:
     def get_safe_hours(
         self,
         environment: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get safe hours information for an environment.
 
         Args:
@@ -323,7 +323,7 @@ class TimeWindowEnforcer:
             "emergency_override": window.emergency_override,
         }
 
-    def list_windows(self) -> List[str]:
+    def list_windows(self) -> list[str]:
         """List all available time window names.
 
         Returns:
@@ -331,7 +331,7 @@ class TimeWindowEnforcer:
         """
         return list(self._windows.keys())
 
-    def get_window(self, name: str) -> Optional[SafeHoursWindow]:
+    def get_window(self, name: str) -> SafeHoursWindow | None:
         """Get a time window by name.
 
         Args:
@@ -344,7 +344,7 @@ class TimeWindowEnforcer:
 
 
 # Global singleton instance
-_time_window_enforcer: Optional[TimeWindowEnforcer] = None
+_time_window_enforcer: TimeWindowEnforcer | None = None
 
 
 def get_time_window_enforcer() -> TimeWindowEnforcer:

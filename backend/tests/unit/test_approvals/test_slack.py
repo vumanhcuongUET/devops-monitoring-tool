@@ -1,10 +1,17 @@
 """Unit tests for Slack Approval Notifier."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.approvals.slack import SlackApprovalNotifier, get_slack_approval_notifier
-from app.models.actions import Action, ActionStatus, CommandType, RiskLevel, ExecutionResult
+from app.models.actions import (
+    Action,
+    ActionStatus,
+    CommandType,
+    ExecutionResult,
+    RiskLevel,
+)
 
 
 @pytest.fixture
@@ -410,7 +417,6 @@ class TestSlackApprovalNotifierSingleton:
 
     def test_get_slack_approval_notifier_returns_singleton(self):
         """Test that get_slack_approval_notifier returns same instance."""
-        from app.approvals.slack import get_slack_approval_notifier
 
         notifier1 = get_slack_approval_notifier()
         notifier2 = get_slack_approval_notifier()
@@ -419,7 +425,7 @@ class TestSlackApprovalNotifierSingleton:
 
     def test_get_slack_approval_notifier_initializes_new_instance(self):
         """Test that first call initializes the notifier."""
-        from app.approvals.slack import get_slack_approval_notifier, _slack_notifier
+        from app.approvals.slack import _slack_notifier
         _slack_notifier = None
 
         notifier = get_slack_approval_notifier()

@@ -5,8 +5,7 @@ Calculates SLO status, error budget remaining, and breach probability.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.services.prometheus_client import PrometheusClient
 from app.skills.base import (
@@ -60,7 +59,7 @@ class SLOTrackerSkill(BaseSkill):
         "error_rate": 0.1,  # < 0.1% error rate
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the SLO tracker skill.
 
         Args:
@@ -73,7 +72,7 @@ class SLOTrackerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run SLO compliance analysis.
 

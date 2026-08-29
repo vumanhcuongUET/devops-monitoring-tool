@@ -12,10 +12,8 @@ Author: Phase 8 Sprint 4 (Day 15)
 Date: 2026-08-24
 """
 
-import pytest
-import time
 import os
-from typing import Dict
+import time
 
 # Staging environment URL
 STAGING_URL = os.getenv("STAGING_URL", "http://localhost:8000")
@@ -338,7 +336,7 @@ class TestAcceptanceCriteria:
 
 
 # Smoke test runner
-def run_smoke_tests(base_url: str = None) -> Dict[str, bool]:
+def run_smoke_tests(base_url: str = None) -> dict[str, bool]:
     """Run smoke tests and return results.
 
     Args:

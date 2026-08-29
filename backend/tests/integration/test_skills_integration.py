@@ -1,12 +1,8 @@
 """Integration tests for Skills system."""
 
 import pytest
-import pytest_asyncio
 
 from app.skills.registry import SkillRegistry
-from app.skills.capacity.planner import CapacityPlannerSkill
-from app.skills.security.vulnerability_scanner import VulnerabilityScannerSkill
-from app.skills.finops.cost_analyzer import CostAnalyzerSkill
 
 
 @pytest.fixture

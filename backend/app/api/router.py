@@ -1,21 +1,21 @@
 from fastapi import APIRouter
 
-from app.api.v1.overview import router as overview_router
-from app.api.v1.logs import router as logs_router
+from app.api.v1 import config as config_router  # Phase 7 Sprint 4
+from app.api.v1.actions import router as actions_router  # Phase 2
+from app.api.v1.agents import router as agents_router  # Phase 10 Sprint 3
+from app.api.v1.alerts import router as alerts_router
+from app.api.v1.analyze import router as analyze_router
 from app.api.v1.apm import router as apm_router
+from app.api.v1.autonomous import router as autonomous_router  # Phase 4
+from app.api.v1.governance import router as governance_router  # Phase 3
 from app.api.v1.infrastructure import router as infra_router
 from app.api.v1.kubernetes import router as k8s_router
-from app.api.v1.alerts import router as alerts_router
-from app.api.v1.slo import router as slo_router
-from app.api.v1.analyze import router as analyze_router
-from app.api.v1.agents import router as agents_router  # Phase 10 Sprint 3
-from app.api.v1.actions import router as actions_router  # Phase 2
-from app.api.v1.skills import router as skills_router  # Phase 3
-from app.api.v1.governance import router as governance_router  # Phase 3
+from app.api.v1.logs import router as logs_router
 from app.api.v1.metrics import router as metrics_router  # Observability
-from app.api.v1.autonomous import router as autonomous_router  # Phase 4
 from app.api.v1.optimization import router as optimization_router  # Phase 7 Sprint 3
-from app.api.v1 import config as config_router  # Phase 7 Sprint 4
+from app.api.v1.overview import router as overview_router
+from app.api.v1.skills import router as skills_router  # Phase 3
+from app.api.v1.slo import router as slo_router
 from app.approvals.webhook import router as approvals_webhook_router  # Phase 2
 
 v1_router = APIRouter(prefix="/api/v1")

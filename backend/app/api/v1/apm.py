@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_apm_client
-from app.models.apm import Transaction, ApmError, ApmSummary
+from app.models.apm import ApmError, ApmSummary, Transaction
 from app.security import validate_identifier
 from app.services.apm_client import ApmClient
 

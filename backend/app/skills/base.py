@@ -3,7 +3,8 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -62,7 +63,7 @@ class Recommendation(BaseModel):
     description: str = Field(..., description="Detailed description")
     priority: SkillPriority = Field(default=SkillPriority.MEDIUM)
     action_type: str = Field(default="manual", description="Type of action: manual, automated, hybrid")
-    estimated_effort: Optional[str] = Field(None, description="Estimated effort to implement")
+    estimated_effort: str | None = Field(None, description="Estimated effort to implement")
     risk_level: str = Field(default="low", description="Risk level: low, medium, high, critical")
     commands: list[str] = Field(default_factory=list, description="Suggested commands")
     references: list[str] = Field(default_factory=list, description="Reference links")
@@ -76,7 +77,7 @@ class SkillConfig(BaseModel):
     timeout_seconds: int = Field(default=300, ge=1, le=3600)
     max_retries: int = Field(default=3, ge=0, le=10)
     parameters: dict[str, Any] = Field(default_factory=dict)
-    schedule: Optional[str] = Field(None, description="Cron schedule for recurring execution")
+    schedule: str | None = Field(None, description="Cron schedule for recurring execution")
 
 
 class BaseSkill(ABC):
@@ -96,7 +97,7 @@ class BaseSkill(ABC):
     # Set via SkillRegistry.STUB_SKILLS; subclasses may also declare it directly.
     implemented: bool = True
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the skill with optional configuration.
 
         Args:
@@ -110,7 +111,7 @@ class BaseSkill(ABC):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run the skill analysis.
 
@@ -122,7 +123,6 @@ class BaseSkill(ABC):
         Returns:
             AnalysisResult containing findings
         """
-        pass
 
     @abstractmethod
     async def get_recommendations(
@@ -139,7 +139,6 @@ class BaseSkill(ABC):
         Returns:
             List of recommendations
         """
-        pass
 
     def get_metadata(self) -> dict[str, Any]:
         """Get skill metadata.
@@ -236,7 +235,7 @@ class SkillExecutionError(Exception):
         self,
         skill_id: str,
         message: str,
-        details: Optional[dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         """Initialize the exception.
 
@@ -253,7 +252,6 @@ class SkillExecutionError(Exception):
 class SkillTimeoutError(SkillExecutionError):
     """Exception raised when skill execution times out."""
 
-    pass
 
 
 class SkillValidationError(Exception):

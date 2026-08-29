@@ -6,8 +6,11 @@ Purpose: Configure Alembic for database migrations
 """
 
 import asyncio
-import logging
+
+# Import settings and models
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -15,19 +18,14 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Import settings and models
-import sys
-from pathlib import Path
-
 # Add backend to path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from app.config import settings
-from app.database.base import Base
-
 # Import all models to ensure they're registered with SQLAlchemy
 import app.database.models  # noqa: F401
+from app.config import settings
+from app.database.base import Base
 
 # Alembic Config object
 config = context.config

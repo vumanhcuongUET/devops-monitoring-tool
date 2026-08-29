@@ -4,13 +4,14 @@ import logging.config
 from contextlib import asynccontextmanager
 
 import fastapi.responses
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.router import api_router
-from app.api.ws.live import router as ws_router, manager as ws_manager
-from app.auth import api_key_auth, bearer_auth, _is_valid_api_key, _is_valid_token
+from app.api.ws.live import manager as ws_manager
+from app.api.ws.live import router as ws_router
+from app.auth import _is_valid_api_key, _is_valid_token
 from app.config import settings
 from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import RateLimitMiddleware
@@ -62,22 +63,30 @@ async def lifespan(app: FastAPI):
     logger.info("Phase 9 Sprint 4: OpenTelemetry tracing initialized")
 
     # Import service clients (localized imports for clarity)
-    from app.services.elasticsearch_client import ElasticsearchClient
-    from app.services.prometheus_client import PrometheusClient
-    from app.services.kubernetes_client import KubernetesClient
-    from app.services.apm_client import ApmClient
-    from app.services.slo_client import SloClient
-    from app.alerting.engine import AlertEngine
-    from app.alerting.slo_reporter import SloReporter
     # Phase 2: Action Engine
     from app.actions.engine import get_action_engine
-    from app.approvals.store import get_approval_tracker
-    # Phase 7 Sprint 3: Performance Optimization
-    from app.optimization import QueryOptimizer, ConnectionPoolManager, RateLimiter
-    from app.api.v1 import optimization as optimization_api
-    # Phase 7 Sprint 4: Configuration Management
-    from app.config import ConfigValidator, ConfigVersionManager, GitOpsManager, AuditLogger, ConfigSecurity
+    from app.alerting.engine import AlertEngine
+    from app.alerting.slo_reporter import SloReporter
     from app.api.v1 import config as config_api
+    from app.api.v1 import optimization as optimization_api
+    from app.approvals.store import get_approval_tracker
+
+    # Phase 7 Sprint 4: Configuration Management
+    from app.config import (
+        AuditLogger,
+        ConfigSecurity,
+        ConfigValidator,
+        ConfigVersionManager,
+        GitOpsManager,
+    )
+
+    # Phase 7 Sprint 3: Performance Optimization
+    from app.optimization import ConnectionPoolManager, QueryOptimizer, RateLimiter
+    from app.services.apm_client import ApmClient
+    from app.services.elasticsearch_client import ElasticsearchClient
+    from app.services.kubernetes_client import KubernetesClient
+    from app.services.prometheus_client import PrometheusClient
+    from app.services.slo_client import SloClient
 
     app.state.es_client = ElasticsearchClient()
     app.state.prometheus_client = PrometheusClient()

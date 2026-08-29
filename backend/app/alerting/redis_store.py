@@ -14,8 +14,7 @@ Features:
 import asyncio
 import json
 import logging
-import time
-from typing import Any, Optional
+from typing import Any
 
 try:
     import redis.asyncio as redis
@@ -44,7 +43,7 @@ class RedisAlertStore:
         self,
         redis_host: str = "localhost",
         redis_port: int = 6379,
-        redis_password: Optional[str] = None,
+        redis_password: str | None = None,
         redis_db: int = 0,
         ttl_seconds: int = 86400,  # 24 hours default
         lock_ttl: int = 30,  # 30 seconds lock timeout
@@ -75,7 +74,7 @@ class RedisAlertStore:
         self.ttl_seconds = ttl_seconds
         self.lock_ttl = lock_ttl
 
-    async def get(self, rule_id: str) -> Optional[dict[str, Any]]:
+    async def get(self, rule_id: str) -> dict[str, Any] | None:
         """
         Get alert state for a rule.
 
@@ -308,7 +307,7 @@ class RedisAlertStore:
             logger.error(f"RedisAlertStore: Error getting firing count: {e}")
             return 0
 
-    async def acquire_lock(self, alert_id: str, ttl: Optional[int] = None) -> bool:
+    async def acquire_lock(self, alert_id: str, ttl: int | None = None) -> bool:
         """
         Acquire distributed lock for alert modification.
 
@@ -376,7 +375,7 @@ class RedisAlertHistory:
         self,
         redis_host: str = "localhost",
         redis_port: int = 6379,
-        redis_password: Optional[str] = None,
+        redis_password: str | None = None,
         redis_db: int = 0,
         max_entries: int = 100,
         retention_days: int = 7,
@@ -435,7 +434,7 @@ class RedisAlertHistory:
             logger.error(f"RedisAlertHistory: Error adding event: {e}")
             return False
 
-    async def get_entries(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
+    async def get_entries(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get recent history entries.
 

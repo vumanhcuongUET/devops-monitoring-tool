@@ -1,10 +1,10 @@
 """Chain monitoring and alerting for action chaining prevention."""
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Dict, Any
 from datetime import datetime, timezone
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,8 @@ class ChainEvent:
     chain_count: int
     chain_limit: int
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    user: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    user: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -45,8 +45,8 @@ class ChainMonitor:
 
     def __init__(
         self,
-        config: Optional[ChainMonitorConfig] = None,
-        alert_callback: Optional[Callable[[ChainEvent], None]] = None,
+        config: ChainMonitorConfig | None = None,
+        alert_callback: Callable[[ChainEvent], None] | None = None,
     ):
         """Initialize the chain monitor.
 
@@ -56,7 +56,7 @@ class ChainMonitor:
         """
         self.config = config or ChainMonitorConfig()
         self._alert_callback = alert_callback
-        self._last_warning: Dict[tuple, datetime] = {}  # Track last warning per (project, action_type)
+        self._last_warning: dict[tuple, datetime] = {}  # Track last warning per (project, action_type)
 
     def update_config(self, config: ChainMonitorConfig) -> None:
         """Update chain monitor configuration.
@@ -80,8 +80,8 @@ class ChainMonitor:
         action_type: str,
         chain_count: int,
         chain_limit: int,
-        user: Optional[str] = None,
-    ) -> Optional[ChainEvent]:
+        user: str | None = None,
+    ) -> ChainEvent | None:
         """Check chain status and trigger alerts if needed.
 
         Args:
@@ -150,7 +150,7 @@ class ChainMonitor:
 
         return event
 
-    def reset_tracking(self, project: Optional[str] = None, action_type: Optional[str] = None) -> None:
+    def reset_tracking(self, project: str | None = None, action_type: str | None = None) -> None:
         """Reset chain tracking for specific project/action type or all.
 
         Args:
@@ -243,12 +243,12 @@ def audit_chain_event(event: ChainEvent) -> None:
 
 
 # Global singleton instance
-_chain_monitor: Optional[ChainMonitor] = None
+_chain_monitor: ChainMonitor | None = None
 
 
 def get_chain_monitor(
-    config: Optional[ChainMonitorConfig] = None,
-    alert_callback: Optional[Callable[[ChainEvent], None]] = None,
+    config: ChainMonitorConfig | None = None,
+    alert_callback: Callable[[ChainEvent], None] | None = None,
 ) -> ChainMonitor:
     """Get or create the global ChainMonitor instance.
 

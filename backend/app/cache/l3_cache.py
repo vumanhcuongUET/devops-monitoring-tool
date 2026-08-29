@@ -22,9 +22,9 @@ Features:
 import hashlib
 import json
 import logging
-from typing import Any, Dict, List, Optional, Set
-from datetime import datetime, timedelta
 from collections import defaultdict
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class SemanticCache:
     def _generate_semantic_key(
         self,
         incident_type: str,
-        patterns: List[str]
+        patterns: list[str]
     ) -> str:
         """
         Generate semantic key from incident type and patterns.
@@ -109,8 +109,8 @@ class SemanticCache:
     async def get(
         self,
         incident_type: str,
-        patterns: List[str]
-    ) -> Optional[Dict[str, Any]]:
+        patterns: list[str]
+    ) -> dict[str, Any] | None:
         """
         Get cached result for semantic pattern.
 
@@ -152,10 +152,10 @@ class SemanticCache:
     async def set(
         self,
         incident_type: str,
-        patterns: List[str],
-        analysis: Dict[str, Any],
-        ttl: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        patterns: list[str],
+        analysis: dict[str, Any],
+        ttl: int | None = None,
+        metadata: dict[str, Any] | None = None
     ) -> bool:
         """
         Cache analysis with semantic patterns.
@@ -194,8 +194,8 @@ class SemanticCache:
 
     def _calculate_pattern_match(
         self,
-        patterns1: List[str],
-        patterns2: List[str]
+        patterns1: list[str],
+        patterns2: list[str]
     ) -> float:
         """
         Calculate pattern match score using Jaccard similarity.
@@ -226,10 +226,10 @@ class SemanticCache:
     async def find_similar(
         self,
         incident_type: str,
-        patterns: List[str],
+        patterns: list[str],
         threshold: float = 0.5,
         max_results: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Find semantically similar cached incidents.
 
@@ -295,9 +295,9 @@ class SemanticCache:
     async def get_partial_match(
         self,
         incident_type: str,
-        patterns: List[str],
+        patterns: list[str],
         min_patterns: int = 2
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get cache with partial pattern match.
 
@@ -366,7 +366,7 @@ class SemanticCache:
             logger.error(f"SemanticCache: Error invalidating pattern: {e}")
             return 0
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """
         Get semantic cache statistics.
 
@@ -437,8 +437,8 @@ class PatternExtractor:
 
     def extract_patterns(
         self,
-        incident: Dict[str, Any]
-    ) -> List[str]:
+        incident: dict[str, Any]
+    ) -> list[str]:
         """
         Extract key patterns from incident.
 
@@ -499,7 +499,7 @@ class PatternExtractor:
         # Deduplicate and return
         return list(set(patterns))
 
-    def _extract_error_patterns(self, error_msg: str) -> List[str]:
+    def _extract_error_patterns(self, error_msg: str) -> list[str]:
         """Extract patterns from error message."""
         patterns = []
         error_lower = error_msg.lower()
@@ -510,7 +510,7 @@ class PatternExtractor:
 
         return patterns
 
-    def _extract_metric_patterns(self, metrics: Dict[str, Any]) -> List[str]:
+    def _extract_metric_patterns(self, metrics: dict[str, Any]) -> list[str]:
         """Extract patterns from metrics data."""
         patterns = []
 
@@ -550,8 +550,8 @@ class PatternExtractor:
 
     def extract_alerting_patterns(
         self,
-        alert: Dict[str, Any]
-    ) -> List[str]:
+        alert: dict[str, Any]
+    ) -> list[str]:
         """
         Extract patterns specifically from alerting data.
 
@@ -593,8 +593,8 @@ class PatternExtractor:
 
     def suggest_patterns(
         self,
-        incidents: List[Dict[str, Any]]
-    ) -> List[str]:
+        incidents: list[dict[str, Any]]
+    ) -> list[str]:
         """
         Suggest common patterns from multiple incidents.
 
@@ -621,7 +621,7 @@ class PatternExtractor:
         # Format as "pattern:count"
         return [f"{p}:{c}" for p, c in sorted_patterns]
 
-    def get_pattern_stats(self) -> Dict[str, int]:
+    def get_pattern_stats(self) -> dict[str, int]:
         """
         Get statistics about extracted patterns.
 

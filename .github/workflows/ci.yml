@@ -12,9 +12,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, staging]
+    branches: [master, main, develop, staging]
   pull_request:
-    branches: [main, develop]
+    branches: [master, main, develop]
   workflow_dispatch:  # Allow manual triggering
 
 env:
@@ -44,16 +44,18 @@ jobs:
       - name: Install linting tools
         run: |
           cd backend
-          pip install ruff black mypy
+          pip install ruff bandit
+
+      # Phase 11 Sprint 4: all three gates blocking. Rules pinned in
+      # backend/ruff.toml; bandit gates on MEDIUM+ (-ll).
+      - name: Syntax gate (compileall)
+        run: cd backend && python -m compileall -q app
 
       - name: Run ruff
         run: cd backend && ruff check .
 
-      - name: Run black
-        run: cd backend && black --check .
-
-      - name: Run mypy
-        run: cd backend && mypy app/ || true  # Don't fail on type errors yet
+      - name: Run bandit (MEDIUM+ severity)
+        run: cd backend && bandit -r app -q -ll
 
 
   # =============================================================================

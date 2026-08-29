@@ -2,7 +2,8 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -30,8 +31,8 @@ class ChainOfThoughtEntry(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     step_number: int = Field(..., description="Step number in the chain")
     thought: str = Field(..., description="The reasoning step")
-    data: Optional[dict[str, Any]] = Field(None, description="Supporting data for this step")
-    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Confidence in this reasoning")
+    data: dict[str, Any] | None = Field(None, description="Supporting data for this step")
+    confidence: float | None = Field(None, ge=0.0, le=1.0, description="Confidence in this reasoning")
 
 
 class AuditEntry(BaseModel):
@@ -43,13 +44,13 @@ class AuditEntry(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the event occurred")
 
     # Actor
-    user: Optional[str] = Field(None, description="User who initiated the event (if applicable)")
+    user: str | None = Field(None, description="User who initiated the event (if applicable)")
     service: str = Field(default="system", description="Service/component that generated the event")
 
     # Related entities
-    action_id: Optional[str] = Field(None, description="Related action ID")
-    triage_card_id: Optional[str] = Field(None, description="Related Triage Card ID")
-    project: Optional[str] = Field(None, description="Related project name")
+    action_id: str | None = Field(None, description="Related action ID")
+    triage_card_id: str | None = Field(None, description="Related Triage Card ID")
+    project: str | None = Field(None, description="Related project name")
 
     # Event details
     details: dict[str, Any] = Field(
@@ -58,22 +59,22 @@ class AuditEntry(BaseModel):
     )
 
     # Chain of Thought (for AI-generated actions)
-    chain_of_thought: Optional[list[ChainOfThoughtEntry]] = Field(
+    chain_of_thought: list[ChainOfThoughtEntry] | None = Field(
         None,
         description="AI reasoning chain (if applicable)"
     )
 
     # Execution details
-    execution_duration_seconds: Optional[float] = Field(
+    execution_duration_seconds: float | None = Field(
         None,
         description="Duration of execution (if applicable)"
     )
-    success: Optional[bool] = Field(None, description="Whether the operation succeeded")
+    success: bool | None = Field(None, description="Whether the operation succeeded")
 
     # Security context
-    ip_address: Optional[str] = Field(None, description="IP address of the requestor")
-    user_agent: Optional[str] = Field(None, description="User agent string")
-    session_id: Optional[str] = Field(None, description="Session identifier")
+    ip_address: str | None = Field(None, description="IP address of the requestor")
+    user_agent: str | None = Field(None, description="User agent string")
+    session_id: str | None = Field(None, description="Session identifier")
 
     # Metadata
     metadata: dict[str, Any] = Field(
@@ -85,13 +86,13 @@ class AuditEntry(BaseModel):
 class AuditLogQuery(BaseModel):
     """Query parameters for filtering audit logs."""
 
-    event_types: Optional[list[AuditEventType]] = None
-    action_id: Optional[str] = None
-    triage_card_id: Optional[str] = None
-    project: Optional[str] = None
-    user: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    event_types: list[AuditEventType] | None = None
+    action_id: str | None = None
+    triage_card_id: str | None = None
+    project: str | None = None
+    user: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     limit: int = Field(default=100, ge=1, le=1000)
     offset: int = Field(default=0, ge=0)
 

@@ -9,12 +9,11 @@ Run with: pytest backend/tests/security/test_security_hardening.py -v -m securit
 
 import asyncio
 import os
-from unittest.mock import Mock, patch
 
 import pytest
 
-from app.security import SSRFProtection
 from app.config import settings
+from app.security import SSRFProtection
 
 
 @pytest.mark.security

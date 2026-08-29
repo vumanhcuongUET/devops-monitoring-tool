@@ -11,8 +11,7 @@ Run this script to verify Sprint 2 completion:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
-
+from typing import Any
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -22,7 +21,7 @@ class Sprint2Validator:
     """Validates all Sprint 2 deliverables."""
 
     def __init__(self):
-        self.results: Dict[str, Any] = {
+        self.results: dict[str, Any] = {
             "passed": [],
             "failed": [],
             "skipped": [],
@@ -50,7 +49,6 @@ class Sprint2Validator:
 
         try:
             from app.services.connection_pool import (
-                ConnectionPoolManager,
                 get_pool_manager,
             )
 
@@ -99,7 +97,6 @@ class Sprint2Validator:
         try:
             from app.services.batch_optimizer import (
                 BatchOptimizer,
-                get_batch_optimizer,
             )
 
             # Test batch optimizer creation
@@ -261,10 +258,6 @@ class Sprint2Validator:
 
         try:
             # Check imports work together
-            from app.services.connection_pool import get_pool_manager
-            from app.services.batch_optimizer import BatchOptimizer
-            from app.services.llm_client import LLMClient
-            from app.api.v1.analyze import router
 
             self.print_result("All imports successful", True)
 
@@ -272,10 +265,10 @@ class Sprint2Validator:
             self.print_result("No circular imports", True)
 
             # Check service clients use connection pools
-            from app.services.elasticsearch_client import ElasticsearchClient
-
             # Elasticsearch client should have max_connections in init
             import inspect
+
+            from app.services.elasticsearch_client import ElasticsearchClient
             es_init_source = inspect.getsource(ElasticsearchClient.__init__)
             has_pooling = "max_connections" in es_init_source or "ES_MAX_CONNECTIONS" in es_init_source
             self.print_result(

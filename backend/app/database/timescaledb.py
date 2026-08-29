@@ -13,7 +13,6 @@ Features:
 from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Float, Index, String, Text
-from sqlalchemy.sql import func
 
 from app.database.base import Base
 
@@ -171,7 +170,7 @@ class MetricRepository:
         Returns:
             List of {time, value} dicts
         """
-        from sqlalchemy import select, and_
+        from sqlalchemy import and_, select
 
         stmt = select(Metric).where(
             and_(
@@ -278,6 +277,7 @@ class MetricRepository:
             Number of metrics deleted
         """
         from datetime import timedelta
+
         from sqlalchemy import delete
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)

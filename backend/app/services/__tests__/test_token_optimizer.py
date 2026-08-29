@@ -4,21 +4,19 @@ Unit tests for Token Optimizer components.
 Phase 6: AI Input Optimization & Cost Efficiency
 """
 
-import pytest
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime, timezone
 
+import pytest
+
+from app.services.anomaly_detector import AnomalyDetector
+from app.services.log_sampler import LogSampler
+from app.services.time_series_compressor import TimeSeriesCompressor
 from app.services.token_optimizer import (
-    TokenOptimizer,
     OptimizationConfig,
     OptimizationResult,
     OptimizationStrategy,
+    TokenOptimizer,
     get_token_optimizer,
 )
-from app.services.anomaly_detector import AnomalyDetector, AnomalyThresholds
-from app.services.log_sampler import LogSampler
-from app.services.time_series_compressor import TimeSeriesCompressor
 
 
 class TestAnomalyDetector:

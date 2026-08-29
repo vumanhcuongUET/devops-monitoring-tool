@@ -8,16 +8,16 @@ This skill analyzes SLO data to:
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class SLOTrackerSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the SLO Tracker skill."""
         super().__init__(config)
 
@@ -54,7 +54,7 @@ class SLOTrackerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze SLO compliance and error budget.
 
@@ -138,8 +138,8 @@ class SLOTrackerSkill(BaseSkill):
     async def _get_slo_config(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Get SLO configuration for the project.
 
         Returns:
@@ -155,9 +155,9 @@ class SLOTrackerSkill(BaseSkill):
     async def _calculate_current_compliance(
         self,
         project: str,
-        slo_config: Dict[str, Any],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        slo_config: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Calculate current SLO compliance.
 
         Returns:
@@ -180,9 +180,9 @@ class SLOTrackerSkill(BaseSkill):
 
     def _calculate_error_budget(
         self,
-        compliance: Dict[str, Any],
-        slo_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        compliance: dict[str, Any],
+        slo_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Calculate error budget remaining.
 
         Returns:
@@ -206,9 +206,9 @@ class SLOTrackerSkill(BaseSkill):
 
     def _calculate_burn_rate(
         self,
-        error_budget: Dict[str, Any],
-        slo_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        error_budget: dict[str, Any],
+        slo_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Calculate error budget burn rate.
 
         Returns:
@@ -257,7 +257,7 @@ class SLOTrackerSkill(BaseSkill):
         self,
         remaining_percent: float,
         burn_rate: float,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Calculate days until SLO breach at current burn rate.
 
         Returns:
@@ -271,9 +271,9 @@ class SLOTrackerSkill(BaseSkill):
 
     def _predict_breach(
         self,
-        error_budget: Dict[str, Any],
-        burn_rate: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        error_budget: dict[str, Any],
+        burn_rate: dict[str, Any],
+    ) -> dict[str, Any]:
         """Predict SLO breach based on current trends.
 
         Returns:
@@ -289,11 +289,11 @@ class SLOTrackerSkill(BaseSkill):
 
     def _generate_recommendations(
         self,
-        compliance: Dict[str, Any],
-        error_budget: Dict[str, Any],
-        burn_rate: Dict[str, Any],
-        breach_prediction: Dict[str, Any],
-    ) -> List[Recommendation]:
+        compliance: dict[str, Any],
+        error_budget: dict[str, Any],
+        burn_rate: dict[str, Any],
+        breach_prediction: dict[str, Any],
+    ) -> list[Recommendation]:
         """Generate SLO recommendations.
 
         Returns:

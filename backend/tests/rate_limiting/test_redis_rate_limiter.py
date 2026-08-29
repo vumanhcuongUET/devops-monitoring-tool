@@ -5,10 +5,9 @@ Phase 9 - Sprint 1 - Day 3
 Tests for Redis-based distributed rate limiting
 """
 
-import asyncio
-import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -175,11 +174,9 @@ class TestRateLimitMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_with_redis(self, mock_redis, mock_pipe):
         """Test middleware uses Redis when configured."""
-        from app.rate_limiting.redis_rate_limiter import RedisRateLimiter
-        from app.rate_limit import RateLimitMiddleware
         from starlette.applications import Starlette
-        from starlette.responses import Response
-        from starlette.requests import Request
+
+        from app.rate_limit import RateLimitMiddleware
 
         # Create app and middleware
         app = Starlette()
@@ -203,8 +200,9 @@ class TestRateLimitMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_falls_back_to_memory_on_redis_error(self, mock_redis):
         """Test middleware falls back to in-memory when Redis unavailable."""
-        from app.rate_limit import RateLimitMiddleware
         from starlette.applications import Starlette
+
+        from app.rate_limit import RateLimitMiddleware
 
         app = Starlette()
 
@@ -273,9 +271,10 @@ class TestSlidingWindowAlgorithm:
 @pytest.mark.asyncio
 async def test_create_redis_rate_limiter_from_env():
     """Test creating rate limiter from environment settings."""
-    from app.rate_limiting.redis_rate_limiter import create_redis_rate_limiter
-    from app.config import settings
     from unittest.mock import patch
+
+    from app.config import settings
+    from app.rate_limiting.redis_rate_limiter import create_redis_rate_limiter
 
     with patch("redis.asyncio.Redis") as mock_redis_cls:
         mock_redis = MagicMock()

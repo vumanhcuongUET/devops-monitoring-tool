@@ -11,9 +11,10 @@ Features:
 - Processing time tracking
 """
 
-import time
 import logging
-from typing import Optional, Dict, Any
+import time
+from typing import Any
+
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -35,7 +36,7 @@ class CacheMiddleware(BaseHTTPMiddleware):
     5. Indicates which cache layers were used
     """
 
-    def __init__(self, app, l2_cache: Optional[L2CacheManager] = None):
+    def __init__(self, app, l2_cache: L2CacheManager | None = None):
         """
         Initialize cache middleware.
 
@@ -89,7 +90,7 @@ class CacheMiddleware(BaseHTTPMiddleware):
         self,
         request: Request,
         response: Response,
-        initial_l2_stats: Dict,
+        initial_l2_stats: dict,
         process_time: float
     ):
         """Add cache-related headers to response."""
@@ -163,7 +164,7 @@ class CacheContext:
         self.l1_cache = getattr(request.state, "l1_cache", None)
         self.l2_cache = getattr(request.state, "l2_cache", None)
 
-    async def get_from_l1(self, key: str) -> Optional[Any]:
+    async def get_from_l1(self, key: str) -> Any | None:
         """Get data from L1 cache."""
         if self.l1_cache:
             return await self.l1_cache.get("default", {"key": key})
@@ -177,8 +178,8 @@ class CacheContext:
     async def get_from_l2(
         self,
         data_type: str,
-        identifier: Dict
-    ) -> Optional[Any]:
+        identifier: dict
+    ) -> Any | None:
         """Get data from L2 cache."""
         if self.l2_cache:
             return await self.l2_cache.get(data_type, identifier)
@@ -187,9 +188,9 @@ class CacheContext:
     async def set_in_l2(
         self,
         data_type: str,
-        identifier: Dict,
+        identifier: dict,
         value: Any,
-        ttl: Optional[int] = None
+        ttl: int | None = None
     ) -> bool:
         """Set data in L2 cache."""
         if self.l2_cache:
@@ -211,7 +212,7 @@ class CacheContext:
         if hasattr(self.request.state, "response"):
             self.request.state.response.headers["X-L3-Cache"] = "hit"
 
-    def get_cache_summary(self) -> Dict[str, Any]:
+    def get_cache_summary(self) -> dict[str, Any]:
         """Get summary of cache operations for this request."""
         summary = {
             "l1_available": self.l1_cache is not None,
@@ -260,7 +261,7 @@ def mark_cache_hit(response: Response, layer: str):
         response.headers["X-Cache-Status"] = "HIT"
 
 
-def get_cache_info_from_headers(response: Response) -> Dict[str, Any]:
+def get_cache_info_from_headers(response: Response) -> dict[str, Any]:
     """
     Extract cache information from response headers.
 

@@ -1,9 +1,9 @@
 from fastapi import Request
 
-from app.services.elasticsearch_client import ElasticsearchClient
-from app.services.prometheus_client import PrometheusClient
-from app.services.kubernetes_client import KubernetesClient
 from app.services.apm_client import ApmClient
+from app.services.elasticsearch_client import ElasticsearchClient
+from app.services.kubernetes_client import KubernetesClient
+from app.services.prometheus_client import PrometheusClient
 
 
 def get_es_client(request: Request) -> ElasticsearchClient:

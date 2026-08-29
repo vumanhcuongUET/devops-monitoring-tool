@@ -1,15 +1,15 @@
 """Bottleneck Detector Skill - Identify performance bottlenecks."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,14 @@ class BottleneckDetectorSkill(BaseSkill):
     version = "1.0.0"
     requires_prometheus = True
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run bottleneck detection.
 
@@ -86,7 +86,7 @@ class BottleneckDetectorSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Bottleneck detection failed: {str(e)}"],
+                errors=[f"Bottleneck detection failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -132,7 +132,7 @@ class BottleneckDetectorSkill(BaseSkill):
         self,
         project: str,
         time_range: int,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
         """Detect bottlenecks using metrics."""
         # Implementation would query Prometheus for:

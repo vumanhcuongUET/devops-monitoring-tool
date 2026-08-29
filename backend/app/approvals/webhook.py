@@ -11,15 +11,16 @@ import hmac
 import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter, Request, HTTPException, Header
+from fastapi import APIRouter, Header, HTTPException, Request
+
+from app.approvals.slack import get_slack_approval_notifier
+from app.config import settings
 
 # Lazy import to avoid circular import with actions/engine
 # from app.actions.engine import get_action_engine
 from app.models.actions import ApproveActionRequest, RejectActionRequest
-from app.approvals.slack import get_slack_approval_notifier
-from app.config import settings
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 logger = logging.getLogger(__name__)
@@ -264,7 +265,7 @@ async def slack_approval_webhook(
 @router.post("/webhook/teams")
 async def teams_approval_webhook(
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> dict[str, Any]:
     """Handle Microsoft Teams approval button interactions.
 

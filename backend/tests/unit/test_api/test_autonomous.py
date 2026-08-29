@@ -1,17 +1,18 @@
 """Unit tests for Autonomous API endpoints (Phase 4)."""
 
-import pytest
-from unittest.mock import patch, MagicMock
-from httpx import AsyncClient, ASGITransport
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
-from app.main import app
+import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.actions.autonomous_executor import AutonomousExecutor
 from app.feedback.analyzer import (
-    FeedbackAnalyzer,
     ActionPattern,
+    FeedbackAnalyzer,
     LearningMetrics,
 )
-from datetime import datetime, timezone
+from app.main import app
 
 
 @pytest.fixture

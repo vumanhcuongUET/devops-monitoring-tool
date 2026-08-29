@@ -10,19 +10,17 @@ Based on strategic roadmap: docs/chien_luoc_tong_the.md (Giai đoạn 1)
 import asyncio
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Request, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.models.triage_card import (
     SeverityLevel,
-    TriageCard,
     TriageCardRequest,
     TriageCardResponse,
 )
 from app.services.llm_client import get_llm_client
-
 
 router = APIRouter(tags=["analyze"])
 
@@ -271,11 +269,12 @@ async def analyze_stream(request: Request, triage_request: TriageCardRequest):
         llm_client = get_llm_client()
     except ValueError as e:
         # Return error as stream
+        error_msg = str(e)
         async def error_stream():
             yield json.dumps({
                 "type": "error",
                 "done": True,
-                "error": f"LLM service not configured: {e}",
+                "error": f"LLM service not configured: {error_msg}",
             }) + "\n"
 
         return StreamingResponse(
@@ -297,11 +296,13 @@ async def analyze_stream(request: Request, triage_request: TriageCardRequest):
             severity_threshold=triage_request.severity_threshold,
         )
     except Exception as e:
+        error_msg = f"Failed to collect context data: {e}"
+
         async def error_stream():
             yield json.dumps({
                 "type": "error",
                 "done": True,
-                "error": f"Failed to collect context data: {e}",
+                "error": error_msg,
             }) + "\n"
 
         return StreamingResponse(
@@ -369,11 +370,13 @@ async def analyze_simple_stream(
     try:
         llm_client = get_llm_client()
     except ValueError as e:
+        error_msg = f"LLM service not configured: {e}"
+
         async def error_stream():
             yield json.dumps({
                 "type": "error",
                 "done": True,
-                "error": f"LLM service not configured: {e}",
+                "error": error_msg,
             }) + "\n"
 
         return StreamingResponse(
@@ -393,7 +396,7 @@ async def analyze_simple_stream(
             time_delta=time_delta,
             severity_threshold=SeverityLevel.LOW,
         )
-    except Exception as e:
+    except Exception:
         # Continue with empty context on error
         context_data = {}
 
@@ -455,7 +458,7 @@ async def _collect_context_data(
 async def _get_logs_context(es_client, project: str, time_delta: timedelta) -> list:
     """Collect recent error logs from Elasticsearch."""
     try:
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
         since = (datetime.now(timezone.utc) - time_delta).isoformat()
         logs, _ = await es_client.search_logs(
@@ -534,7 +537,7 @@ async def _get_alerts_context(es_client, project: str, time_delta: timedelta, se
     try:
         import json
         import os
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
         history_file = "data/alert_history.json"
         if not os.path.exists(history_file):

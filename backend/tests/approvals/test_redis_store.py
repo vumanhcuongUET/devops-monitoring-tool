@@ -5,11 +5,11 @@ Phase 9 - Sprint 1 - Day 2
 Tests for Redis-backed approval state management
 """
 
-import asyncio
 import json
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.models.actions import ActionStatus
 
@@ -407,14 +407,13 @@ class TestRedisApprovalStoreIntegration:
     @pytest.mark.asyncio
     async def test_real_redis_connection(self):
         """Test with real Redis connection (skip in CI)."""
-        pass
 
 
 @pytest.mark.asyncio
 async def test_redis_store_backward_compatibility():
     """Test that file-based and Redis-based stores have compatible interfaces."""
-    from app.approvals.redis_store import RedisApprovalStore, RedisApprovalHistory
-    from app.approvals.store import ApprovalStateTracker, ApprovalHistory
+    from app.approvals.redis_store import RedisApprovalHistory, RedisApprovalStore
+    from app.approvals.store import ApprovalHistory, ApprovalStateTracker
 
     # Both stores should have similar methods
     redis_store_attrs = set(dir(RedisApprovalStore("localhost", 6379, None, 1)))

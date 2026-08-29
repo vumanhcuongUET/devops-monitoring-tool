@@ -1,21 +1,25 @@
 """Unit tests for Teams webhook handler and notifier."""
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from fastapi import Header
-from fastapi.testclient import TestClient
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
 
-from app.approvals.webhook import (
-    verify_teams_hmac_signature,
-    teams_approval_webhook,
-)
+import pytest
+
 from app.approvals.teams import (
     TeamsApprovalNotifier,
     get_teams_approval_notifier,
     reset_teams_approval_notifier,
 )
-from app.models.actions import Action, ActionStatus, RiskLevel, CommandType, CommandParams
+from app.approvals.webhook import (
+    verify_teams_hmac_signature,
+)
+from app.models.actions import (
+    Action,
+    ActionStatus,
+    CommandParams,
+    CommandType,
+    RiskLevel,
+)
 
 
 class TestTeamsHMACVerification:
@@ -27,8 +31,8 @@ class TestTeamsHMACVerification:
         body = b'{"type": "invoke"}'
 
         # Calculate valid signature
-        import hmac
         import hashlib
+        import hmac
 
         digest = hmac.new(
             webhook_url.encode(),
@@ -55,8 +59,8 @@ class TestTeamsHMACVerification:
         body = b'{"type": "invoke"}'
 
         # Calculate valid signature
-        import hmac
         import hashlib
+        import hmac
 
         digest = hmac.new(
             webhook_url.encode(),
@@ -71,8 +75,8 @@ class TestTeamsHMACVerification:
 
     def test_different_bodies_different_signatures(self):
         """Test that different bodies produce different signatures."""
-        import hmac
         import hashlib
+        import hmac
 
         webhook_url = "https://outlook.office.com/webhook/xxx"
 

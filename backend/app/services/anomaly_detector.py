@@ -8,11 +8,12 @@ Phase 6: AI Input Optimization & Cost Efficiency
 Enhanced for Day 2: Support 6 metric types with adaptive thresholds
 """
 
-from typing import Any, Optional, List
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
+
 import numpy as np
-import asyncio
 
 
 @dataclass
@@ -95,7 +96,7 @@ class AnomalyDetector:
         anomalies = []
         normal_count = 0
 
-        def get_metric_value(metric_data: Any) -> Optional[float]:
+        def get_metric_value(metric_data: Any) -> float | None:
             """Extract numeric value from metric data.
 
             Handles both simple float values and complex dict structures
@@ -208,7 +209,7 @@ class AnomalyDetector:
 
         return result, anomalies
 
-    def _get_metric_value(self, metric_data: Any) -> Optional[float]:
+    def _get_metric_value(self, metric_data: Any) -> float | None:
         """Extract numeric value from metric data.
 
         Handles both simple float values and complex dict structures
@@ -221,13 +222,13 @@ class AnomalyDetector:
             return float(metric_data.get("current", metric_data.get("value", 0)))
         return None
 
-    def _get_metric_baseline(self, metric_data: Any) -> Optional[float]:
+    def _get_metric_baseline(self, metric_data: Any) -> float | None:
         """Extract baseline value from metric data if available."""
         if isinstance(metric_data, dict):
             return float(metric_data.get("baseline", 0))
         return None
 
-    async def _detect_network_io_anomaly(self, metrics: dict[str, Any]) -> List[AnomalyResult]:
+    async def _detect_network_io_anomaly(self, metrics: dict[str, Any]) -> list[AnomalyResult]:
         """
         Detect network I/O anomalies (NEW for Day 2).
 
@@ -300,7 +301,7 @@ class AnomalyDetector:
 
         return anomalies
 
-    async def _detect_disk_io_anomaly(self, metrics: dict[str, Any]) -> List[AnomalyResult]:
+    async def _detect_disk_io_anomaly(self, metrics: dict[str, Any]) -> list[AnomalyResult]:
         """
         Detect disk I/O anomalies (NEW for Day 2).
 
@@ -404,7 +405,7 @@ class AnomalyDetector:
                 if len(self.historical_metrics[metric_name]) > self.baseline_window:
                     self.historical_metrics[metric_name].pop(0)
 
-    def detect_all(self, metrics: List[dict]) -> List[AnomalyResult]:
+    def detect_all(self, metrics: list[dict]) -> list[AnomalyResult]:
         """
         Detect anomalies across all metric types in a list of metrics.
 
@@ -433,7 +434,7 @@ class AnomalyDetector:
 
     # ========== Day 2: Adaptive Thresholds ==========
 
-    def calculate_baseline(self, historical_metrics: List[dict]) -> dict:
+    def calculate_baseline(self, historical_metrics: list[dict]) -> dict:
         """
         Calculate dynamic baseline from historical data (NEW for Day 2).
 
@@ -462,7 +463,7 @@ class AnomalyDetector:
 
         return baselines
 
-    def _calculate_statistics(self, values: List[float]) -> dict:
+    def _calculate_statistics(self, values: list[float]) -> dict:
         """Calculate comprehensive statistics from values."""
         arr = np.array(values)
 
@@ -477,7 +478,7 @@ class AnomalyDetector:
             'count': len(arr)
         }
 
-    def detect_with_baseline(self, current: dict, baseline: dict) -> List[AnomalyResult]:
+    def detect_with_baseline(self, current: dict, baseline: dict) -> list[AnomalyResult]:
         """
         Detect anomalies using calculated baseline (NEW for Day 2).
 
@@ -521,7 +522,7 @@ class AnomalyDetector:
                     baseline_value=metric_baseline['mean'],
                     threshold=critical_bound,
                     deviation_pct=((current_value - metric_baseline['mean']) / metric_baseline['mean']) * 100 if metric_baseline['mean'] > 0 else 0,
-                    reason=f"Critical deviation from baseline",
+                    reason="Critical deviation from baseline",
                     severity="critical"
                 ))
             elif current_value > upper_bound:
@@ -532,7 +533,7 @@ class AnomalyDetector:
                     baseline_value=metric_baseline['mean'],
                     threshold=upper_bound,
                     deviation_pct=((current_value - metric_baseline['mean']) / metric_baseline['mean']) * 100 if metric_baseline['mean'] > 0 else 0,
-                    reason=f"High deviation from baseline",
+                    reason="High deviation from baseline",
                     severity="high"
                 ))
 
@@ -613,7 +614,7 @@ class AnomalyDetector:
             return value >= self.thresholds.error_rate_high
         return False
 
-    def get_threshold(self, metric_name: str) -> Optional[float]:
+    def get_threshold(self, metric_name: str) -> float | None:
         """Get threshold for a specific metric."""
         if metric_name == "cpu_percent":
             return self.thresholds.cpu_high

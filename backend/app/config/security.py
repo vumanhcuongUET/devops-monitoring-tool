@@ -5,14 +5,15 @@ Provides encryption, decryption, sanitization, and secret management
 for configuration data.
 """
 
-from typing import Dict, Any, Optional, List
-import os
 import base64
 import logging
+import os
+from enum import Enum
+from typing import Any
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class ConfigSecurity:
         "contact", "personal", "identity"
     ]
 
-    def __init__(self, encryption_key: Optional[str] = None):
+    def __init__(self, encryption_key: str | None = None):
         """Initialize security module.
 
         Args:
@@ -50,7 +51,7 @@ class ConfigSecurity:
                           If None, will use CONFIG_ENCRYPTION_KEY env var.
         """
         self.encryption_key = encryption_key or os.getenv("CONFIG_ENCRYPTION_KEY")
-        self.cipher: Optional[Fernet] = None
+        self.cipher: Fernet | None = None
 
         if self.encryption_key:
             try:
@@ -65,9 +66,9 @@ class ConfigSecurity:
 
     def sanitize_config(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         level: SecurityLevel = SecurityLevel.INTERNAL
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sanitize configuration for logging/display.
 
         Args:
@@ -128,8 +129,8 @@ class ConfigSecurity:
 
     async def encrypt_secrets(
         self,
-        config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Encrypt secret values in configuration.
 
         Args:
@@ -171,8 +172,8 @@ class ConfigSecurity:
 
     async def decrypt_secrets(
         self,
-        config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Decrypt secret values in configuration.
 
         Args:
@@ -230,7 +231,7 @@ class ConfigSecurity:
     @staticmethod
     def derive_key_from_password(
         password: str,
-        salt: Optional[bytes] = None
+        salt: bytes | None = None
     ) -> bytes:
         """Derive encryption key from password using PBKDF2.
 
@@ -274,8 +275,8 @@ class ConfigSecurity:
 
     def validate_security_posture(
         self,
-        config: Dict[str, Any]
-    ) -> List[str]:
+        config: dict[str, Any]
+    ) -> list[str]:
         """Validate security posture of configuration.
 
         Args:
@@ -322,7 +323,7 @@ class ConfigSecurity:
         except Exception:
             return False
 
-    def scan_for_secrets(self, config: Dict[str, Any]) -> Dict[str, List[str]]:
+    def scan_for_secrets(self, config: dict[str, Any]) -> dict[str, list[str]]:
         """Scan configuration for potential secret fields.
 
         Args:

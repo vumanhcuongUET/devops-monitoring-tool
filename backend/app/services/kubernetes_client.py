@@ -1,8 +1,8 @@
 import asyncio
 from typing import Any
 
-from kubernetes import client, config as k8s_config
-from kubernetes.client.rest import ApiException
+from kubernetes import client
+from kubernetes import config as k8s_config
 
 from app.config import settings
 

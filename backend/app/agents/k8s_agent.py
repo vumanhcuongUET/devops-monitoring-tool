@@ -8,10 +8,10 @@ Specializes in:
 - Kubernetes best practices
 """
 
-from typing import Dict, Any, List
 import logging
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ RECOMMENDATION: [Actionable recommendation]
 Be specific about resource values, pod counts, and configuration details.
 """
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze Kubernetes cluster state.
 
@@ -170,7 +170,7 @@ Provide analysis with focus on health, resources, and best practices.
                 error=str(e),
             )
 
-    def _analyze_health(self, pods: List, nodes: List, services: List) -> Dict:
+    def _analyze_health(self, pods: list, nodes: list, services: list) -> dict:
         """Analyze health of cluster components."""
         health = {
             "pods": {"healthy": 0, "total": len(pods), "issues": []},
@@ -216,7 +216,7 @@ Provide analysis with focus on health, resources, and best practices.
 
         return health
 
-    def _analyze_resources(self, pods: List, nodes: List) -> Dict:
+    def _analyze_resources(self, pods: list, nodes: list) -> dict:
         """Analyze resource usage."""
         total_requests = {"cpu": 0, "memory": 0}
         total_limits = {"cpu": 0, "memory": 0}
@@ -286,13 +286,13 @@ Provide analysis with focus on health, resources, and best practices.
         return int(mem_str)
 
     @staticmethod
-    def _pod_name(pod: Dict) -> str:
+    def _pod_name(pod: dict) -> str:
         """Extract a pod name from either simplified or K8s API shapes."""
         metadata = pod.get("metadata") or {}
         return pod.get("name", metadata.get("name", "unknown"))
 
     @staticmethod
-    def _pod_phase(pod: Dict, default: str = "Unknown") -> str:
+    def _pod_phase(pod: dict, default: str = "Unknown") -> str:
         """Pod phase from either simplified (scalar status) or K8s API shapes."""
         status = pod.get("status")
         if isinstance(status, dict):
@@ -302,7 +302,7 @@ Provide analysis with focus on health, resources, and best practices.
         return default
 
     @staticmethod
-    def _status_get(obj: Dict, key: str, default: Any = None) -> Any:
+    def _status_get(obj: dict, key: str, default: Any = None) -> Any:
         """Read a field from the K8s API `status` sub-object (simplified shapes pass through)."""
         if not isinstance(obj, dict):
             return default
@@ -311,7 +311,7 @@ Provide analysis with focus on health, resources, and best practices.
             return default
         return status.get(key, default)
 
-    def _analyze_scheduling(self, pods: List) -> List[Dict]:
+    def _analyze_scheduling(self, pods: list) -> list[dict]:
         """Analyze scheduling issues."""
         issues = []
 
@@ -350,7 +350,7 @@ Provide analysis with focus on health, resources, and best practices.
 
         return issues
 
-    def _analyze_configuration(self, deployments: List, services: List) -> List[Dict]:
+    def _analyze_configuration(self, deployments: list, services: list) -> list[dict]:
         """Analyze configuration issues."""
         issues = []
 
@@ -400,7 +400,7 @@ Provide analysis with focus on health, resources, and best practices.
 
         return issues
 
-    def _format_health_issues(self, health: Dict) -> str:
+    def _format_health_issues(self, health: dict) -> str:
         """Format health issues for display."""
         issues = []
         for component, data in health.items():
@@ -408,7 +408,7 @@ Provide analysis with focus on health, resources, and best practices.
                 issues.append(f"- {component}: {issue}")
         return "\n".join(issues) if issues else "No health issues"
 
-    def _format_resource_status(self, resources: Dict) -> str:
+    def _format_resource_status(self, resources: dict) -> str:
         """Format resource status for display."""
         return f"""
 - CPU Requests: {resources['requests']['cpu']:.2f} cores ({resources['requests_utilization']:.1%} of capacity)
@@ -417,7 +417,7 @@ Provide analysis with focus on health, resources, and best practices.
 - Memory Limits: {resources['limits']['memory'] / 1024**3:.2f} GiB
 """
 
-    def _format_scheduling_issues(self, issues: List) -> str:
+    def _format_scheduling_issues(self, issues: list) -> str:
         """Format scheduling issues for display."""
         if not issues:
             return "No scheduling issues"
@@ -431,7 +431,7 @@ Provide analysis with focus on health, resources, and best practices.
 
         return "\n".join(lines)
 
-    def _format_config_issues(self, issues: List) -> str:
+    def _format_config_issues(self, issues: list) -> str:
         """Format configuration issues for display."""
         if not issues:
             return "No configuration issues"

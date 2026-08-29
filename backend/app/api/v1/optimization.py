@@ -15,17 +15,17 @@ Endpoints:
 """
 
 import logging
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.optimization import (
+    ConnectionPoolManager,
     QueryOptimizer,
     QueryPatternLibrary,
-    ConnectionPoolManager,
-    RateLimiter
+    RateLimiter,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/optimization", tags=["optimization"])
 
 # Global instances (injected at startup)
-query_optimizer: Optional[QueryOptimizer] = None
-pool_manager: Optional[ConnectionPoolManager] = None
-rate_limiter: Optional[RateLimiter] = None
+query_optimizer: QueryOptimizer | None = None
+pool_manager: ConnectionPoolManager | None = None
+rate_limiter: RateLimiter | None = None
 
 
 def set_optimization_instances(
@@ -91,12 +91,12 @@ class PoolHealthResponse(BaseModel):
     """Response model for pool health."""
     total_pools: int
     healthy_pools: int
-    pools: Dict[str, Dict[str, Any]]
+    pools: dict[str, dict[str, Any]]
 
 
 class PatternListResponse(BaseModel):
     """Response model for pattern list."""
-    patterns: Dict[str, List[str]]
+    patterns: dict[str, list[str]]
     total_patterns: int
 
 
@@ -104,7 +104,7 @@ class PatternGetRequest(BaseModel):
     """Request model for getting a pattern."""
     category: str = Field(..., description="Pattern category (error, performance, resource, etc.)")
     pattern_name: str = Field(..., description="Pattern name")
-    kwargs: Dict[str, Any] = Field(default={}, description="Pattern arguments")
+    kwargs: dict[str, Any] = Field(default={}, description="Pattern arguments")
 
 
 class RateLimiterStatsResponse(BaseModel):
@@ -113,7 +113,7 @@ class RateLimiterStatsResponse(BaseModel):
     allowed_requests: int
     rejected_requests: int
     rejection_rate: float
-    endpoint_stats: Dict[str, Dict[str, int]]
+    endpoint_stats: dict[str, dict[str, int]]
     active_buckets: int
 
 
@@ -143,7 +143,7 @@ async def get_profiler_stats():
     )
 
 
-@router.get("/profiler/recent", response_model=List[QueryProfileResponse])
+@router.get("/profiler/recent", response_model=list[QueryProfileResponse])
 async def get_recent_profiles(
     limit: int = Query(10, ge=1, le=100, description="Number of recent profiles to return")
 ):
@@ -192,7 +192,7 @@ async def reset_profiler():
     }
 
 
-@router.get("/pools/stats", response_model=Dict[str, PoolStatsResponse])
+@router.get("/pools/stats", response_model=dict[str, PoolStatsResponse])
 async def get_pool_stats():
     """
     Get connection pool statistics.
@@ -241,7 +241,7 @@ async def get_pool_health():
 
 @router.get("/patterns/list", response_model=PatternListResponse)
 async def list_patterns(
-    category: Optional[str] = Query(None, description="Filter by category")
+    category: str | None = Query(None, description="Filter by category")
 ):
     """
     List available query patterns.
@@ -282,7 +282,7 @@ async def get_pattern(request: PatternGetRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting pattern: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting pattern: {e!s}")
 
 
 @router.get("/rate-limiter/stats", response_model=RateLimiterStatsResponse)
@@ -312,7 +312,7 @@ async def get_rate_limiter_stats():
 async def set_rate_limit(
     endpoint: str = Query(..., description="Endpoint to set limit for"),
     rate: float = Query(..., ge=0.1, description="Rate limit (requests per second)"),
-    burst: Optional[int] = Query(None, ge=1, description="Burst capacity")
+    burst: int | None = Query(None, ge=1, description="Burst capacity")
 ):
     """
     Set rate limit for an endpoint.

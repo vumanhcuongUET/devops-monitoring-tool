@@ -3,18 +3,18 @@
 import hashlib
 import hmac
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import HTTPException
 
 from app.approvals.webhook import (
-    verify_slack_signature,
-    verify_teams_hmac_signature,
+    SLACK_SIGNATURE_VERSION,
+    approval_webhook_health,
     slack_approval_webhook,
     teams_approval_webhook,
-    approval_webhook_health,
-    SLACK_SIGNATURE_VERSION,
-    SIGNATURE_TIMESTAMP_TOLERANCE_SECONDS,
+    verify_slack_signature,
+    verify_teams_hmac_signature,
 )
 from app.models.actions import ActionStatus
 

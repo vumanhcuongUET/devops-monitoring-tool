@@ -7,9 +7,9 @@ Tests the SLO reporter functionality including:
 - Report scheduling
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
 
 
 @pytest.mark.unit

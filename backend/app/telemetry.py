@@ -15,24 +15,22 @@ Features:
 import asyncio
 import functools
 import logging
-from typing import Optional
 
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
-from opentelemetry import context as context_api
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Global tracer provider
-_tracer_provider: Optional[TracerProvider] = None
+_tracer_provider: TracerProvider | None = None
 
 
 def get_tracer(name: str = __name__):
@@ -147,7 +145,7 @@ class TracedOperation:
             result = db.execute_query(...)
     """
 
-    def __init__(self, name: str, attributes: Optional[dict] = None):
+    def __init__(self, name: str, attributes: dict | None = None):
         """
         Initialize traced operation.
 
@@ -178,7 +176,7 @@ class TracedOperation:
             self._cm.__exit__(exc_type, exc_val, exc_tb)
 
 
-def trace_function(name: Optional[str] = None):
+def trace_function(name: str | None = None):
     """Decorator to trace sync and async function execution."""
     def decorator(func):
         if asyncio.iscoroutinefunction(func):

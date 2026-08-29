@@ -11,15 +11,15 @@ This skill monitors runtime security events:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
         "Memory usage critical",
     ]
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the Runtime Monitor skill.
 
         Args:
@@ -103,7 +103,7 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze runtime security events.
 
@@ -203,7 +203,7 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
                 skill_id=self.skill_id,
                 confidence=0.0,
                 data={"error": str(e)},
-                errors=[f"Runtime security analysis failed: {str(e)}"],
+                errors=[f"Runtime security analysis failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -428,7 +428,7 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
                 "output_fields": {
                     "ka.state.namespace": "production",
                     "ka.resp.name": "unknown-pod-999",
-                    "proc.exe": "/tmp/miner",
+                    "proc.exe": "/tmp/miner",  # nosec B108 - crypto-miner detection pattern, not a path we write to
                 },
             },
             {

@@ -1,16 +1,15 @@
 """Unit tests for Approval Store."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-import tempfile
 import os
+import tempfile
+from unittest.mock import AsyncMock
+
+import pytest
 
 from app.approvals.store import (
+    ApprovalHistory,
     ApprovalStateTracker,
     get_approval_tracker,
-    ApprovalHistory,
-    STATE_FILE,
-    HISTORY_FILE
 )
 from app.models.actions import ActionStatus
 
@@ -323,7 +322,6 @@ class TestApprovalStateTrackerErrorHandling:
 
     async def test_loading_corrupted_json_file(self, clean_approval_state):
         """Test loading from corrupted JSON file."""
-        import tempfile
 
         # Create corrupted file
         test_file = clean_approval_state[0]

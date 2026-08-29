@@ -7,8 +7,9 @@ Tests the APM client functionality including:
 - Summary metrics
 """
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 
 @pytest.mark.unit

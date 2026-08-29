@@ -7,12 +7,12 @@ This module analyzes feedback patterns to:
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
-from app.feedback.collector import get_feedback_collector, FeedbackEvent
+from app.feedback.collector import FeedbackEvent, get_feedback_collector
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,10 @@ class LearningMetrics:
 
     def __init__(self):
         self.total_actions_analyzed = 0
-        self.high_confidence_patterns: List[str] = []
-        self.medium_confidence_patterns: List[str] = []
-        self.low_confidence_patterns: List[str] = []
-        self.action_patterns: Dict[str, ActionPattern] = {}
+        self.high_confidence_patterns: list[str] = []
+        self.medium_confidence_patterns: list[str] = []
+        self.low_confidence_patterns: list[str] = []
+        self.action_patterns: dict[str, ActionPattern] = {}
 
 
 class FeedbackAnalyzer:
@@ -60,7 +60,7 @@ class FeedbackAnalyzer:
         self.window_days = window_days
         self.collector = get_feedback_collector()
 
-    def _get_events_in_window(self) -> List[FeedbackEvent]:
+    def _get_events_in_window(self) -> list[FeedbackEvent]:
         """Get feedback events within the analysis window.
 
         Returns:
@@ -93,7 +93,7 @@ class FeedbackAnalyzer:
             return parts[1]
         return "unknown"
 
-    def analyze_approval_rates(self) -> Dict[str, ActionPattern]:
+    def analyze_approval_rates(self) -> dict[str, ActionPattern]:
         """Analyze approval rates by action type.
 
         Returns:
@@ -178,7 +178,7 @@ class FeedbackAnalyzer:
 
         return metrics
 
-    def get_auto_approval_candidates(self, min_confidence: float = 0.99) -> List[str]:
+    def get_auto_approval_candidates(self, min_confidence: float = 0.99) -> list[str]:
         """Get action types that could be auto-approved based on confidence.
 
         Args:
@@ -196,7 +196,7 @@ class FeedbackAnalyzer:
 
         return candidates
 
-    def get_patterns_needing_review(self) -> List[ActionPattern]:
+    def get_patterns_needing_review(self) -> list[ActionPattern]:
         """Get action patterns that need human review.
 
         Returns:
@@ -258,7 +258,7 @@ class FeedbackAnalyzer:
         )
         return adjusted
 
-    def get_learning_summary(self) -> Dict[str, Any]:
+    def get_learning_summary(self) -> dict[str, Any]:
         """Get summary of learning metrics.
 
         Returns:
@@ -279,7 +279,7 @@ class FeedbackAnalyzer:
 
 
 # Singleton instance
-_analyzer: Optional[FeedbackAnalyzer] = None
+_analyzer: FeedbackAnalyzer | None = None
 
 
 def get_feedback_analyzer(window_days: int = 30) -> FeedbackAnalyzer:

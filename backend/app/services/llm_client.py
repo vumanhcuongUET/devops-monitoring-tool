@@ -7,11 +7,11 @@ AI-powered incident analysis and recommendations.
 Based on strategic roadmap: docs/chien_luoc_tong_the.md (Giai đoạn 1)
 """
 
-import asyncio
 import json
 import time
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Optional
+from typing import Any
 
 import anthropic
 from anthropic.types import Message
@@ -96,14 +96,14 @@ You communicate in Vietnamese by default, unless the user specifically requests 
 
         self.client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
         self.model = settings.ANTHROPIC_MODEL
-        self._health_cache: Optional[bool] = None
+        self._health_cache: bool | None = None
         self._health_cache_time: float = 0
 
     def _build_user_prompt(
         self,
         project: str,
-        incident_id: Optional[str],
-        alert_message: Optional[str],
+        incident_id: str | None,
+        alert_message: str | None,
         context_data: dict[str, Any],
         time_range: timedelta,
     ) -> str:
@@ -112,8 +112,8 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         time_desc = f"{time_range.total_seconds() / 60:.0f} phút" if time_range.total_seconds() < 3600 else f"{time_range.total_seconds() / 3600:.1f} giờ"
 
         prompt_parts = [
-            f"# Phân tích sự cố (Incident Analysis)",
-            f"",
+            "# Phân tích sự cố (Incident Analysis)",
+            "",
             f"**Project:** {project}",
             f"**Thời gian phân tích:** {time_desc} gần nhất",
         ]
@@ -123,74 +123,74 @@ You communicate in Vietnamese by default, unless the user specifically requests 
 
         if alert_message:
             prompt_parts.extend([
-                f"",
-                f"## Alert / Mô tả sự cố",
+                "",
+                "## Alert / Mô tả sự cố",
                 f"{alert_message}",
             ])
 
         # Add monitoring data sections
         prompt_parts.extend([
-            f"",
-            f"## Dữ liệu giám sát (Monitoring Data)",
-            f"",
+            "",
+            "## Dữ liệu giám sát (Monitoring Data)",
+            "",
         ])
 
         # Elasticsearch / Logs
-        if "logs" in context_data and context_data["logs"]:
+        if context_data.get("logs"):
             prompt_parts.extend([
-                f"### Logs (Elasticsearch)",
-                f"```json",
+                "### Logs (Elasticsearch)",
+                "```json",
                 json.dumps(context_data["logs"][:50], ensure_ascii=False, indent=2),
-                f"```",
-                f"",
+                "```",
+                "",
             ])
 
         # APM Data
-        if "apm" in context_data and context_data["apm"]:
+        if context_data.get("apm"):
             prompt_parts.extend([
-                f"### APM (Application Performance Monitoring)",
-                f"```json",
+                "### APM (Application Performance Monitoring)",
+                "```json",
                 json.dumps(context_data["apm"], ensure_ascii=False, indent=2),
-                f"```",
-                f"",
+                "```",
+                "",
             ])
 
         # Prometheus Metrics
-        if "metrics" in context_data and context_data["metrics"]:
+        if context_data.get("metrics"):
             prompt_parts.extend([
-                f"### Metrics (Prometheus)",
-                f"```json",
+                "### Metrics (Prometheus)",
+                "```json",
                 json.dumps(context_data["metrics"], ensure_ascii=False, indent=2),
-                f"```",
-                f"",
+                "```",
+                "",
             ])
 
         # Kubernetes State
-        if "kubernetes" in context_data and context_data["kubernetes"]:
+        if context_data.get("kubernetes"):
             prompt_parts.extend([
-                f"### Kubernetes State",
-                f"```json",
+                "### Kubernetes State",
+                "```json",
                 json.dumps(context_data["kubernetes"], ensure_ascii=False, indent=2),
-                f"```",
-                f"",
+                "```",
+                "",
             ])
 
         # Existing Alerts
-        if "alerts" in context_data and context_data["alerts"]:
+        if context_data.get("alerts"):
             prompt_parts.extend([
-                f"### Active Alerts",
-                f"```json",
+                "### Active Alerts",
+                "```json",
                 json.dumps(context_data["alerts"], ensure_ascii=False, indent=2),
-                f"```",
-                f"",
+                "```",
+                "",
             ])
 
         prompt_parts.extend([
-            f"",
-            f"---",
-            f"",
-            f"Dựa trên dữ liệu above, hãy tạo Triage Card (JSON format như specified).",
-            f"Focus trên việc tìm root cause và recommend actionable steps.",
+            "",
+            "---",
+            "",
+            "Dựa trên dữ liệu above, hãy tạo Triage Card (JSON format như specified).",
+            "Focus trên việc tìm root cause và recommend actionable steps.",
         ])
 
         return "\n".join(prompt_parts)
@@ -290,11 +290,11 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         self,
         response_text: str,
         project: str,
-        incident_id: Optional[str],
+        incident_id: str | None,
         time_range: timedelta,
         request: TriageCardRequest,
         model_used: str,
-        tokens_used: Optional[int],
+        tokens_used: int | None,
     ) -> TriageCard:
         """Parse JSON response into TriageCard model."""
         try:
@@ -317,7 +317,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
                         confidence=f_data.get("confidence", 0.5),
                     )
                 )
-            except ValueError as e:
+            except ValueError:
                 # Skip invalid finding but continue
                 continue
 
@@ -362,8 +362,8 @@ You communicate in Vietnamese by default, unless the user specifically requests 
     async def analyze_with_streaming(
         self,
         project: str,
-        incident_id: Optional[str],
-        alert_message: Optional[str],
+        incident_id: str | None,
+        alert_message: str | None,
         context_data: dict[str, Any],
         time_range_minutes: int = 60,
     ) -> AsyncIterator[str]:
@@ -470,15 +470,15 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         """
         # Build simple prompt
         prompt_parts = [
-            f"# Question",
+            "# Question",
             f"{question}",
-            f"",
-            f"# Context",
-            f"```json",
+            "",
+            "# Context",
+            "```json",
             json.dumps(context, ensure_ascii=False, indent=2),
-            f"```",
-            f"",
-            f"Answer the question based on the context above. Be concise and actionable.",
+            "```",
+            "",
+            "Answer the question based on the context above. Be concise and actionable.",
         ]
 
         user_prompt = "\n".join(prompt_parts)
@@ -550,7 +550,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
 
 
 # Singleton instance
-_llm_client: Optional[LLMClient] = None
+_llm_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:

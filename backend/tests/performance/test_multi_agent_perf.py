@@ -17,7 +17,6 @@ from app.agents.base import BaseAgent
 from app.agents.model_selector import ModelSelector
 from app.agents.orchestrator import AgentOrchestrator
 
-
 # Performance targets (SLA)
 TARGET_FULL_ANALYSIS_SECONDS = 10.0  # plan SLA for multi-agent analysis
 TARGET_ORCHESTRATION_OVERHEAD_MS = 50.0  # aggregation adds little vs LLM latency

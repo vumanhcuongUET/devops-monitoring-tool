@@ -1,6 +1,7 @@
 """Context Registry models for project-specific configuration."""
 
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -8,17 +9,17 @@ class ClusterConfig(BaseModel):
     """Cluster configuration for a project."""
 
     name: str = Field(..., description="Cluster name")
-    context: Optional[str] = Field(None, description="Kubeconfig context")
-    region: Optional[str] = Field(None, description="Cloud region")
+    context: str | None = Field(None, description="Kubeconfig context")
+    region: str | None = Field(None, description="Cloud region")
     platform: str = Field(default="kubernetes", description="Platform: kubernetes, ecs, etc.")
 
 
 class NamespaceMapping(BaseModel):
     """Namespace mapping for different components."""
 
-    app: Optional[str] = Field(None, description="Application namespace")
-    database: Optional[str] = Field(None, description="Database namespace")
-    monitoring: Optional[str] = Field(None, description="Monitoring namespace")
+    app: str | None = Field(None, description="Application namespace")
+    database: str | None = Field(None, description="Database namespace")
+    monitoring: str | None = Field(None, description="Monitoring namespace")
     # Can add more as needed
 
 
@@ -26,9 +27,9 @@ class OwnerContact(BaseModel):
     """Contact information for a project owner."""
 
     user: str = Field(..., description="Username")
-    email: Optional[str] = Field(None, description="Email address")
-    slack: Optional[str] = Field(None, description="Slack user ID")
-    teams: Optional[str] = Field(None, description="Microsoft Teams ID")
+    email: str | None = Field(None, description="Email address")
+    slack: str | None = Field(None, description="Slack user ID")
+    teams: str | None = Field(None, description="Microsoft Teams ID")
 
 
 class RbacConstraints(BaseModel):
@@ -60,7 +61,7 @@ class ProjectConfig(BaseModel):
     """Project-specific configuration for context-aware actions."""
 
     name: str = Field(..., description="Project/service name")
-    display_name: Optional[str] = Field(None, description="Human-readable name")
+    display_name: str | None = Field(None, description="Human-readable name")
     cluster: ClusterConfig = Field(..., description="Cluster configuration")
     namespaces: NamespaceMapping = Field(
         default_factory=NamespaceMapping,
@@ -88,12 +89,12 @@ class RegistryConfig(BaseModel):
     """Top-level registry configuration."""
 
     projects: list[ProjectConfig] = Field(default_factory=list)
-    default_cluster: Optional[ClusterConfig] = Field(None, description="Default cluster if not specified")
-    global_constraints: Optional[RbacConstraints] = Field(
+    default_cluster: ClusterConfig | None = Field(None, description="Default cluster if not specified")
+    global_constraints: RbacConstraints | None = Field(
         None,
         description="Global RBAC constraints applied to all projects"
     )
 
-    def get_project(self, name: str) -> Optional[ProjectConfig]:
+    def get_project(self, name: str) -> ProjectConfig | None:
         """Get a project by name (None if not registered)."""
         return next((p for p in self.projects if p.name == name), None)

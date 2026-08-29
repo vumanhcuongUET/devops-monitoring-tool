@@ -7,9 +7,10 @@ Tests for Redis-backed alert state management
 
 import asyncio
 import json
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -322,20 +323,18 @@ class TestRedisAlertStoreIntegration:
     @pytest.mark.asyncio
     async def test_real_redis_connection(self):
         """Test with real Redis connection (skip in CI)."""
-        pass
 
     @pytest.mark.skip(reason="Requires actual Redis instance")
     @pytest.mark.asyncio
     async def test_ttl_cleanup(self):
         """Test TTL-based cleanup (requires real Redis)."""
-        pass
 
 
 @pytest.mark.asyncio
 async def test_redis_store_backward_compatibility():
     """Test that file-based and Redis-based stores have compatible interfaces."""
-    from app.alerting.redis_store import RedisAlertStore, RedisAlertHistory
-    from app.alerting.state import AlertStateTracker, AlertHistory
+    from app.alerting.redis_store import RedisAlertHistory, RedisAlertStore
+    from app.alerting.state import AlertHistory, AlertStateTracker
 
     # Both stores should have similar methods
     redis_store_attrs = set(dir(RedisAlertStore("localhost", 6379, None, 0)))

@@ -9,25 +9,23 @@ This module provides common fixtures used across all test suites including:
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import Generator
 from datetime import datetime
-import pytest
-from typing import Generator
-import os
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
+from app.config import Settings
 
 # Import app modules
-from app.main import app, lifespan
-from app.config import Settings
-from app.services.elasticsearch_client import ElasticsearchClient
 from app.services.apm_client import ApmClient
-from app.services.prometheus_client import PrometheusClient
+from app.services.elasticsearch_client import ElasticsearchClient
 from app.services.kubernetes_client import KubernetesClient
-from app.services.slo_client import SloClient
 from app.services.llm_client import LLMClient
-
+from app.services.prometheus_client import PrometheusClient
+from app.services.slo_client import SloClient
 
 # ============================================================================
 # Test Configuration Fixtures

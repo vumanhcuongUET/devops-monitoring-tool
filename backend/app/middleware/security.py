@@ -1,11 +1,10 @@
 """Security headers middleware for HTTP response hardening with nonce-based CSP."""
 
 import secrets
-from typing import Optional
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.datastructures import Headers
 
 from app.config import settings
 
@@ -78,7 +77,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     def _build_csp_policy(
         self,
-        nonce: Optional[str] = None,
+        nonce: str | None = None,
         environment: str = "production",
     ) -> str:
         """Build Content-Security-Policy header.

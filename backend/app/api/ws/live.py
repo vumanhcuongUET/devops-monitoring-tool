@@ -1,7 +1,6 @@
-import asyncio
 import json
-from urllib.parse import parse_qs
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
 
@@ -37,7 +36,7 @@ class ConnectionManager:
                 if auth.startswith("Bearer "):
                     token = auth[7:]
             if token:
-                from app.auth import _is_valid_token, _is_valid_api_key
+                from app.auth import _is_valid_api_key, _is_valid_token
                 if not (_is_valid_token(token) or _is_valid_api_key(token)):
                     await ws.close(code=4403, reason="Unauthorized")
                     return False

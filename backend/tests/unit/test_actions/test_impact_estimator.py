@@ -1,12 +1,12 @@
 """Unit tests for ImpactEstimator."""
 
+from unittest.mock import Mock
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock
 
 from app.actions.impact_estimator import (
-    ImpactEstimator,
     ImpactEstimate,
+    ImpactEstimator,
     ImpactLevel,
     ImpactThresholds,
     ResourceImpact,

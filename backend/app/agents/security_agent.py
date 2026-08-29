@@ -8,10 +8,10 @@ Specializes in:
 - Security best practices
 """
 
-from typing import Dict, Any, List
 import logging
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ RECOMMENDATION: [Actionable security recommendation]
 Prioritize findings by severity. Be specific about CVEs and configuration issues.
 """
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze security posture.
 
@@ -164,7 +164,7 @@ Provide security analysis with prioritized remediation recommendations.
                 error=str(e),
             )
 
-    def _analyze_vulnerabilities(self, security_data: Dict) -> List[Dict]:
+    def _analyze_vulnerabilities(self, security_data: dict) -> list[dict]:
         """Extract and analyze vulnerabilities."""
         vulnerabilities = []
 
@@ -198,7 +198,7 @@ Provide security analysis with prioritized remediation recommendations.
 
         return vulnerabilities
 
-    def _analyze_misconfigurations(self, resources: List[Dict]) -> List[Dict]:
+    def _analyze_misconfigurations(self, resources: list[dict]) -> list[dict]:
         """Detect security misconfigurations."""
         misconfigurations = []
 
@@ -247,8 +247,8 @@ Provide security analysis with prioritized remediation recommendations.
         return misconfigurations
 
     def _assess_compliance(
-        self, resources: List[Dict], framework: str
-    ) -> Dict[str, Any]:
+        self, resources: list[dict], framework: str
+    ) -> dict[str, Any]:
         """Assess compliance with security framework."""
         compliant_count = 0
         total_checks = 0
@@ -279,25 +279,25 @@ Provide security analysis with prioritized remediation recommendations.
             "gaps": gaps,
         }
 
-    def _check_public_resources(self, resources: List[Dict]) -> bool:
+    def _check_public_resources(self, resources: list[dict]) -> bool:
         """Check for public resources (CIS)."""
         return not any(r.get("public", False) for r in resources)
 
-    def _check_secrets_encrypted(self, resources: List[Dict]) -> bool:
+    def _check_secrets_encrypted(self, resources: list[dict]) -> bool:
         """Check if secrets are encrypted (CIS)."""
         for r in resources:
             if r.get("has_secrets") and not r.get("encrypted", False):
                 return False
         return True
 
-    def _check_tls_enabled(self, resources: List[Dict]) -> bool:
+    def _check_tls_enabled(self, resources: list[dict]) -> bool:
         """Check if TLS is enabled (CIS)."""
         for r in resources:
             if r.get("type") == "service" and not r.get("tls_enabled", False):
                 return False
         return True
 
-    def _check_iam_roles(self, resources: List[Dict]) -> bool:
+    def _check_iam_roles(self, resources: list[dict]) -> bool:
         """Check if IAM roles are minimal (CIS)."""
         # Simplified check - in reality would be more complex
         return True
@@ -313,7 +313,7 @@ Provide security analysis with prioritized remediation recommendations.
         }
         return severity_map.get(severity.lower(), "low")
 
-    def _format_vulnerabilities(self, vulnerabilities: List[Dict]) -> str:
+    def _format_vulnerabilities(self, vulnerabilities: list[dict]) -> str:
         """Format vulnerabilities for display."""
         if not vulnerabilities:
             return "No vulnerabilities found"
@@ -327,7 +327,7 @@ Provide security analysis with prioritized remediation recommendations.
 
         return "\n".join(lines)
 
-    def _format_misconfigurations(self, misconfigurations: List[Dict]) -> str:
+    def _format_misconfigurations(self, misconfigurations: list[dict]) -> str:
         """Format misconfigurations for display."""
         if not misconfigurations:
             return "No misconfigurations found"
@@ -344,7 +344,7 @@ Provide security analysis with prioritized remediation recommendations.
 
         return "\n".join(lines)
 
-    def _format_compliance(self, compliance: Dict) -> str:
+    def _format_compliance(self, compliance: dict) -> str:
         """Format compliance status for display."""
         score = compliance.get("score", 0)
         gaps = compliance.get("gaps", [])

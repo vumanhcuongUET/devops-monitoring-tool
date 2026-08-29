@@ -6,11 +6,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.models.slo import SloConfig, SloResult, SloApiDetail, SloDashboard
+from app.models.slo import SloApiDetail, SloConfig, SloDashboard, SloResult
 from app.security import validate_identifier
 from app.services.slo_client import SloClient
-from app.services.elasticsearch_client import ElasticsearchClient
-from app.api.deps import get_es_client
 
 router = APIRouter(prefix="/slo", tags=["slo"])
 

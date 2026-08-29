@@ -1,11 +1,10 @@
 """Prometheus metrics endpoint for application monitoring."""
 
 import logging
-import time
-from typing import Annotated
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, REGISTRY
-from starlette.responses import Response
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram, generate_latest
+from starlette.responses import Response
 
 from app.auth import _is_valid_api_key, _is_valid_token
 from app.config import settings

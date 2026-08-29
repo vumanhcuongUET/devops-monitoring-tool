@@ -1,12 +1,11 @@
 """Approval store for tracking action approval state (similar to AlertStateTracker)."""
 
-import asyncio
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
-from app.models.actions import Action, ActionStatus
+from app.models.actions import ActionStatus
 
 STATE_FILE = "data/approval_state.json"
 HISTORY_FILE = "data/approval_history.json"
@@ -25,7 +24,10 @@ class ApprovalStateTracker:
         self.use_redis = use_redis
 
         if use_redis:
-            from app.approvals.redis_store import RedisApprovalStore, RedisApprovalHistory
+            from app.approvals.redis_store import (
+                RedisApprovalHistory,
+                RedisApprovalStore,
+            )
             from app.config import settings
 
             # Build Redis URL from settings or use REDIS_URL if provided
@@ -68,7 +70,6 @@ class ApprovalStateTracker:
     async def broadcast_status(self, action_id: str, status: ActionStatus):
         """Broadcast status change via WebSocket."""
         if self._ws_manager:
-            import json
             await self._ws_manager.broadcast({
                 "type": "approval_status_changed",
                 "data": {
@@ -78,7 +79,7 @@ class ApprovalStateTracker:
                 },
             })
 
-    async def get(self, action_id: str) -> Optional[dict[str, Any]]:
+    async def get(self, action_id: str) -> dict[str, Any] | None:
         """Get state for a specific action."""
         if self.use_redis:
             return await self._state.get(action_id)
@@ -110,9 +111,9 @@ class ApprovalStateTracker:
         self,
         action_id: str,
         status: ActionStatus,
-        user: Optional[str] = None,
-        reason: Optional[str] = None,
-        command: Optional[str] = None,
+        user: str | None = None,
+        reason: str | None = None,
+        command: str | None = None,
         **extra_fields,
     ) -> dict[str, Any]:
         """Set the status of an action."""
@@ -239,8 +240,8 @@ class ApprovalHistory:
 
 
 # Singleton instances
-_approval_tracker: Optional[ApprovalStateTracker] = None
-_approval_history: Optional[ApprovalHistory] = None
+_approval_tracker: ApprovalStateTracker | None = None
+_approval_history: ApprovalHistory | None = None
 
 
 def get_approval_tracker(use_redis: bool = False) -> ApprovalStateTracker:
@@ -256,9 +257,10 @@ def get_approval_history(use_redis: bool = False) -> ApprovalHistory:
     global _approval_history
     if _approval_history is None:
         if use_redis:
+            from urllib.parse import urlparse
+
             from app.approvals.redis_store import RedisApprovalHistory
             from app.config import settings
-            from urllib.parse import urlparse
 
             if settings.REDIS_URL:
                 redis_url = settings.REDIS_URL

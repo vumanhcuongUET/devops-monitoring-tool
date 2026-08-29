@@ -12,10 +12,12 @@ Features:
 """
 
 import logging
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Global engine and session maker
 _engine: Optional["AsyncEngine"] = None
-_async_session_maker: Optional[async_sessionmaker[AsyncSession]] = None
+_async_session_maker: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_database_url() -> str:

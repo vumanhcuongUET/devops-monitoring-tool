@@ -1,28 +1,23 @@
 """Unit tests for Action Engine."""
 
-import pytest
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.actions.engine import ActionEngine, get_action_engine
-from app.actions.parser import get_command_parser
+from app.actions.executor import ExecutionResult
 from app.actions.rate_limiter import get_rate_limiter
-from app.actions.validator import get_command_validator, ValidationResult, RiskLevel
-from app.actions.executor import get_command_executor, ExecutionResult
-from app.approvals.store import get_approval_tracker
-from app.audit.logger import get_audit_logger
+from app.actions.validator import RiskLevel, ValidationResult
 from app.models.actions import (
-    Action,
     ActionStatus,
+    ApproveActionRequest,
+    CommandParams,
     CommandType,
     CreateActionRequest,
-    ApproveActionRequest,
-    RejectActionRequest,
     ExecuteActionRequest,
-    CommandParams,
+    RejectActionRequest,
 )
 from app.models.triage_card import Recommendation, SeverityLevel
-from app.registry.loader import get_registry
 
 
 @pytest.fixture

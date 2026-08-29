@@ -1,16 +1,16 @@
 """Tests for Phase 4C autonomous remediation actions."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.actions.remediation_actions import (
-    RemediationActionType,
-    RotateServiceAccountTokenAction,
-    RestartDaemonSetAction,
-    TruncateNodeLogsAction,
-    RestartIngressControllerAction,
     RemediationActionFactory,
+    RemediationActionType,
+    RestartDaemonSetAction,
+    RestartIngressControllerAction,
+    RotateServiceAccountTokenAction,
+    TruncateNodeLogsAction,
 )
 from app.models.actions import ExecutionResult
 from app.models.alerts import AlertEvent
@@ -80,33 +80,32 @@ class TestRotateServiceAccountTokenAction:
             mock_secrets_result,
             mock_delete_result,
             mock_delete_result,
-        ]):
-            with patch("json.loads", return_value={
-                "items": [
-                    {
-                        "metadata": {
-                            "name": "sa-token-1",
-                            "annotations": {"kubernetes.io/service-account.name": "my-sa"}
-                        },
-                        "type": "kubernetes.io/service-account-token",
+        ]), patch("json.loads", return_value={
+            "items": [
+                {
+                    "metadata": {
+                        "name": "sa-token-1",
+                        "annotations": {"kubernetes.io/service-account.name": "my-sa"}
                     },
-                    {
-                        "metadata": {
-                            "name": "sa-token-2",
-                            "annotations": {"kubernetes.io/service-account.name": "my-sa"}
-                        },
-                        "type": "kubernetes.io/service-account-token",
+                    "type": "kubernetes.io/service-account-token",
+                },
+                {
+                    "metadata": {
+                        "name": "sa-token-2",
+                        "annotations": {"kubernetes.io/service-account.name": "my-sa"}
                     },
-                ]
-            }):
-                result = await action.execute(
-                    alert_event=mock_event,
-                    parameters={
-                        "namespace": "default",
-                        "service_account": "my-sa",
-                    },
-                    dry_run=False,
-                )
+                    "type": "kubernetes.io/service-account-token",
+                },
+            ]
+        }):
+            result = await action.execute(
+                alert_event=mock_event,
+                parameters={
+                    "namespace": "default",
+                    "service_account": "my-sa",
+                },
+                dry_run=False,
+            )
 
         assert result.success is True
         assert "token secret" in result.stdout.lower()

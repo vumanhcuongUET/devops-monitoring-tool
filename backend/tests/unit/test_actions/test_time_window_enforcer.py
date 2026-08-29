@@ -1,14 +1,14 @@
 """Unit tests for TimeWindowEnforcer."""
 
+from datetime import datetime, timezone
+
 import pytest
-from datetime import datetime, timezone, time
-from unittest.mock import patch
 
 from app.actions.time_window_enforcer import (
-    TimeWindowEnforcer,
-    WindowType,
     SafeHoursWindow,
+    TimeWindowEnforcer,
     WindowCheckResult,
+    WindowType,
     get_time_window_enforcer,
 )
 

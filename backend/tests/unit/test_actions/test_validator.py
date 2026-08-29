@@ -1,19 +1,20 @@
 """Unit tests for Command Validator."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.actions.validator import (
     CommandValidator,
     ValidationResult,
     get_command_validator,
 )
-from app.models.actions import CommandType, CommandParams, RiskLevel
+from app.models.actions import CommandParams, CommandType, RiskLevel
 from app.models.registry import (
-    ProjectConfig,
     ClusterConfig,
-    RbacConstraints,
     NamespaceMapping,
+    ProjectConfig,
+    RbacConstraints,
 )
 
 

@@ -7,10 +7,8 @@ Purpose: Validate all Sprint 4 deliverables are complete and working
 Run: python backend/tests/observability/sprint4_validation.py
 """
 
-import os
 import sys
 from pathlib import Path
-
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -206,7 +204,7 @@ class Sprint4Validator:
 
         try:
             # Check telemetry imports
-            from app.telemetry import setup_telemetry, shutdown_telemetry, get_tracer
+            from app.telemetry import get_tracer, setup_telemetry, shutdown_telemetry
 
             self.print_result("Telemetry imports successful", True)
 

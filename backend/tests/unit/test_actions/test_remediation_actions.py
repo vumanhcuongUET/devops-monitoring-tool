@@ -1,19 +1,18 @@
 """Unit tests for Remediation Actions (Phase 4)."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
+from unittest.mock import patch
+
+import pytest
 
 from app.actions.remediation_actions import (
     DeleteCrashLoopPodAction,
-    ScaleDeploymentAction,
-    RollbackDeploymentAction,
-    RestartDeploymentAction,
     RemediationActionFactory,
     RemediationActionType,
+    ScaleDeploymentAction,
 )
 from app.models.actions import ExecutionResult
-from app.models.alerts import AlertEvent, AlertRule, AlertSeverity
+from app.models.alerts import AlertEvent, AlertSeverity
 
 
 class TestDeleteCrashLoopPodAction:
@@ -45,16 +44,17 @@ class TestDeleteCrashLoopPodAction:
             "items": [
                 {
                     "metadata": {"name": "crashloop-pod-1"},
-                    "status": {"phase": "Running"},
                     "status": {
+                        "phase": "Running",
                         "containerStatuses": [{"restartCount": 10}]
-                    },
-                    "status": {"containerStatuses": [{"restartCount": 10}]}
+                    }
                 },
                 {
                     "metadata": {"name": "crashloop-pod-2"},
-                    "status": {"phase": "Running"},
-                    "status": {"containerStatuses": [{"restartCount": 7}]}
+                    "status": {
+                        "phase": "Restarting",
+                        "containerStatuses": [{"restartCount": 7}]
+                    }
                 },
             ]
         }

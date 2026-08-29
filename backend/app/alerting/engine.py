@@ -3,11 +3,11 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from app.alerting.rules import load_rules
-from app.alerting.state import AlertStateTracker, AlertHistory
-from app.alerting.notifiers import SlackNotifier, EmailNotifier, WebhookNotifier
-from app.config import settings
 from app.actions.autonomous_executor import get_autonomous_executor
+from app.alerting.notifiers import EmailNotifier, SlackNotifier, WebhookNotifier
+from app.alerting.rules import load_rules
+from app.alerting.state import AlertHistory, AlertStateTracker
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class AlertEngine:
         self.use_redis = use_redis
 
         if use_redis:
-            from app.alerting.redis_store import RedisAlertStore, RedisAlertHistory
+            from app.alerting.redis_store import RedisAlertHistory, RedisAlertStore
 
             # Build Redis URL from settings or use REDIS_URL if provided
             if settings.REDIS_URL:
@@ -151,8 +151,8 @@ class AlertEngine:
             event: Alert event data
         """
         try:
-            from app.models.alerts import AlertEvent
             from app.config import settings
+            from app.models.alerts import AlertEvent
 
             # Create AlertEvent model
             alert_event = AlertEvent(

@@ -1,12 +1,13 @@
 """Integration tests for Actions API endpoints."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.config import settings
 from app.main import app
 from app.models.actions import ActionStatus, RiskLevel
-from app.config import settings
 
 
 @pytest.fixture
@@ -48,7 +49,7 @@ class TestActionsAPI:
     def test_create_action_success(self, client, mock_action_engine):
         """Test successful action creation."""
         # Mock engine response
-        from app.models.actions import Action, CommandType, CommandParams
+        from app.models.actions import Action, CommandParams, CommandType
 
         mock_action_engine.create_action_from_recommendation = AsyncMock(
             return_value=Action(
@@ -272,7 +273,7 @@ class TestActionsAPI:
 
     def test_bulk_create_actions(self, client, mock_action_engine):
         """Test bulk action creation."""
-        from app.models.actions import Action, CommandType, ActionStatus
+        from app.models.actions import Action, ActionStatus, CommandType
 
         mock_action_engine.create_action_from_recommendation = AsyncMock(
             return_value=Action(
@@ -353,9 +354,8 @@ class TestActionsAPIIntegration:
 
     def test_full_action_workflow(self, client):
         """Test complete action workflow through API."""
+
         from app.actions.engine import get_action_engine
-        from app.approvals.store import get_approval_tracker
-        from unittest.mock import AsyncMock
 
         # Setup real engine with mocked dependencies
         engine = get_action_engine()

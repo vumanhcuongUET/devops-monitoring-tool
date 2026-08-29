@@ -7,12 +7,14 @@ Tests the complete optimization flow with all strategies.
 Phase 6: AI Input Optimization - Sprint 1 Integration
 """
 
-import pytest
 import time
 from datetime import datetime
+
+import pytest
+
 from app.models.triage_card import SeverityLevel
-from app.services.token_optimizer import TokenOptimizer, OptimizationConfig
 from app.services.__tests__.data_generator import TestDataGenerator
+from app.services.token_optimizer import OptimizationConfig, TokenOptimizer
 
 
 class TestSprint1Complete:
@@ -182,7 +184,7 @@ class TestSprint1Complete:
         assert avg_reduction > 50, f"Average reduction: {avg_reduction:.2f}% (target: >50%)"
         assert avg_original > avg_optimized, "Optimization should reduce tokens"
 
-        print(f"\nPerformance Summary:")
+        print("\nPerformance Summary:")
         print(f"  Avg Time: {avg_time:.2f}ms")
         print(f"  Avg Reduction: {avg_reduction:.2f}%")
         print(f"  Avg Original Tokens: {avg_original:.0f}")
@@ -408,7 +410,10 @@ class TestSprint1Complete:
     async def test_result_validation(self, optimizer):
         """Test _validate_result method."""
         # Create a valid result
-        from app.services.token_optimizer import OptimizationResult, OptimizationStrategy
+        from app.services.token_optimizer import (
+            OptimizationResult,
+            OptimizationStrategy,
+        )
 
         valid_result = OptimizationResult(
             optimized_context={'test': 'data'},

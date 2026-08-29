@@ -5,7 +5,7 @@ Tests for advanced trend detection and compression methods.
 """
 
 import pytest
-import numpy as np
+
 from app.services.time_series_compressor import TimeSeriesCompressor, Trend
 from app.services.token_optimizer import OptimizationConfig
 

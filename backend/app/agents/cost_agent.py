@@ -8,10 +8,10 @@ Specializes in:
 - Cost optimization opportunities
 """
 
-from typing import Dict, Any, List
 import logging
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ RECOMMENDATION: [Actionable recommendation with estimated savings]
 Be specific about dollar amounts and percentages. Prioritize high-impact opportunities.
 """
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze resource costs and identify optimization opportunities.
 
@@ -153,7 +153,7 @@ Provide analysis with specific recommendations and estimated savings.
                 error=str(e),
             )
 
-    def _find_idle_resources(self, resources: List[Dict]) -> List[Dict]:
+    def _find_idle_resources(self, resources: list[dict]) -> list[dict]:
         """Find idle or underutilized resources."""
         idle = []
 
@@ -181,7 +181,7 @@ Provide analysis with specific recommendations and estimated savings.
 
         return idle
 
-    def _find_overprovisioned(self, resources: List[Dict]) -> List[Dict]:
+    def _find_overprovisioned(self, resources: list[dict]) -> list[dict]:
         """Find over-provisioned resources."""
         overprovisioned = []
 
@@ -232,8 +232,8 @@ Provide analysis with specific recommendations and estimated savings.
         return overprovisioned
 
     def _analyze_cost_opportunities(
-        self, resources: List[Dict], cost_data: Dict
-    ) -> List[Dict]:
+        self, resources: list[dict], cost_data: dict
+    ) -> list[dict]:
         """Analyze cost optimization opportunities."""
         opportunities = []
 
@@ -274,7 +274,7 @@ Provide analysis with specific recommendations and estimated savings.
 
         return opportunities
 
-    def _format_idle_resources(self, resources: List[Dict]) -> str:
+    def _format_idle_resources(self, resources: list[dict]) -> str:
         """Format idle resources for display."""
         if not resources:
             return "No idle resources found"
@@ -289,7 +289,7 @@ Provide analysis with specific recommendations and estimated savings.
 
         return "\n".join(lines)
 
-    def _format_overprovisioned(self, resources: List[Dict]) -> str:
+    def _format_overprovisioned(self, resources: list[dict]) -> str:
         """Format over-provisioned resources for display."""
         if not resources:
             return "No over-provisioned resources found"
@@ -306,7 +306,7 @@ Provide analysis with specific recommendations and estimated savings.
 
         return "\n".join(lines)
 
-    def _format_cost_opportunities(self, opportunities: List[Dict]) -> str:
+    def _format_cost_opportunities(self, opportunities: list[dict]) -> str:
         """Format cost opportunities for display."""
         if not opportunities:
             return "No cost opportunities found"

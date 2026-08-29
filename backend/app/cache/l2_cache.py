@@ -12,16 +12,15 @@ Features:
 - Serialization support (JSON, MsgPack)
 """
 
-import json
-import time
-from typing import Any, Dict, List, Optional, Union
-from datetime import timedelta
 import hashlib
+import json
 import logging
+import time
+from typing import Any
 
 try:
     import redis.asyncio as redis
-    from redis.asyncio import Redis, ConnectionPool
+    from redis.asyncio import ConnectionPool, Redis
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -69,8 +68,8 @@ class L2CacheManager:
 
     def __init__(
         self,
-        redis_client: Optional[Redis] = None,
-        redis_url: Optional[str] = None,
+        redis_client: Redis | None = None,
+        redis_url: str | None = None,
         default_ttl: int = 300,
         serialization: str = SerializationFormat.JSON,
         key_prefix: str = "l2"
@@ -111,7 +110,7 @@ class L2CacheManager:
             "errors": 0
         }
 
-    def _get_key(self, data_type: str, identifier: Dict[str, Any]) -> str:
+    def _get_key(self, data_type: str, identifier: dict[str, Any]) -> str:
         """
         Generate Redis key with prefix and identifier.
 
@@ -139,8 +138,8 @@ class L2CacheManager:
     async def get(
         self,
         data_type: str,
-        identifier: Dict[str, Any]
-    ) -> Optional[Any]:
+        identifier: dict[str, Any]
+    ) -> Any | None:
         """
         Get cached data by type and identifier.
 
@@ -172,10 +171,10 @@ class L2CacheManager:
     async def set(
         self,
         data_type: str,
-        identifier: Dict[str, Any],
+        identifier: dict[str, Any],
         value: Any,
-        ttl: Optional[int] = None,
-        tags: Optional[List[str]] = None
+        ttl: int | None = None,
+        tags: list[str] | None = None
     ) -> bool:
         """
         Cache data with type-specific TTL.
@@ -213,7 +212,7 @@ class L2CacheManager:
             logger.error(f"L2Cache: Error setting {key}: {e}")
             return False
 
-    async def delete(self, data_type: str, identifier: Dict[str, Any]) -> int:
+    async def delete(self, data_type: str, identifier: dict[str, Any]) -> int:
         """
         Delete cached data.
 
@@ -272,7 +271,7 @@ class L2CacheManager:
             return 0.0
         return (self._stats["hits"] / total) * 100
 
-    async def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """
         Get cache statistics.
 
@@ -337,7 +336,7 @@ class L2CacheManager:
             logger.warning("MsgPack not available, falling back to JSON")
             return json.loads(value.decode())
 
-    async def _add_to_tag_index(self, key: str, tags: List[str], ttl: int) -> None:
+    async def _add_to_tag_index(self, key: str, tags: list[str], ttl: int) -> None:
         """
         Add key to tag indexes for group invalidation.
 
@@ -381,7 +380,7 @@ class L2CacheManager:
             logger.error(f"L2Cache: Error invalidating tag {tag}: {e}")
             return 0
 
-    async def get_by_tag(self, tag: str) -> List[Any]:
+    async def get_by_tag(self, tag: str) -> list[Any]:
         """
         Get all cached values with a specific tag.
 
@@ -416,8 +415,8 @@ class L2CacheManager:
     async def mget(
         self,
         data_type: str,
-        identifiers: List[Dict[str, Any]]
-    ) -> List[Optional[Any]]:
+        identifiers: list[dict[str, Any]]
+    ) -> list[Any | None]:
         """
         Get multiple cached values at once.
 
@@ -453,9 +452,9 @@ class L2CacheManager:
     async def mset(
         self,
         data_type: str,
-        items: List[tuple[Dict[str, Any], Any]],
-        ttl: Optional[int] = None,
-        tags: Optional[List[str]] = None
+        items: list[tuple[dict[str, Any], Any]],
+        ttl: int | None = None,
+        tags: list[str] | None = None
     ) -> bool:
         """
         Set multiple cached values at once.

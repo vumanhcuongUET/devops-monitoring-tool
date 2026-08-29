@@ -3,7 +3,7 @@
 import pytest
 
 from app.actions.parser import CommandParser, get_command_parser
-from app.models.actions import CommandType, CommandParams
+from app.models.actions import CommandType
 
 
 class TestCommandParser:

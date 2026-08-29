@@ -10,15 +10,15 @@ This skill analyzes systems to check:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class SOC2AuditorSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the SOC2 Auditor skill."""
         super().__init__(config)
 
@@ -56,7 +56,7 @@ class SOC2AuditorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze SOC2 compliance.
 
@@ -148,8 +148,8 @@ class SOC2AuditorSkill(BaseSkill):
     async def _check_security_controls(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check SOC2 Security criteria controls.
 
         Returns:
@@ -192,8 +192,8 @@ class SOC2AuditorSkill(BaseSkill):
     async def _check_availability_controls(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check SOC2 Availability criteria controls.
 
         Returns:
@@ -230,8 +230,8 @@ class SOC2AuditorSkill(BaseSkill):
     async def _check_processing_controls(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check SOC2 Processing Integrity criteria controls.
 
         Returns:
@@ -267,10 +267,10 @@ class SOC2AuditorSkill(BaseSkill):
 
     def _calculate_compliance_score(
         self,
-        security_controls: Optional[Dict[str, Any]],
-        availability_controls: Optional[Dict[str, Any]],
-        processing_controls: Optional[Dict[str, Any]],
-        criteria: List[str],
+        security_controls: dict[str, Any] | None,
+        availability_controls: dict[str, Any] | None,
+        processing_controls: dict[str, Any] | None,
+        criteria: list[str],
     ) -> float:
         """Calculate overall SOC2 compliance score.
 
@@ -291,11 +291,11 @@ class SOC2AuditorSkill(BaseSkill):
     def _generate_recommendations(
         self,
         compliance_score: float,
-        security_controls: Optional[Dict[str, Any]],
-        availability_controls: Optional[Dict[str, Any]],
-        processing_controls: Optional[Dict[str, Any]],
-        criteria: List[str],
-    ) -> List[Recommendation]:
+        security_controls: dict[str, Any] | None,
+        availability_controls: dict[str, Any] | None,
+        processing_controls: dict[str, Any] | None,
+        criteria: list[str],
+    ) -> list[Recommendation]:
         """Generate SOC2 compliance recommendations.
 
         Returns:

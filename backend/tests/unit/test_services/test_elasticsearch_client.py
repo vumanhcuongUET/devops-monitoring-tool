@@ -7,9 +7,9 @@ Tests the Elasticsearch client functionality including:
 - Cluster health checks
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
 
 
 @pytest.mark.unit

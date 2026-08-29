@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_k8s_client
-from app.models.kubernetes import PodStatus, DeploymentStatus, K8sEvent
+from app.models.kubernetes import DeploymentStatus, K8sEvent, PodStatus
 from app.security import validate_identifier
 from app.services.kubernetes_client import KubernetesClient
 

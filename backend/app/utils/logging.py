@@ -1,7 +1,7 @@
 """Logging utilities with sensitive data sanitization."""
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Patterns that might contain sensitive data
 SENSITIVE_PATTERNS = [
@@ -25,7 +25,7 @@ SENSITIVE_FIELDS = {
 }
 
 
-def sanitize_dict(data: Dict[str, Any], mask: str = '***') -> Dict[str, Any]:
+def sanitize_dict(data: dict[str, Any], mask: str = '***') -> dict[str, Any]:
     """Recursively sanitize sensitive fields in a dictionary.
 
     Args:

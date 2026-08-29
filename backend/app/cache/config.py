@@ -5,7 +5,7 @@ Phase 7 - Sprint 1 - Day 5
 Environment-based configuration for cache layers
 """
 
-from typing import Optional
+
 from pydantic_settings import BaseSettings
 
 
@@ -13,17 +13,17 @@ class CacheSettings(BaseSettings):
     """Cache configuration from environment variables."""
 
     # Redis Configuration
-    redis_url: Optional[str] = None
+    redis_url: str | None = None
     redis_host: str = "localhost"
     redis_port: int = 6379
-    redis_password: Optional[str] = None
+    redis_password: str | None = None
     redis_db: int = 0
     redis_max_connections: int = 20
 
     # Sentinel Configuration
-    redis_sentinel_hosts: Optional[str] = None  # Comma-separated list
+    redis_sentinel_hosts: str | None = None  # Comma-separated list
     redis_sentinel_master_name: str = "mymaster"
-    redis_sentinel_password: Optional[str] = None
+    redis_sentinel_password: str | None = None
 
     # Cache Behavior
     cache_default_ttl: int = 300  # 5 minutes

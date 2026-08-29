@@ -2,11 +2,9 @@ import base64
 import hashlib
 import hmac
 import json
-import secrets
 import time
-from datetime import datetime, timezone
 
-from fastapi import Request, HTTPException, Security
+from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader, HTTPBearer
 
 from app.config import settings

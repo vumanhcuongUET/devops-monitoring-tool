@@ -9,7 +9,8 @@ This module provides:
 import logging
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
+
 import httpx
 
 from app.config import settings
@@ -42,7 +43,7 @@ class PolicyViolation:
         policy_id: str,
         description: str,
         severity: PolicySeverity,
-        details: Optional[dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         """Initialize a policy violation.
 
@@ -65,9 +66,9 @@ class PolicyEvaluationResult:
     def __init__(
         self,
         decision: PolicyDecision,
-        violations: Optional[list[PolicyViolation]] = None,
-        warnings: Optional[list[str]] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        violations: list[PolicyViolation] | None = None,
+        warnings: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize the result.
 
@@ -114,7 +115,7 @@ class OPAClient:
 
     def __init__(
         self,
-        opa_url: Optional[str] = None,
+        opa_url: str | None = None,
         timeout: float = 5.0,
         enable_cache: bool = True,
     ):
@@ -136,7 +137,7 @@ class OPAClient:
         action: dict[str, Any],
         project: str,
         environment: str = "production",
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> PolicyEvaluationResult:
         """Evaluate an action against OPA policies.
 
@@ -241,7 +242,7 @@ class OPAClient:
             logger.error(f"OPA evaluation error: {e}")
             return PolicyEvaluationResult(
                 decision=PolicyDecision.UNKNOWN,
-                warnings=[f"Policy evaluation failed: {str(e)}"],
+                warnings=[f"Policy evaluation failed: {e!s}"],
             )
 
     async def evaluate_batch(
@@ -249,7 +250,7 @@ class OPAClient:
         actions: list[dict[str, Any]],
         project: str,
         environment: str = "production",
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> list[PolicyEvaluationResult]:
         """Evaluate multiple actions in batch.
 
@@ -315,7 +316,7 @@ class OPAClient:
         action: dict[str, Any],
         project: str,
         environment: str,
-        user: Optional[str],
+        user: str | None,
     ) -> str:
         """Generate cache key for policy evaluation.
 
@@ -359,11 +360,11 @@ class OPAClient:
 
 
 # Singleton instance
-_opa_client: Optional[OPAClient] = None
+_opa_client: OPAClient | None = None
 
 
 def get_opa_client(
-    opa_url: Optional[str] = None,
+    opa_url: str | None = None,
     timeout: float = 5.0,
 ) -> OPAClient:
     """Get or create the singleton OPA client instance.

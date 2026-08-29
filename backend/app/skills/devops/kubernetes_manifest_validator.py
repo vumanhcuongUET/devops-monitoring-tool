@@ -9,15 +9,15 @@ This skill validates:
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,14 +42,14 @@ class KubernetesManifestValidatorSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Validate Kubernetes manifests.
 
@@ -109,7 +109,7 @@ class KubernetesManifestValidatorSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"K8s manifest validation failed: {str(e)}"],
+                errors=[f"K8s manifest validation failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -198,7 +198,7 @@ class KubernetesManifestValidatorSkill(BaseSkill):
     async def _validate_manifests(
         self,
         manifest_path: str,
-        namespace: Optional[str],
+        namespace: str | None,
     ) -> list[dict[str, Any]]:
         """Validate Kubernetes manifests.
 

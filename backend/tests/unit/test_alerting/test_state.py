@@ -7,13 +7,13 @@ Tests the alert state tracker and history functionality including:
 - State persistence
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime
-import tempfile
 import os
+import tempfile
+from datetime import datetime
 
-from app.alerting.state import AlertStateTracker, AlertHistory, STATE_FILE, HISTORY_FILE
+import pytest
+
+from app.alerting.state import HISTORY_FILE, STATE_FILE, AlertHistory, AlertStateTracker
 
 
 @pytest.fixture

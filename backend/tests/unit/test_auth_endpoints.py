@@ -1,7 +1,7 @@
 """Auth token endpoints: 15-min tokens + /auth/refresh sliding sessions."""
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from app.auth import _is_valid_token, create_token
 from app.config import settings

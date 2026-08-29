@@ -18,16 +18,16 @@ Author: Phase 8 Sprint 3 (Day 12)
 Date: 2026-08-24
 """
 
-import pytest
-import time
-import hmac
 import hashlib
-from typing import List
+import hmac
+import time
 from statistics import mean, median, stdev
 
-from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
-from app.actions.chain_monitor import get_chain_monitor, ChainMonitor, ChainEvent
-from app.middleware.security import SecurityHeadersMiddleware, CSPNonceManager
+import pytest
+
+from app.actions.chain_monitor import ChainEvent, get_chain_monitor
+from app.actions.rate_limiter import RateLimitConfig, get_rate_limiter
+from app.middleware.security import CSPNonceManager, SecurityHeadersMiddleware
 
 
 class PerformanceMetrics:
@@ -35,7 +35,7 @@ class PerformanceMetrics:
 
     def __init__(self, name: str):
         self.name = name
-        self.durations: List[float] = []
+        self.durations: list[float] = []
 
     def record(self, duration: float) -> None:
         """Record a duration in milliseconds."""
@@ -160,7 +160,7 @@ class TestRateLimitingPerformance:
         total_duration = (time.perf_counter() - start_total) * 1000
         mean_duration = total_duration / iterations
 
-        print(f"\n10,000 Rate Limit Checks:")
+        print("\n10,000 Rate Limit Checks:")
         print(f"  Total: {total_duration:.2f}ms")
         print(f"  Mean: {mean_duration:.3f}ms")
         print(f"  Throughput: {iterations / (total_duration / 1000):.0f} checks/sec")
@@ -504,7 +504,7 @@ class TestCombinedSecurityFlowPerformance:
         )
         limiter.update_config(test_config)
 
-        async def concurrent_checks(count: int) -> List[float]:
+        async def concurrent_checks(count: int) -> list[float]:
             """Run concurrent checks and return durations."""
             async def single_check(i: int) -> float:
                 start = time.perf_counter()
@@ -530,7 +530,7 @@ class TestCombinedSecurityFlowPerformance:
             metrics.record(d)
 
         stats = metrics.get_stats()
-        print(f"\nConcurrent Rate Limit Checks (100 concurrent):")
+        print("\nConcurrent Rate Limit Checks (100 concurrent):")
         print(f"  Individual check stats: {stats}")
         print(f"  Total time: {total_duration:.2f}ms")
         print(f"  Concurrent throughput: {iterations / (total_duration / 1000):.0f} checks/sec")
@@ -572,7 +572,7 @@ class TestMemoryUsage:
         # Check memory after
         after = sys.getsizeof(limiter)
 
-        print(f"\nRate Limiter Memory Usage:")
+        print("\nRate Limiter Memory Usage:")
         print(f"  Baseline: {baseline} bytes")
         print(f"  After 1000 records: {after} bytes")
         print(f"  Growth: {after - baseline} bytes ({(after - baseline) / 1000:.2f} bytes per record)")
@@ -604,7 +604,7 @@ class TestMemoryUsage:
         # Check memory after
         after = sys.getsizeof(monitor)
 
-        print(f"\nChain Monitor Memory Usage:")
+        print("\nChain Monitor Memory Usage:")
         print(f"  Baseline: {baseline} bytes")
         print(f"  After 100 checks: {after} bytes")
         print(f"  Growth: {after - baseline} bytes")

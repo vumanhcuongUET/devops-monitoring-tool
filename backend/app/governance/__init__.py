@@ -8,31 +8,31 @@ This package contains:
 """
 
 from app.governance.ai_rbac import (
-    AIPermission,
     ENVIRONMENT_PERMISSIONS,
+    AIPermission,
     get_ai_permission_matrix,
+)
+from app.governance.opa_client import (
+    OPAClient,
+    PolicyDecision,
+    PolicyEvaluationResult,
+    PolicyViolation,
+    get_opa_client,
 )
 from app.governance.permission_checker import (
     AIPermissionChecker,
     get_permission_checker,
 )
-from app.governance.opa_client import (
-    PolicyDecision,
-    PolicyEvaluationResult,
-    PolicyViolation,
-    OPAClient,
-    get_opa_client,
-)
 
 __all__ = [
-    "AIPermission",
     "ENVIRONMENT_PERMISSIONS",
-    "get_ai_permission_matrix",
+    "AIPermission",
     "AIPermissionChecker",
-    "get_permission_checker",
+    "OPAClient",
     "PolicyDecision",
     "PolicyEvaluationResult",
     "PolicyViolation",
-    "OPAClient",
+    "get_ai_permission_matrix",
     "get_opa_client",
+    "get_permission_checker",
 ]

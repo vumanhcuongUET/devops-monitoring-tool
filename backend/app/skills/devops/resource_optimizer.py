@@ -1,15 +1,15 @@
 """Resource Optimizer Skill - Optimize Kubernetes resource requests and limits."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,14 +32,14 @@ class ResourceOptimizerSkill(BaseSkill):
     priority = SkillPriority.MEDIUM
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze resource utilization.
 
@@ -81,7 +81,7 @@ class ResourceOptimizerSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Resource optimization analysis failed: {str(e)}"],
+                errors=[f"Resource optimization analysis failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -119,7 +119,7 @@ class ResourceOptimizerSkill(BaseSkill):
                 estimated_effort="15 minutes",
                 risk_level="low",
                 commands=[
-                    f"# Update deployment",
+                    "# Update deployment",
                     f"kubectl set resources deployment {resource['deployment']} "
                     f"--requests={resource['recommended_requests']}",
                 ],
@@ -131,7 +131,7 @@ class ResourceOptimizerSkill(BaseSkill):
         self,
         project: str,
         days: int,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
         """Fetch resource metrics from Prometheus."""
         return []

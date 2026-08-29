@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +21,7 @@ class AlertRule(BaseModel):
     notify_webhook: bool = False
     labels: dict[str, str] = {}
     # Phase 4: Autonomous Remediation
-    autonomous_action: Optional[dict] = Field(
+    autonomous_action: dict | None = Field(
         None,
         description="Autonomous remediation configuration. "
         "Structure: {enabled, action_type, auto_approve, max_executions_per_hour, "
@@ -93,5 +92,5 @@ class AlertStatsRequest(BaseModel):
     namespaces: list[str] = Field(default=[], description="Specific namespaces to query (empty = all configured)")
     include_pending: bool = Field(default=True, description="Include pending alerts")
     top_n: int = Field(default=5, description="Number of top alerts to return per namespace")
-    severity_filter: Optional[list[AlertSeverity]] = Field(None, description="Filter by severity (null = all)")
+    severity_filter: list[AlertSeverity] | None = Field(None, description="Filter by severity (null = all)")
 

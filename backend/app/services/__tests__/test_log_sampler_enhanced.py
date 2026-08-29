@@ -4,9 +4,11 @@ Enhanced Log Sampler Tests - Day 3 Features
 Tests for temporal scoring, keyword extraction, and 4-factor relevance scoring.
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from app.services.log_sampler import LogSampler, KeywordExtractor, RelevanceScore
+
+import pytest
+
+from app.services.log_sampler import KeywordExtractor, LogSampler
 from app.services.token_optimizer import OptimizationConfig
 
 

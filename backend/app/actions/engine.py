@@ -1,36 +1,31 @@
 """Action Engine for converting Triage Card recommendations into executable actions."""
 
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
 
-from app.actions.parser import get_command_parser
-from app.actions.validator import get_command_validator, ValidationResult
-from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
-from app.actions.impact_estimator import get_impact_estimator, ImpactEstimate, ImpactLevel
-from app.actions.rollback_executor import get_rollback_executor, RollbackStatus
-from app.actions.executor import get_command_executor
 from app.actions.environment_executor import get_executor
-from app.approvals.store import get_approval_tracker, get_approval_history
+from app.actions.executor import get_command_executor
+from app.actions.impact_estimator import ImpactLevel, get_impact_estimator
+from app.actions.parser import get_command_parser
+from app.actions.rate_limiter import get_rate_limiter
+from app.actions.rollback_executor import get_rollback_executor
+from app.actions.validator import get_command_validator
+from app.approvals.store import get_approval_history, get_approval_tracker
 from app.audit.logger import get_audit_logger
-from app.feedback.collector import get_feedback_collector
 from app.config import settings
+from app.feedback.collector import get_feedback_collector
 from app.governance.permission_checker import get_permission_checker
-from app.governance.ai_rbac import get_ai_permission_matrix, AIPermission
 from app.models.actions import (
     Action,
+    ActionListResponse,
     ActionStatus,
-    CommandType,
-    CreateActionRequest,
     ApproveActionRequest,
-    RejectActionRequest,
+    CreateActionRequest,
     ExecuteActionRequest,
     ExecutionResult,
-    CommandParams,
+    RejectActionRequest,
     RiskLevel,
-    ActionListResponse,
 )
 from app.models.triage_card import Recommendation
 from app.registry.loader import get_registry
@@ -559,7 +554,7 @@ class ActionEngine:
             logger.error(f"Action {action_id} execution failed: {e}")
             raise
 
-    async def get_action(self, action_id: str) -> Optional[dict]:
+    async def get_action(self, action_id: str) -> dict | None:
         """Get action details."""
         state = await self.approval_tracker.get(action_id)
         if not state:
@@ -568,8 +563,8 @@ class ActionEngine:
 
     async def list_actions(
         self,
-        project: Optional[str] = None,
-        status: Optional[ActionStatus] = None,
+        project: str | None = None,
+        status: ActionStatus | None = None,
         limit: int = 100,
     ) -> ActionListResponse:
         """List actions with optional filters."""
@@ -615,7 +610,7 @@ class ActionEngine:
 
 
 # Singleton instance
-_action_engine: Optional[ActionEngine] = None
+_action_engine: ActionEngine | None = None
 
 
 def get_action_engine() -> ActionEngine:

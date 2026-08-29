@@ -8,9 +8,10 @@ Tests the alert engine functionality including:
 - Notification triggering
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 @pytest.mark.unit

@@ -7,7 +7,7 @@ execution history and health checks - all with fake agents, no LLM calls.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 
@@ -21,10 +21,10 @@ class FakeAgent:
     def __init__(
         self,
         name: str,
-        insights: Optional[Dict[str, Any]] = None,
-        recommendations: Optional[List[str]] = None,
+        insights: dict[str, Any] | None = None,
+        recommendations: list[str] | None = None,
         confidence: float = 0.8,
-        error: Optional[str] = None,
+        error: str | None = None,
         raise_exc: bool = False,
         delay: float = 0.0,
         timeout: float = 5.0,
@@ -38,9 +38,9 @@ class FakeAgent:
         self.raise_exc = raise_exc
         self.delay = delay
         self.calls = 0
-        self.last_context: Optional[Dict[str, Any]] = None
+        self.last_context: dict[str, Any] | None = None
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         self.calls += 1
         self.last_context = context
         if self.delay:
@@ -55,7 +55,7 @@ class FakeAgent:
             error=self.error,
         )
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         return {
             "agent": self.name,
             "status": "healthy",

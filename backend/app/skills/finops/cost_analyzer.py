@@ -8,16 +8,16 @@ This skill analyzes cloud infrastructure costs to identify:
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class CostAnalyzerSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the Cost Analyzer skill.
 
         Args:
@@ -62,7 +62,7 @@ class CostAnalyzerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run cost analysis for the specified project.
 
@@ -130,7 +130,7 @@ class CostAnalyzerSkill(BaseSkill):
                 success=False,
                 skill_id=self.skill_id,
                 confidence=0.0,
-                errors=[f"Cost analysis failed: {str(e)}"],
+                errors=[f"Cost analysis failed: {e!s}"],
             )
 
     async def get_recommendations(

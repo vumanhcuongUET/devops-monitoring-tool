@@ -1,15 +1,13 @@
 """Unit tests for AuditLogger."""
 
-import json
 import os
+
 import pytest
-from datetime import datetime, timezone
-from pathlib import Path
 
 from app.audit.logger import (
+    AUDIT_LOG_FILE,
     AuditLogger,
     get_audit_logger,
-    AUDIT_LOG_FILE,
 )
 from app.models.audit import (
     AuditEventType,

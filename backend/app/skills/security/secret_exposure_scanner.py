@@ -5,7 +5,7 @@ Scans git history, container images, K8s YAML, and CI/CD variables.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -67,7 +67,7 @@ class SecretExposureScannerSkill(BaseSkill):
         "bearer_token": r"(?i)bearer[\"']?\s*[\"']?[a-zA-Z0-9\-._~+/]+=*",
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the secret exposure scanner skill.
 
         Args:
@@ -79,7 +79,7 @@ class SecretExposureScannerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run secret exposure scan.
 

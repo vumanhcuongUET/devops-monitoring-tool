@@ -1,14 +1,14 @@
 """Unit tests for Security Headers Middleware with CSP nonce support."""
 
-import pytest
 import re
+
+import pytest
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.testclient import TestClient
 
 from app.middleware.security import (
     SecurityHeadersMiddleware,
-    CSPNonceManager,
 )
 
 

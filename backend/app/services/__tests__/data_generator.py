@@ -5,11 +5,11 @@ Phase 6: AI Input Optimization & Cost Efficiency
 Day 2: Create test data generator for comprehensive testing
 """
 
-from typing import Literal, List, Dict, Any
-from datetime import datetime, timedelta, timezone
 import random
-import numpy as np
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal
 
+import numpy as np
 
 IncidentType = Literal[
     'high_latency', 'error_spike', 'pod_crashloop', 'resource_exhaustion',
@@ -51,7 +51,7 @@ class TestDataGenerator:
         severity: Literal['low', 'medium', 'high', 'critical'] = 'medium',
         complexity: float = 0.5,
         duration_minutes: int = 60
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Generate realistic incident data.
 
@@ -88,7 +88,7 @@ class TestDataGenerator:
         severity: str,
         complexity: float,
         duration_minutes: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate realistic log entries."""
         # Base log count by severity and duration
         base_count = int(1000 * (1 + duration_minutes / 60) * self._severity_multiplier(severity))
@@ -157,7 +157,7 @@ class TestDataGenerator:
             'severity_distribution': severity_dist
         }
 
-    def _get_log_templates_for_incident(self, incident_type: str) -> Dict[str, List[str]]:
+    def _get_log_templates_for_incident(self, incident_type: str) -> dict[str, list[str]]:
         """Get log templates specific to incident type."""
         templates = {
             'critical': [
@@ -216,7 +216,7 @@ class TestDataGenerator:
         severity: str,
         complexity: float,
         duration_minutes: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate Prometheus-style metrics data."""
         metrics = {}
 
@@ -282,7 +282,7 @@ class TestDataGenerator:
         duration_minutes: int,
         affected: bool = False,
         unit: str = 'percent'
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate time series data for a metric."""
         points = 60  # One point per minute
         timestamps = []
@@ -321,7 +321,7 @@ class TestDataGenerator:
             'anomaly_detected': affected and values[-1] > baseline * 1.5
         }
 
-    def _get_affected_metrics(self, incident_type: str) -> List[str]:
+    def _get_affected_metrics(self, incident_type: str) -> list[str]:
         """Get list of metrics affected by incident type."""
         mapping = {
             'high_latency': ['cpu', 'memory', 'network_io'],
@@ -341,7 +341,7 @@ class TestDataGenerator:
         incident_type: str,
         severity: str,
         complexity: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate APM-style data."""
         return {
             'latency_history': self._generate_metric_series(
@@ -372,7 +372,7 @@ class TestDataGenerator:
             'slow_transactions': self._generate_slow_transactions(incident_type, severity)
         }
 
-    def _generate_apm_errors(self, incident_type: str, severity: str) -> List[Dict]:
+    def _generate_apm_errors(self, incident_type: str, severity: str) -> list[dict]:
         """Generate APM error entries."""
         error_templates = {
             'high_latency': ['TimeoutError', 'SlowQueryError'],
@@ -396,7 +396,7 @@ class TestDataGenerator:
 
         return sorted(errors, key=lambda x: x['occurrences'], reverse=True)
 
-    def _generate_slow_transactions(self, incident_type: str, severity: str) -> List[Dict]:
+    def _generate_slow_transactions(self, incident_type: str, severity: str) -> list[dict]:
         """Generate slow transaction entries."""
         if incident_type not in ['high_latency', 'database_slow']:
             return []
@@ -418,7 +418,7 @@ class TestDataGenerator:
 
         return sorted(transactions, key=lambda x: x['current_latency_ms'], reverse=True)
 
-    def _generate_k8s_state(self, incident_type: str, severity: str) -> Dict[str, Any]:
+    def _generate_k8s_state(self, incident_type: str, severity: str) -> dict[str, Any]:
         """Generate Kubernetes state data."""
         state = {
             'pods_total': 10,
@@ -448,7 +448,7 @@ class TestDataGenerator:
 
         return state
 
-    def _generate_alerts(self, incident_type: str, severity: str) -> List[Dict]:
+    def _generate_alerts(self, incident_type: str, severity: str) -> list[dict]:
         """Generate alert configurations."""
         alert_count = 3 if severity == 'low' else 5 if severity == 'medium' else 8
 
@@ -468,9 +468,9 @@ class TestDataGenerator:
 
     def generate_batch(
         self,
-        incident_types: List[IncidentType],
+        incident_types: list[IncidentType],
         count_per_type: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Generate a batch of incidents across multiple types.
 
@@ -498,7 +498,7 @@ class TestDataGenerator:
 
         return incidents
 
-    def get_incident_types(self) -> List[str]:
+    def get_incident_types(self) -> list[str]:
         """Get list of available incident types."""
         return list(IncidentType.__args__)
 

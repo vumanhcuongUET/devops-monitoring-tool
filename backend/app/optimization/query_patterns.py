@@ -12,8 +12,7 @@ Features:
 - SLO violations
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import timedelta
+from typing import Any
 
 
 class QueryPatterns:
@@ -154,7 +153,7 @@ class QueryPatterns:
         """.strip()
 
     @staticmethod
-    def elasticsearch_logs_error_filter(project: str, error_keywords: List[str]) -> Dict[str, Any]:
+    def elasticsearch_logs_error_filter(project: str, error_keywords: list[str]) -> dict[str, Any]:
         """
         Elasticsearch query for error logs filtering.
 
@@ -190,7 +189,7 @@ class QueryPatterns:
     def elasticsearch_slow_transactions(
         service: str,
         threshold_ms: float = 1000
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Elasticsearch query for slow transaction detection.
 
@@ -221,7 +220,7 @@ class QueryPatterns:
         }
 
     @staticmethod
-    def kubernetes_deployment_status(namespace: str) -> Dict[str, Any]:
+    def kubernetes_deployment_status(namespace: str) -> dict[str, Any]:
         """
         Kubernetes label selector for deployment status.
 
@@ -240,7 +239,7 @@ class QueryPatterns:
     def prometheus_rate_query(
         metric_name: str,
         window: str = "5m",
-        labels: Optional[Dict[str, str]] = None
+        labels: dict[str, str] | None = None
     ) -> str:
         """
         Generic PromQL rate query.
@@ -264,7 +263,7 @@ class QueryPatterns:
     def prometheus_increase_query(
         metric_name: str,
         window: str = "5m",
-        labels: Optional[Dict[str, str]] = None
+        labels: dict[str, str] | None = None
     ) -> str:
         """
         Generic PromQL increase query.
@@ -515,7 +514,7 @@ class QueryPatternLibrary:
         return pattern_func(**kwargs)
 
     @classmethod
-    def list_patterns(cls, category: Optional[str] = None) -> Dict[str, List[str]]:
+    def list_patterns(cls, category: str | None = None) -> dict[str, list[str]]:
         """
         List all available patterns.
 

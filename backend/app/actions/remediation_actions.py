@@ -4,16 +4,15 @@ This module provides predefined remediation actions that can be triggered
 automatically by the alert engine for common incident patterns.
 """
 
-import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any
 
-from app.actions.executor import CommandExecutor, get_command_executor
-from app.actions.parser import CommandParser, get_command_parser
-from app.models.actions import CommandParams, ExecutionResult
-from app.models.alerts import AlertEvent, AlertRule
+from app.actions.executor import get_command_executor
+from app.actions.parser import get_command_parser
+from app.models.actions import ExecutionResult
+from app.models.alerts import AlertEvent
 
 logger = logging.getLogger(__name__)
 
@@ -989,7 +988,7 @@ class AdjustHPAMinReplicasAction(RemediationAction):
             # Step 3: Apply new min replicas
             patch_cmd = [
                 "patch", "hpa", hpa_name,
-                f'--type=merge',
+                '--type=merge',
                 f'-p={{"spec":{{"minReplicas":{new_min_replicas}}}}}'
             ]
 

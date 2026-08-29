@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillExecutionError,
-    SkillTimeoutError,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillExecutionError,
     SkillStatus,
+    SkillTimeoutError,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ class SkillRegistry:
     def register(
         self,
         skill_class: type[BaseSkill],
-        config: Optional[SkillConfig] = None,
+        config: SkillConfig | None = None,
     ) -> None:
         """Register a skill class.
 
@@ -146,7 +146,7 @@ class SkillRegistry:
             del self._instances[skill_id]
             logger.info(f"Unregistered skill: {skill_id}")
 
-    def get_skill(self, skill_id: str) -> Optional[BaseSkill]:
+    def get_skill(self, skill_id: str) -> BaseSkill | None:
         """Get a skill instance by ID.
 
         Args:
@@ -159,7 +159,7 @@ class SkillRegistry:
 
     def list_skills(
         self,
-        category: Optional[SkillCategory] = None,
+        category: SkillCategory | None = None,
         enabled_only: bool = True,
         implemented_only: bool = False,
     ) -> list[dict[str, Any]]:
@@ -189,7 +189,7 @@ class SkillRegistry:
 
         return skills
 
-    def get_skill_config(self, skill_id: str) -> Optional[SkillConfig]:
+    def get_skill_config(self, skill_id: str) -> SkillConfig | None:
         """Get skill configuration.
 
         Args:
@@ -232,7 +232,7 @@ class SkillRegistry:
         skill_id: str,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> tuple[str, AnalysisResult]:
         """Execute a skill analysis.
 
@@ -341,7 +341,7 @@ class SkillRegistry:
 
         return await skill.get_recommendations(analysis_id, project)
 
-    def get_result(self, execution_id: str) -> Optional[AnalysisResult]:
+    def get_result(self, execution_id: str) -> AnalysisResult | None:
         """Get analysis result by execution ID.
 
         Args:
@@ -352,7 +352,7 @@ class SkillRegistry:
         """
         return self._results.get(execution_id)
 
-    def get_status(self, skill_id: str) -> Optional[SkillStatus]:
+    def get_status(self, skill_id: str) -> SkillStatus | None:
         """Get current status of a skill.
 
         Args:
@@ -365,8 +365,8 @@ class SkillRegistry:
 
     def get_history(
         self,
-        skill_id: Optional[str] = None,
-        project: Optional[str] = None,
+        skill_id: str | None = None,
+        project: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Get execution history.
@@ -444,7 +444,7 @@ def get_skill_registry() -> SkillRegistry:
 
 def register_skill(
     skill_class: type[BaseSkill],
-    config: Optional[SkillConfig] = None,
+    config: SkillConfig | None = None,
 ) -> None:
     """Register a skill with the global registry.
 
@@ -464,8 +464,16 @@ def discover_skills() -> None:
     import importlib
     import pkgutil
 
-    from app.skills import finops, security, capacity, devops, code
-    from app.skills import observability, reliability, performance
+    from app.skills import (
+        capacity,
+        code,
+        devops,
+        finops,
+        observability,
+        performance,
+        reliability,
+        security,
+    )
 
     # Map category to module
     category_modules = {
@@ -511,12 +519,12 @@ def _initialize_registry():
 
         # Register Security skills
         from app.skills.security import (
-            VulnerabilityScannerSkill,
-            SecretScannerSkill,
+            DependencyConfusionSkill,
             KubeBenchSkill,
             MisconfigurationDetectorSkill,
-            DependencyConfusionSkill,
+            SecretScannerSkill,
             SecurityRuntimeMonitorSkill,
+            VulnerabilityScannerSkill,
         )
         registry.register(VulnerabilityScannerSkill)
         registry.register(SecretScannerSkill)
@@ -527,12 +535,12 @@ def _initialize_registry():
 
         # Register DevOps skills
         from app.skills.devops import (
-            DeploymentHealthCheckSkill,
-            ResourceOptimizerSkill,
-            ConfigDriftDetectorSkill,
             CicdPipelineAnalyzerSkill,
+            ConfigDriftDetectorSkill,
+            DeploymentHealthCheckSkill,
             DockerfileBestPracticesSkill,
             KubernetesManifestValidatorSkill,
+            ResourceOptimizerSkill,
         )
         registry.register(DeploymentHealthCheckSkill)
         registry.register(ResourceOptimizerSkill)
@@ -543,12 +551,12 @@ def _initialize_registry():
 
         # Register Code skills
         from app.skills.code import (
-            DependencyAuditSkill,
-            SastScannerSkill,
-            ComplexityAnalyzerSkill,
-            TestCoverageAnalyzerSkill,
-            DuplicationDetectorSkill,
             CodeSmellDetectorSkill,
+            ComplexityAnalyzerSkill,
+            DependencyAuditSkill,
+            DuplicationDetectorSkill,
+            SastScannerSkill,
+            TestCoverageAnalyzerSkill,
         )
         registry.register(DependencyAuditSkill)
         registry.register(SastScannerSkill)
@@ -559,8 +567,8 @@ def _initialize_registry():
 
         # Register Capacity skills
         from app.skills.capacity import (
-            CapacityPlannerSkill,
             BottleneckDetectorSkill,
+            CapacityPlannerSkill,
             GrowthPredictorSkill,
         )
         registry.register(CapacityPlannerSkill)
@@ -570,8 +578,8 @@ def _initialize_registry():
         # Register Monitoring skills
         from app.skills.monitoring import (
             AlertOptimizerSkill,
-            SLICalculatorSkill,
             DashboardAuditorSkill,
+            SLICalculatorSkill,
         )
         registry.register(AlertOptimizerSkill)
         registry.register(SLICalculatorSkill)
@@ -579,9 +587,9 @@ def _initialize_registry():
 
         # Register Reliability skills
         from app.skills.reliability import (
-            SLOTrackerSkill,
-            SLAComplianceSkill,
             DependencyHealthSkill,
+            SLAComplianceSkill,
+            SLOTrackerSkill,
         )
         registry.register(SLOTrackerSkill)
         registry.register(SLAComplianceSkill)
@@ -597,10 +605,12 @@ def _initialize_registry():
 
         # Register Phase 5: Observability skills
         from app.skills.observability import (
+            AnomalyDetectorSkill,
+            DashboardAuditorSkill,
             MetricsAnalyzerSkill,
             TracingAnalyzerSkill,
-            DashboardAuditorSkill,
-            AnomalyDetectorSkill,
+        )
+        from app.skills.observability import (
             SLOTrackerSkill as ObservabilitySLOTrackerSkill,
         )
         registry.register(MetricsAnalyzerSkill)
@@ -621,16 +631,16 @@ def _initialize_registry():
 
         # Register Phase 5: Reliability skills
         from app.skills.reliability import (
-            ScalingAnalyzerSkill,
             DLQMonitorSkill,
+            ScalingAnalyzerSkill,
         )
         registry.register(ScalingAnalyzerSkill)
         registry.register(DLQMonitorSkill)
 
         # Register Phase 5: Performance skills
         from app.skills.performance import (
-            LoadTestAnalyzerSkill,
             CircuitBreakerHealthSkill,
+            LoadTestAnalyzerSkill,
         )
         registry.register(LoadTestAnalyzerSkill)
         registry.register(CircuitBreakerHealthSkill)

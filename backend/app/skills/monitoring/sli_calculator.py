@@ -8,16 +8,16 @@ This skill analyzes metrics to calculate:
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class SLICalculatorSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the SLI Calculator skill."""
         super().__init__(config)
 
@@ -54,7 +54,7 @@ class SLICalculatorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Calculate SLIs for the service.
 
@@ -135,8 +135,8 @@ class SLICalculatorSkill(BaseSkill):
         self,
         project: str,
         time_window_hours: int,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Calculate availability SLI.
 
         Returns:
@@ -166,8 +166,8 @@ class SLICalculatorSkill(BaseSkill):
         self,
         project: str,
         time_window_hours: int,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Calculate latency SLI with percentiles.
 
         Returns:
@@ -195,8 +195,8 @@ class SLICalculatorSkill(BaseSkill):
         self,
         project: str,
         time_window_hours: int,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Calculate throughput SLI.
 
         Returns:
@@ -216,9 +216,9 @@ class SLICalculatorSkill(BaseSkill):
 
     def _calculate_slo_compliance(
         self,
-        sli_results: Dict[str, Any],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        sli_results: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Calculate SLO compliance across all SLIs.
 
         Returns:
@@ -254,9 +254,9 @@ class SLICalculatorSkill(BaseSkill):
 
     def _generate_recommendations(
         self,
-        sli_results: Dict[str, Any],
-        slo_compliance: Dict[str, Any],
-    ) -> List[Recommendation]:
+        sli_results: dict[str, Any],
+        slo_compliance: dict[str, Any],
+    ) -> list[Recommendation]:
         """Generate SLI/SLO recommendations.
 
         Returns:

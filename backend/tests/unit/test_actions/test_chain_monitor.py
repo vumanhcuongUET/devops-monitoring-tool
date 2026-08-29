@@ -1,16 +1,17 @@
 """Unit tests for ChainMonitor."""
 
+from datetime import datetime
+from unittest.mock import Mock
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, call
 
 from app.actions.chain_monitor import (
+    ChainEvent,
     ChainMonitor,
     ChainMonitorConfig,
-    ChainEvent,
+    audit_chain_event,
     get_chain_monitor,
     log_chain_event,
-    audit_chain_event,
 )
 
 
@@ -320,16 +321,17 @@ class TestDefaultHandlers:
 
     def test_audit_chain_event_exceeded(self):
         """Test audit_chain_event handler for exceeded event."""
-        from app.audit.logger import get_audit_logger, _audit_logger, AUDIT_LOG_FILE
-        from app.models.audit import AuditEventType
-        import tempfile
         import os
+        import tempfile
+
+        from app.audit.logger import AUDIT_LOG_FILE, _audit_logger, get_audit_logger
+        from app.models.audit import AuditEventType
 
         # Use a temp file for this test
         temp_dir = tempfile.mkdtemp()
         original_log = AUDIT_LOG_FILE
-        import app.audit.logger
         import app.actions.chain_monitor
+        import app.audit.logger
         app.audit.logger.AUDIT_LOG_FILE = os.path.join(temp_dir, "test_audit.json")
         _audit_logger = None  # Reset audit logger
 
@@ -364,16 +366,17 @@ class TestDefaultHandlers:
 
     def test_audit_chain_event_approaching(self):
         """Test audit_chain_event handler for approaching event."""
-        from app.audit.logger import get_audit_logger, _audit_logger, AUDIT_LOG_FILE
-        from app.models.audit import AuditEventType, AuditLogQuery
-        import tempfile
         import os
+        import tempfile
+
+        from app.audit.logger import AUDIT_LOG_FILE, _audit_logger, get_audit_logger
+        from app.models.audit import AuditEventType, AuditLogQuery
 
         # Use a temp file for this test
         temp_dir = tempfile.mkdtemp()
         original_log = AUDIT_LOG_FILE
-        import app.audit.logger
         import app.actions.chain_monitor
+        import app.audit.logger
         app.audit.logger.AUDIT_LOG_FILE = os.path.join(temp_dir, "test_audit2.json")
         _audit_logger = None  # Reset audit logger
 

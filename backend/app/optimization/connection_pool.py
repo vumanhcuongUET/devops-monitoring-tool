@@ -13,10 +13,10 @@ Features:
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,10 @@ class PoolStats:
     total_acquisitions: int = 0
     successful_acquisitions: int = 0
     avg_acquire_time_ms: float = 0
-    last_health_check: Optional[str] = None
+    last_health_check: str | None = None
     is_healthy: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "pool_name": self.pool_name,
@@ -90,7 +90,7 @@ class PooledConnection:
         self,
         connection: Any,
         pool: 'ConnectionPool',
-        created_at: Optional[datetime] = None
+        created_at: datetime | None = None
     ):
         """Initialize pooled connection."""
         self.connection = connection
@@ -121,7 +121,7 @@ class ConnectionPool:
         self,
         name: str,
         config: PoolConfig,
-        connection_factory: Optional[callable] = None
+        connection_factory: callable | None = None
     ):
         """
         Initialize connection pool.
@@ -136,7 +136,7 @@ class ConnectionPool:
         self.connection_factory = connection_factory
 
         # Connection storage
-        self.connections: List[PooledConnection] = []
+        self.connections: list[PooledConnection] = []
         self.waiting_queue: asyncio.Queue = asyncio.Queue()
 
         # Statistics
@@ -148,7 +148,7 @@ class ConnectionPool:
         }
 
         # Health check task
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task | None = None
         self._running = False
 
         # Lock for thread safety
@@ -188,7 +188,7 @@ class ConnectionPool:
 
             logger.info(f"Stopped connection pool: {self.name}")
 
-    async def acquire(self, timeout: Optional[float] = None) -> PooledConnection:
+    async def acquire(self, timeout: float | None = None) -> PooledConnection:
         """
         Acquire a connection from the pool.
 
@@ -266,7 +266,7 @@ class ConnectionPool:
                 except asyncio.QueueFull:
                     logger.warning(f"Waiting queue full for {self.name}, connection not queued")
 
-    def _get_idle_connection(self) -> Optional[PooledConnection]:
+    def _get_idle_connection(self) -> PooledConnection | None:
         """Get an idle connection from the pool."""
         # Collect unhealthy connections first to avoid modifying list during iteration
         unhealthy_connections = []
@@ -407,7 +407,7 @@ class ConnectionPoolManager:
 
     def __init__(self):
         """Initialize connection pool manager."""
-        self.pools: Dict[str, ConnectionPool] = {}
+        self.pools: dict[str, ConnectionPool] = {}
         self._running = False
         self._lock = asyncio.Lock()  # Added lock for thread safety
 
@@ -431,7 +431,7 @@ class ConnectionPoolManager:
         self,
         name: str,
         config: PoolConfig,
-        connection_factory: Optional[callable] = None
+        connection_factory: callable | None = None
     ) -> ConnectionPool:
         """
         Create a new connection pool.
@@ -460,15 +460,15 @@ class ConnectionPoolManager:
 
         return pool
 
-    def get_pool(self, name: str) -> Optional[ConnectionPool]:
+    def get_pool(self, name: str) -> ConnectionPool | None:
         """Get a pool by name."""
         return self.pools.get(name)
 
     async def acquire_from_pool(
         self,
         pool_name: str,
-        timeout: Optional[float] = None
-    ) -> Optional[PooledConnection]:
+        timeout: float | None = None
+    ) -> PooledConnection | None:
         """Acquire a connection from a specific pool."""
         pool = self.get_pool(pool_name)
         if not pool:
@@ -476,7 +476,7 @@ class ConnectionPoolManager:
 
         return await pool.acquire(timeout)
 
-    def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_stats(self) -> dict[str, dict[str, Any]]:
         """Get statistics for all pools."""
         # Get a snapshot of pools to avoid race conditions
         pools_snapshot = dict(self.pools)
@@ -485,7 +485,7 @@ class ConnectionPoolManager:
             for name, pool in pools_snapshot.items()
         }
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Perform health check on all pools."""
         results = {}
         # Get a snapshot of pools to avoid race conditions
@@ -561,10 +561,10 @@ class RateLimiter:
         self.burst = burst
 
         # Per-endpoint rate limits
-        self.endpoint_limits: Dict[str, Dict[str, float]] = {}
+        self.endpoint_limits: dict[str, dict[str, float]] = {}
 
         # Token buckets
-        self.buckets: Dict[str, float] = {}
+        self.buckets: dict[str, float] = {}
         self._lock = asyncio.Lock()
 
         # Statistics
@@ -634,7 +634,7 @@ class RateLimiter:
         self,
         endpoint: str,
         rate: float,
-        burst: Optional[int] = None
+        burst: int | None = None
     ):
         """Set rate limit for an endpoint."""
         async with self._lock:
@@ -687,7 +687,7 @@ class RateLimiter:
         else:
             stats["rejected"] += 1
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get rate limiter statistics."""
         return {
             "total_requests": self.stats["total_requests"],

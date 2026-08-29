@@ -5,7 +5,7 @@ error rate trends, and resource utilization.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.services.prometheus_client import PrometheusClient
 from app.skills.base import (
@@ -50,7 +50,7 @@ class MetricsAnalyzerSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the metrics analyzer skill.
 
         Args:
@@ -63,7 +63,7 @@ class MetricsAnalyzerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run metrics analysis.
 

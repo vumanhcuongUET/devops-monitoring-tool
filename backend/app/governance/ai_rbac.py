@@ -11,7 +11,6 @@ Principles:
 """
 
 from enum import Enum
-from typing import Dict, List
 
 
 class AIPermission(str, Enum):
@@ -40,7 +39,7 @@ class AIPermission(str, Enum):
 
 # Environment-based permission matrix
 # Each environment has a set of allowed permissions
-ENVIRONMENT_PERMISSIONS: Dict[str, List[AIPermission]] = {
+ENVIRONMENT_PERMISSIONS: dict[str, list[AIPermission]] = {
     "development": [
         AIPermission.VIEW,
         AIPermission.MODIFY,
@@ -72,7 +71,7 @@ ENVIRONMENT_PERMISSIONS: Dict[str, List[AIPermission]] = {
 
 
 # Action type to permission mapping
-ACTION_PERMISSION_MAP: Dict[str, AIPermission] = {
+ACTION_PERMISSION_MAP: dict[str, AIPermission] = {
     # Kubernetes actions
     "get": AIPermission.VIEW,
     "describe": AIPermission.VIEW,
@@ -102,20 +101,18 @@ ACTION_PERMISSION_MAP: Dict[str, AIPermission] = {
     "attach": AIPermission.EXECUTE,
     "cp": AIPermission.EXECUTE,
 
-    # Helm actions
+    # Helm/ArgoCD actions
     "install": AIPermission.CREATE,
     "upgrade": AIPermission.MODIFY,
     "uninstall": AIPermission.DELETE,
-    "rollback": AIPermission.ROLLBACK,
 
     # ArgoCD actions
     "sync": AIPermission.MODIFY,
-    "get": AIPermission.VIEW,
 }
 
 
 # Risk levels for action types
-ACTION_RISK_LEVELS: Dict[str, str] = {
+ACTION_RISK_LEVELS: dict[str, str] = {
     AIPermission.VIEW: "safe",
     AIPermission.SCALE: "low",
     AIPermission.MODIFY: "medium",
@@ -129,7 +126,7 @@ ACTION_RISK_LEVELS: Dict[str, str] = {
 
 def get_ai_permission_matrix(
     environment: str = "production",
-) -> List[AIPermission]:
+) -> list[AIPermission]:
     """Get allowed permissions for an environment.
 
     Args:

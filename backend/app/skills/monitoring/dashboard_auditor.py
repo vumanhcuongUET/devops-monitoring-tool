@@ -9,15 +9,15 @@ This skill analyzes monitoring coverage to:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class DashboardAuditorSkill(BaseSkill):
     priority = SkillPriority.MEDIUM
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the Dashboard Auditor skill."""
         super().__init__(config)
 
@@ -54,7 +54,7 @@ class DashboardAuditorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Audit dashboard coverage for the project.
 
@@ -124,8 +124,8 @@ class DashboardAuditorSkill(BaseSkill):
     async def _get_services(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        context: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """Get service inventory for the project.
 
         Returns:
@@ -162,8 +162,8 @@ class DashboardAuditorSkill(BaseSkill):
     async def _get_dashboards(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        context: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """Get existing dashboards for the project.
 
         Returns:
@@ -187,9 +187,9 @@ class DashboardAuditorSkill(BaseSkill):
 
     def _analyze_coverage(
         self,
-        services: List[Dict[str, Any]],
-        dashboards: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        services: list[dict[str, Any]],
+        dashboards: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Analyze dashboard coverage across services.
 
         Returns:
@@ -222,9 +222,9 @@ class DashboardAuditorSkill(BaseSkill):
 
     def _identify_metrics_gaps(
         self,
-        services: List[Dict[str, Any]],
-        dashboards: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        services: list[dict[str, Any]],
+        dashboards: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Identify missing essential metrics.
 
         Returns:
@@ -274,8 +274,8 @@ class DashboardAuditorSkill(BaseSkill):
     def _review_slo_coverage(
         self,
         project: str,
-        dashboards: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        dashboards: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Review SLO dashboard coverage.
 
         Returns:
@@ -309,10 +309,10 @@ class DashboardAuditorSkill(BaseSkill):
 
     def _generate_recommendations(
         self,
-        coverage_analysis: Dict[str, Any],
-        metrics_gaps: Dict[str, Any],
-        slo_coverage: Dict[str, Any],
-    ) -> List[Recommendation]:
+        coverage_analysis: dict[str, Any],
+        metrics_gaps: dict[str, Any],
+        slo_coverage: dict[str, Any],
+    ) -> list[Recommendation]:
         """Generate dashboard improvement recommendations.
 
         Returns:
@@ -325,7 +325,7 @@ class DashboardAuditorSkill(BaseSkill):
             for service_id in coverage_analysis["uncovered_critical"]:
                 recommendations.append(Recommendation(
                     title=f"Create dashboard for critical service: {service_id}",
-                    description=f"Critical service has no monitoring dashboard",
+                    description="Critical service has no monitoring dashboard",
                     impact="high",
                     effort="medium",
                     priority="high",
@@ -386,8 +386,8 @@ class DashboardAuditorSkill(BaseSkill):
 
     def _calculate_confidence(
         self,
-        services: List[Dict[str, Any]],
-        dashboards: List[Dict[str, Any]],
+        services: list[dict[str, Any]],
+        dashboards: list[dict[str, Any]],
     ) -> float:
         """Calculate confidence in the analysis.
 

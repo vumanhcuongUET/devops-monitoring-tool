@@ -9,15 +9,15 @@ This skill analyzes SLA data to:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class SLAComplianceSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the SLA Compliance skill."""
         super().__init__(config)
 
@@ -55,7 +55,7 @@ class SLAComplianceSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze SLA compliance.
 
@@ -140,8 +140,8 @@ class SLAComplianceSkill(BaseSkill):
     async def _get_sla_terms(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Get SLA contract terms.
 
         Returns:
@@ -161,9 +161,9 @@ class SLAComplianceSkill(BaseSkill):
     async def _calculate_compliance(
         self,
         project: str,
-        sla_terms: Dict[str, Any],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        sla_terms: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Calculate current SLA compliance.
 
         Returns:
@@ -197,9 +197,9 @@ class SLAComplianceSkill(BaseSkill):
     async def _calculate_monthly_compliance(
         self,
         project: str,
-        sla_terms: Dict[str, Any],
-        context: Optional[dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        sla_terms: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """Calculate monthly SLA compliance.
 
         Returns:
@@ -226,10 +226,10 @@ class SLAComplianceSkill(BaseSkill):
 
     def _calculate_penalties(
         self,
-        current_compliance: Dict[str, Any],
-        monthly_compliance: List[Dict[str, Any]],
-        sla_terms: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        current_compliance: dict[str, Any],
+        monthly_compliance: list[dict[str, Any]],
+        sla_terms: dict[str, Any],
+    ) -> dict[str, Any]:
         """Calculate SLA penalties/credits.
 
         Returns:
@@ -264,9 +264,9 @@ class SLAComplianceSkill(BaseSkill):
 
     def _identify_risk_factors(
         self,
-        current_compliance: Dict[str, Any],
-        monthly_compliance: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        current_compliance: dict[str, Any],
+        monthly_compliance: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Identify SLA risk factors.
 
         Returns:
@@ -305,10 +305,10 @@ class SLAComplianceSkill(BaseSkill):
 
     def _generate_recommendations(
         self,
-        current_compliance: Dict[str, Any],
-        penalties: Dict[str, Any],
-        risk_factors: List[Dict[str, Any]],
-    ) -> List[Recommendation]:
+        current_compliance: dict[str, Any],
+        penalties: dict[str, Any],
+        risk_factors: list[dict[str, Any]],
+    ) -> list[Recommendation]:
         """Generate SLA compliance recommendations.
 
         Returns:

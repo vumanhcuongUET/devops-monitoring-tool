@@ -1,8 +1,9 @@
 """Unit tests for Autonomous Executor (Phase 4)."""
 
-import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
+
+import pytest
 
 from app.actions.autonomous_executor import (
     AutonomousExecutor,
@@ -10,7 +11,7 @@ from app.actions.autonomous_executor import (
     SafetyChecker,
     get_autonomous_executor,
 )
-from app.models.alerts import AlertRule, AlertSeverity, AlertEvent
+from app.models.alerts import AlertEvent, AlertRule, AlertSeverity
 
 
 class TestRateLimiter:

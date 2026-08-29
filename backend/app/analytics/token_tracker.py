@@ -11,7 +11,6 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +42,14 @@ class TokenTracker:
         optimized_token_count: int,
         token_reduction_pct: float,
         processing_time_ms: float,
-        strategies_applied: List[str],
-        incident_type: Optional[str] = None,
-        severity: Optional[str] = None,
+        strategies_applied: list[str],
+        incident_type: str | None = None,
+        severity: str | None = None,
         anomalies_detected: int = 0,
         logs_sampled: int = 0,
         metrics_compressed: bool = False,
         fallback: bool = False,
-        fallback_reason: Optional[str] = None
+        fallback_reason: str | None = None
     ):
         """
         Track optimization metrics.
@@ -97,8 +96,8 @@ class TokenTracker:
     def get_stats(
         self,
         limit: int = 100,
-        since: Optional[datetime] = None
-    ) -> Dict:
+        since: datetime | None = None
+    ) -> dict:
         """
         Get statistics from tracked metrics.
 
@@ -160,8 +159,8 @@ class TokenTracker:
     def get_metrics(
         self,
         limit: int = 100,
-        since: Optional[datetime] = None
-    ) -> List[Dict]:
+        since: datetime | None = None
+    ) -> list[dict]:
         """
         Get raw metrics from storage.
 
@@ -174,7 +173,7 @@ class TokenTracker:
         """
         return self._load_metrics(since)[:limit]
 
-    def _load_metrics(self, since: Optional[datetime] = None) -> List[Dict]:
+    def _load_metrics(self, since: datetime | None = None) -> list[dict]:
         """
         Load metrics from storage.
 
@@ -210,7 +209,7 @@ class TokenTracker:
 
         return metrics
 
-    def _group_by_field(self, metrics: List[Dict], field: str) -> Dict:
+    def _group_by_field(self, metrics: list[dict], field: str) -> dict:
         """
         Group metrics by field.
 
@@ -248,7 +247,7 @@ class TokenTracker:
 
         return grouped
 
-    def _empty_stats(self) -> Dict:
+    def _empty_stats(self) -> dict:
         """Return empty stats structure."""
         return {
             'total_optimizations': 0,
@@ -300,7 +299,7 @@ class TokenTracker:
 
 
 # Singleton instance
-_token_tracker: Optional[TokenTracker] = None
+_token_tracker: TokenTracker | None = None
 
 
 def get_token_tracker(storage_path: str = "data/optimization_metrics.jsonl") -> TokenTracker:

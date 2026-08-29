@@ -8,8 +8,9 @@ Tests the Kubernetes client functionality including:
 - Events retrieval
 """
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 
 @pytest.mark.unit

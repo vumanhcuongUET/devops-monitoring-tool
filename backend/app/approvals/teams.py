@@ -1,9 +1,10 @@
 """Microsoft Teams approval notification using Adaptive Cards."""
 
 import logging
-import httpx
-from typing import Any, Optional
 from datetime import datetime, timezone
+from typing import Any
+
+import httpx
 
 from app.models.actions import Action, ActionStatus, RiskLevel
 
@@ -15,7 +16,7 @@ class TeamsApprovalNotifier:
 
     def __init__(
         self,
-        webhook_url: Optional[str] = None,
+        webhook_url: str | None = None,
         disabled: bool = False,
     ):
         """Initialize the Teams approval notifier.
@@ -311,7 +312,7 @@ class TeamsApprovalNotifier:
 
 
 # Singleton instance
-_teams_notifier: Optional[TeamsApprovalNotifier] = None
+_teams_notifier: TeamsApprovalNotifier | None = None
 
 
 def get_teams_approval_notifier() -> TeamsApprovalNotifier:

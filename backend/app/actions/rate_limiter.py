@@ -2,11 +2,10 @@
 
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from app.actions.chain_monitor import get_chain_monitor, ChainMonitorConfig
+from app.actions.chain_monitor import get_chain_monitor
 
 
 @dataclass
@@ -15,7 +14,7 @@ class ActionRecord:
     timestamp: float
     action_type: str
     project: str
-    user: Optional[str] = None
+    user: str | None = None
 
 
 @dataclass
@@ -32,7 +31,7 @@ class RateLimitConfig:
 class RateLimiter:
     """Rate limiter with time-window tracking for autonomous actions."""
 
-    def __init__(self, config: Optional[RateLimitConfig] = None):
+    def __init__(self, config: RateLimitConfig | None = None):
         """Initialize the rate limiter.
 
         Args:
@@ -42,18 +41,18 @@ class RateLimiter:
 
         # Store action history: key = (project, action_type)
         # value = list of ActionRecord
-        self._action_history: Dict[tuple, List[ActionRecord]] = defaultdict(list)
+        self._action_history: dict[tuple, list[ActionRecord]] = defaultdict(list)
 
         # Track last action timestamp per (project, action_type) for cooldown
-        self._last_action: Dict[tuple, float] = {}
+        self._last_action: dict[tuple, float] = {}
 
         # Track consecutive actions for chain detection
         # key = (project, action_type)
         # value = count of consecutive actions
-        self._consecutive_actions: Dict[tuple, int] = {}
+        self._consecutive_actions: dict[tuple, int] = {}
 
         # Track last chain break time
-        self._last_chain_break: Dict[tuple, float] = {}
+        self._last_chain_break: dict[tuple, float] = {}
 
         # Chain monitor for alerts (Phase 8 Day 6)
         self._chain_monitor = get_chain_monitor()
@@ -62,7 +61,7 @@ class RateLimiter:
         self,
         project: str,
         action_type: str,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> tuple[bool, str, dict]:
         """Check if action is allowed under rate limits.
 
@@ -151,7 +150,7 @@ class RateLimiter:
         self,
         project: str,
         action_type: str,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> None:
         """Record that an action was executed.
 
@@ -197,8 +196,8 @@ class RateLimiter:
         self,
         project: str,
         action_type: str,
-        remaining: Optional[int] = None,
-        reset_time: Optional[float] = None,
+        remaining: int | None = None,
+        reset_time: float | None = None,
         bypass: bool = False,
     ) -> dict:
         """Get rate limit metadata for API responses."""
@@ -212,7 +211,7 @@ class RateLimiter:
 
         if reset_time is None and not bypass:
             # Calculate reset time from oldest record
-            if key in self._action_history and self._action_history[key]:
+            if self._action_history.get(key):
                 oldest = self._action_history[key][0].timestamp
                 reset_time = oldest + self.config.time_window_seconds
             else:
@@ -243,9 +242,9 @@ class RateLimiter:
     def get_action_history(
         self,
         project: str,
-        action_type: Optional[str] = None,
+        action_type: str | None = None,
         limit: int = 100,
-    ) -> List[ActionRecord]:
+    ) -> list[ActionRecord]:
         """Get historical action records.
 
         Args:
@@ -313,7 +312,7 @@ class RateLimiter:
 
         return stats
 
-    def reset(self, project: Optional[str] = None, action_type: Optional[str] = None) -> None:
+    def reset(self, project: str | None = None, action_type: str | None = None) -> None:
         """Reset rate limiting state.
 
         Args:
@@ -352,10 +351,10 @@ class RateLimiter:
 
 
 # Global singleton instance
-_rate_limiter: Optional[RateLimiter] = None
+_rate_limiter: RateLimiter | None = None
 
 
-def get_rate_limiter(config: Optional[RateLimitConfig] = None) -> RateLimiter:
+def get_rate_limiter(config: RateLimitConfig | None = None) -> RateLimiter:
     """Get or create the global RateLimiter instance.
 
     Args:
@@ -385,9 +384,9 @@ class AutonomousRateLimiter:
             max_per_hour: Maximum actions per hour per action type
         """
         self.max_per_hour = max_per_hour
-        self._execution_times: Dict[str, list[datetime]] = defaultdict(list)
+        self._execution_times: dict[str, list[datetime]] = defaultdict(list)
 
-    def can_execute(self, action_type: str) -> tuple[bool, Optional[str]]:
+    def can_execute(self, action_type: str) -> tuple[bool, str | None]:
         """Check if action can be executed based on rate limit.
 
         Args:

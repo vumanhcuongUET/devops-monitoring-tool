@@ -5,18 +5,18 @@ Coordinates multiple specialized agents to provide comprehensive analysis.
 Implements consensus voting and result aggregation.
 """
 
-from typing import Dict, Any, List, Optional, Set
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
+from .cost_agent import CostOptimizationAgent
+from .k8s_agent import KubernetesAgent
 from .log_agent import LogAnalysisAgent
 from .metrics_agent import MetricsAgent
-from .k8s_agent import KubernetesAgent
-from .cost_agent import CostOptimizationAgent
-from .security_agent import SecurityAgent
 from .performance_agent import PerformanceAgent
+from .security_agent import SecurityAgent
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +33,9 @@ class AgentOrchestrator:
     - Fallback to simpler agents if complex ones fail
     """
 
-    def __init__(self, model_selector: Optional[Any] = None):
+    def __init__(self, model_selector: Any | None = None):
         """Initialize the orchestrator with all available agents."""
-        self.agents: Dict[str, BaseAgent] = {
+        self.agents: dict[str, BaseAgent] = {
             "log": LogAnalysisAgent(),
             "metrics": MetricsAgent(),
             "k8s": KubernetesAgent(),
@@ -44,14 +44,14 @@ class AgentOrchestrator:
             "performance": PerformanceAgent(),
         }
         self.model_selector = model_selector
-        self._execution_history: List[Dict] = []
+        self._execution_history: list[dict] = []
 
     async def analyze(
         self,
-        context: Dict[str, Any],
-        agents: Optional[List[str]] = None,
+        context: dict[str, Any],
+        agents: list[str] | None = None,
         consensus_threshold: float = 0.6,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run analysis with relevant agents.
 
@@ -115,7 +115,7 @@ class AgentOrchestrator:
 
         return aggregated
 
-    def _determine_agents(self, context: Dict[str, Any]) -> List[str]:
+    def _determine_agents(self, context: dict[str, Any]) -> list[str]:
         """Determine which agents are relevant for the given context."""
         selected = []
 
@@ -146,8 +146,8 @@ class AgentOrchestrator:
         return selected
 
     async def _run_agents_parallel(
-        self, agent_names: List[str], context: Dict[str, Any]
-    ) -> List[AgentResponse]:
+        self, agent_names: list[str], context: dict[str, Any]
+    ) -> list[AgentResponse]:
         """Run multiple agents in parallel."""
         tasks = []
 
@@ -190,7 +190,7 @@ class AgentOrchestrator:
         return processed_results
 
     async def _run_agent_safely(
-        self, agent: BaseAgent, context: Dict[str, Any]
+        self, agent: BaseAgent, context: dict[str, Any]
     ) -> AgentResponse:
         """Run a single agent with timeout and error handling."""
         try:
@@ -211,8 +211,8 @@ class AgentOrchestrator:
             raise
 
     def _aggregate_results(
-        self, agent_results: List[AgentResponse]
-    ) -> Dict[str, Any]:
+        self, agent_results: list[AgentResponse]
+    ) -> dict[str, Any]:
         """Aggregate results from multiple agents."""
         aggregated = {
             "agents": {},
@@ -257,7 +257,7 @@ class AgentOrchestrator:
         return aggregated
 
     def _needs_consensus(
-        self, aggregated: Dict[str, Any], threshold: float
+        self, aggregated: dict[str, Any], threshold: float
     ) -> bool:
         """
         Determine if consensus voting is needed.
@@ -286,7 +286,7 @@ class AgentOrchestrator:
 
         return False
 
-    def _vote_on_results(self, agent_results: List[AgentResponse]) -> Dict[str, Any]:
+    def _vote_on_results(self, agent_results: list[AgentResponse]) -> dict[str, Any]:
         """
         Implement consensus voting among agents.
 
@@ -299,7 +299,7 @@ class AgentOrchestrator:
         }
 
         # Vote on recommendations
-        recommendation_votes: Dict[str, int] = {}
+        recommendation_votes: dict[str, int] = {}
         for result in agent_results:
             if result.is_successful():
                 for rec in result.recommendations:
@@ -326,8 +326,8 @@ class AgentOrchestrator:
         return consensus
 
     def _deduplicate_recommendations(
-        self, recommendations: List[str]
-    ) -> List[str]:
+        self, recommendations: list[str]
+    ) -> list[str]:
         """Deduplicate and prioritize recommendations."""
         # Simple deduplication
         seen = set()
@@ -355,7 +355,7 @@ class AgentOrchestrator:
 
         return prioritized
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check health of all agents."""
         health = {}
 
@@ -378,6 +378,6 @@ class AgentOrchestrator:
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-    def get_execution_history(self) -> List[Dict]:
+    def get_execution_history(self) -> list[dict]:
         """Get recent execution history."""
         return self._execution_history[-100:]  # Last 100 executions

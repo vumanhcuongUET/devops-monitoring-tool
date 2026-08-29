@@ -12,21 +12,19 @@ Author: Phase 8 Sprint 3 (Day 11)
 Date: 2026-08-24
 """
 
-import pytest
-import time
-import json
-import hmac
 import hashlib
-from datetime import datetime, timedelta
-from httpx import AsyncClient, ASGITransport
-from unittest.mock import Mock, patch, AsyncMock
+import hmac
+import json
+import time
 
-from app.main import app
-from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
-from app.actions.chain_monitor import get_chain_monitor, ChainMonitor, ChainEvent
-from app.actions.validator import get_command_validator, ValidationResult
-from app.middleware.security import SecurityHeadersMiddleware
+import pytest
+
+from app.actions.chain_monitor import ChainEvent, get_chain_monitor
+from app.actions.rate_limiter import RateLimitConfig, get_rate_limiter
+from app.actions.validator import ValidationResult, get_command_validator
 from app.approvals.webhook import verify_slack_signature, verify_teams_hmac_signature
+from app.main import app
+from app.middleware.security import SecurityHeadersMiddleware
 
 
 @pytest.fixture
@@ -294,9 +292,6 @@ class TestCSPNonceIntegration:
 
     def test_nonce_generation_and_usage(self):
         """Test that nonces are generated and used correctly."""
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.requests import Request
-        from starlette.responses import Response
 
         # Create middleware with nonce enabled
         middleware = SecurityHeadersMiddleware(app, use_nonce=True)
@@ -346,8 +341,8 @@ class TestCSPNonceIntegration:
     async def test_security_headers_added_to_response(self):
         """Test that security headers are added to all responses."""
         from starlette.applications import Starlette
-        from starlette.routing import Route
         from starlette.responses import JSONResponse
+        from starlette.routing import Route
 
         # Create a simple app with SecurityHeadersMiddleware
         async def homepage(request):
@@ -594,7 +589,7 @@ class TestEndToEndSecurityFlow:
         payload = {
             "actions": [{
                 "action_id": "approve_action",
-                "value": f"action:test-action-id"
+                "value": "action:test-action-id"
             }],
             "user": {
                 "id": "U12345",
@@ -626,8 +621,8 @@ class TestEndToEndSecurityFlow:
 def app_with_security_middleware():
     """Create app with security middleware for testing."""
     from starlette.applications import Starlette
-    from starlette.routing import Route
     from starlette.responses import JSONResponse
+    from starlette.routing import Route
 
     async def test_endpoint(request):
         return JSONResponse({"status": "ok"})

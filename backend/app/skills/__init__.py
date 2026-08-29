@@ -14,22 +14,22 @@ Skills are organized by category:
 """
 
 from app.skills.base import (
+    AnalysisResult,
     BaseSkill,
-    SkillConfig,
+    Recommendation,
     SkillCategory,
+    SkillConfig,
+    SkillExecutionError,
     SkillPriority,
     SkillStatus,
-    AnalysisResult,
-    Recommendation,
-    SkillExecutionError,
     SkillTimeoutError,
     SkillValidationError,
 )
 from app.skills.registry import (
     SkillRegistry,
+    discover_skills,
     get_skill_registry,
     register_skill,
-    discover_skills,
 )
 
 __all__ = [

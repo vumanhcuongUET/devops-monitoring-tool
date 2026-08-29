@@ -12,13 +12,13 @@ Features:
 - Performance profiling
 """
 
-import asyncio
 import logging
 import time
-from typing import Dict, Any, List, Optional, Callable
-from datetime import datetime, timedelta
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,9 @@ class QueryProfile:
     cache_hit: bool
     chunk_count: int = 1
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "query_type": self.query_type.value,
@@ -75,7 +75,7 @@ class QueryProfiler:
 
     def __init__(self):
         """Initialize query profiler."""
-        self.profiles: List[QueryProfile] = []
+        self.profiles: list[QueryProfile] = []
         self.stats = {
             "total_queries": 0,
             "cache_hits": 0,
@@ -160,7 +160,7 @@ class QueryProfiler:
         self.stats["total_time_ms"] += profile.execution_time_ms
         self.stats["total_results"] += profile.result_count
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get profiler statistics."""
         stats = self.stats.copy()
 
@@ -175,7 +175,7 @@ class QueryProfiler:
 
         return stats
 
-    def get_recent_profiles(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_recent_profiles(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent query profiles."""
         return [p.to_dict() for p in self.profiles[-limit:]]
 
@@ -267,7 +267,7 @@ class QueryOptimizer:
         self,
         time_range: timedelta,
         chunk_size: timedelta
-    ) -> List[Dict[str, datetime]]:
+    ) -> list[dict[str, datetime]]:
         """Split time range into cacheable chunks."""
         chunks = []
         end = datetime.now()
@@ -303,7 +303,7 @@ class QueryOptimizer:
         self,
         metric_name: str,
         aggregation: str,
-        labels: Optional[Dict[str, str]] = None,
+        labels: dict[str, str] | None = None,
         step: str = "1m"
     ) -> str:
         """Build optimized PromQL query."""
@@ -340,7 +340,7 @@ class QueryOptimizer:
         self.recording_rules[key] = rule_name
         logger.info(f"Added recording rule: {rule_name} for {key}")
 
-    def get_profiler_stats(self) -> Dict[str, Any]:
+    def get_profiler_stats(self) -> dict[str, Any]:
         """Get profiler statistics."""
         return self.profiler.get_stats()
 

@@ -1,8 +1,8 @@
 """Slack approval integration with interactive buttons."""
 
-import httpx
 import logging
-from typing import Any, Optional
+
+import httpx
 
 from app.config import settings
 from app.models.actions import Action, ActionStatus, RiskLevel
@@ -21,8 +21,8 @@ class SlackApprovalNotifier:
     async def send_approval_request(
         self,
         action: Action,
-        slack_channel: Optional[str] = None,
-        slack_user: Optional[str] = None,
+        slack_channel: str | None = None,
+        slack_user: str | None = None,
     ) -> bool:
         """Send an approval request to Slack with interactive buttons.
 
@@ -176,7 +176,7 @@ class SlackApprovalNotifier:
         self,
         action: Action,
         status: ActionStatus,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> bool:
         """Send a status update notification to Slack.
 
@@ -211,7 +211,7 @@ class SlackApprovalNotifier:
         self,
         action: Action,
         status: ActionStatus,
-        user: Optional[str],
+        user: str | None,
     ) -> list[dict]:
         """Build Slack message for status update."""
 
@@ -261,7 +261,7 @@ class SlackApprovalNotifier:
 
 
 # Singleton instance
-_slack_notifier: Optional[SlackApprovalNotifier] = None
+_slack_notifier: SlackApprovalNotifier | None = None
 
 
 def get_slack_approval_notifier() -> SlackApprovalNotifier:

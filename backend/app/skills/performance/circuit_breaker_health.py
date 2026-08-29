@@ -6,7 +6,7 @@ and configuration recommendations for resilience patterns.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -69,7 +69,7 @@ class CircuitBreakerHealthSkill(BaseSkill):
         "reset_timeout_ms": 60000,    # 1 minute before attempting recovery
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the circuit breaker health skill.
 
         Args:
@@ -83,7 +83,7 @@ class CircuitBreakerHealthSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run circuit breaker health analysis.
 

@@ -16,11 +16,10 @@ from typing import Any
 
 import pytest
 
-from app.services.elasticsearch_client import ElasticsearchClient
-from app.services.prometheus_client import PrometheusClient
-from app.services.kubernetes_client import KubernetesClient
 from app.services.apm_client import ApmClient
-
+from app.services.elasticsearch_client import ElasticsearchClient
+from app.services.kubernetes_client import KubernetesClient
+from app.services.prometheus_client import PrometheusClient
 
 # Performance Targets (based on SLA requirements)
 TARGET_OVERVIEW_LATENCY = 5.0  # seconds
@@ -134,10 +133,10 @@ class TestPerformanceBenchmarks:
         This is the most critical user-facing endpoint.
         """
         from app.api.v1.overview import (
-            _get_k8s_health,
-            _get_es_health,
             _get_apm_health,
+            _get_es_health,
             _get_infra_health,
+            _get_k8s_health,
         )
 
         # Mock clients for testing
@@ -208,10 +207,10 @@ class TestPerformanceBenchmarks:
         This tests the system's ability to handle load.
         """
         from app.api.v1.overview import (
-            _get_k8s_health,
-            _get_es_health,
             _get_apm_health,
+            _get_es_health,
             _get_infra_health,
+            _get_k8s_health,
         )
 
         class MockClient:
@@ -319,10 +318,10 @@ class TestLoadCapacity:
         Verifies performance doesn't degrade under sustained load.
         """
         from app.api.v1.overview import (
-            _get_k8s_health,
-            _get_es_health,
             _get_apm_health,
+            _get_es_health,
             _get_infra_health,
+            _get_k8s_health,
         )
 
         class MockClient:
@@ -393,7 +392,7 @@ class TestLoadCapacity:
         p95_latency = sorted(latencies)[int(len(latencies) * 0.95)]
         p99_latency = sorted(latencies)[int(len(latencies) * 0.99)]
 
-        print(f"✓ Sustained load (50 requests):")
+        print("✓ Sustained load (50 requests):")
         print(f"  Average: {avg_latency:.3f}s")
         print(f"  P95: {p95_latency:.3f}s")
         print(f"  P99: {p99_latency:.3f}s")

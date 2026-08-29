@@ -9,18 +9,18 @@ This module provides comprehensive configuration management including:
 - Audit logging
 """
 
-from .validation import ConfigValidator, ValidationResult, ConfigType
-from .versioning import ConfigVersionManager, ConfigVersion, ChangeType
-from .gitops import GitOpsManager, GitBranch
-from .security import ConfigSecurity
-from .audit import AuditLogger, AuditAction
-
 # Import settings from config.py to resolve package/module conflict
 # When both config.py and config/ exist, Python treats config/ as package
 # We need to import settings from config.py which is at the parent level
 import importlib.util
 import os
 import sys
+
+from .audit import AuditAction, AuditLogger
+from .gitops import GitBranch, GitOpsManager
+from .security import ConfigSecurity
+from .validation import ConfigType, ConfigValidator, ValidationResult
+from .versioning import ChangeType, ConfigVersion, ConfigVersionManager
 
 # Load config.py module directly
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.py")
@@ -34,17 +34,17 @@ settings = config_module.settings
 Settings = config_module.Settings
 
 __all__ = [
-    "ConfigValidator",
-    "ValidationResult",
-    "ConfigType",
-    "ConfigVersionManager",
-    "ConfigVersion",
-    "ChangeType",
-    "GitOpsManager",
-    "GitBranch",
-    "ConfigSecurity",
-    "AuditLogger",
     "AuditAction",
-    "settings",
+    "AuditLogger",
+    "ChangeType",
+    "ConfigSecurity",
+    "ConfigType",
+    "ConfigValidator",
+    "ConfigVersion",
+    "ConfigVersionManager",
+    "GitBranch",
+    "GitOpsManager",
     "Settings",
+    "ValidationResult",
+    "settings",
 ]

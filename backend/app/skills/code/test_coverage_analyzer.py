@@ -9,15 +9,15 @@ This skill measures:
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,14 +47,14 @@ class TestCoverageAnalyzerSkill(BaseSkill):
         "acceptable": 60,
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze test coverage.
 
@@ -105,7 +105,7 @@ class TestCoverageAnalyzerSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Coverage analysis failed: {str(e)}"],
+                errors=[f"Coverage analysis failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -195,7 +195,7 @@ class TestCoverageAnalyzerSkill(BaseSkill):
     async def _get_coverage_data(
         self,
         repository: str,
-        coverage_file: Optional[str],
+        coverage_file: str | None,
     ) -> dict[str, Any]:
         """Get coverage data from repository.
 

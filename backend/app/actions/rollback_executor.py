@@ -1,11 +1,11 @@
 """Rollback executor for automatic rollback on failure."""
 
-import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List, Callable
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class RollbackCondition:
     """Condition for triggering automatic rollback."""
     name: str
     description: str
-    check_fn: Callable[[Dict[str, Any]], bool]  # Returns True if rollback needed
+    check_fn: Callable[[dict[str, Any]], bool]  # Returns True if rollback needed
 
 
 @dataclass
@@ -37,7 +37,7 @@ class RollbackPlan:
     reason: str  # Why this rollback plan was created
     requires_approval: bool = True  # Whether rollback needs approval
     estimated_duration_seconds: float = 30.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -64,13 +64,13 @@ class RollbackExecutor:
 
     def __init__(self):
         """Initialize the rollback executor."""
-        self._rollback_plans: Dict[str, RollbackPlan] = {}  # action_id -> plan
-        self._rollback_history: List[RollbackResult] = []
+        self._rollback_plans: dict[str, RollbackPlan] = {}  # action_id -> plan
+        self._rollback_history: list[RollbackResult] = []
 
         # Default rollback conditions
         self._conditions = self._get_default_conditions()
 
-    def _get_default_conditions(self) -> List[RollbackCondition]:
+    def _get_default_conditions(self) -> list[RollbackCondition]:
         """Get default rollback conditions."""
         return [
             RollbackCondition(
@@ -99,8 +99,8 @@ class RollbackExecutor:
         self,
         action_id: str,
         command: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Optional[RollbackPlan]:
+        context: dict[str, Any] | None = None,
+    ) -> RollbackPlan | None:
         """Create a rollback plan for an action.
 
         Args:
@@ -131,7 +131,7 @@ class RollbackExecutor:
 
         return plan
 
-    def _generate_rollback_command(self, command: str) -> Optional[str]:
+    def _generate_rollback_command(self, command: str) -> str | None:
         """Generate a rollback command for a given action.
 
         Args:
@@ -177,10 +177,10 @@ class RollbackExecutor:
 
     def _generate_kubectl_rollback(
         self,
-        operation: Optional[str],
-        flags: Dict[str, str],
-        args: List[str],
-    ) -> Optional[str]:
+        operation: str | None,
+        flags: dict[str, str],
+        args: list[str],
+    ) -> str | None:
         """Generate kubectl rollback command."""
         namespace_flag = ""
         if "n" in flags:
@@ -213,10 +213,10 @@ class RollbackExecutor:
 
     def _generate_helm_rollback(
         self,
-        operation: Optional[str],
-        flags: Dict[str, str],
-        args: List[str],
-    ) -> Optional[str]:
+        operation: str | None,
+        flags: dict[str, str],
+        args: list[str],
+    ) -> str | None:
         """Generate helm rollback command."""
         namespace_flag = ""
         if "n" in flags:
@@ -236,10 +236,10 @@ class RollbackExecutor:
 
     def _generate_argocd_rollback(
         self,
-        operation: Optional[str],
-        flags: Dict[str, str],
-        args: List[str],
-    ) -> Optional[str]:
+        operation: str | None,
+        flags: dict[str, str],
+        args: list[str],
+    ) -> str | None:
         """Generate argocd rollback command."""
         if operation == "app" and "sync" in args:
             # Rollback sync by deploying previous revision
@@ -255,8 +255,8 @@ class RollbackExecutor:
     def should_rollback(
         self,
         action_id: str,
-        execution_context: Dict[str, Any],
-    ) -> tuple[bool, List[str]]:
+        execution_context: dict[str, Any],
+    ) -> tuple[bool, list[str]]:
         """Check if an action should be rolled back based on conditions.
 
         Args:
@@ -362,7 +362,7 @@ class RollbackExecutor:
 
         return result
 
-    def get_rollback_plan(self, action_id: str) -> Optional[RollbackPlan]:
+    def get_rollback_plan(self, action_id: str) -> RollbackPlan | None:
         """Get the rollback plan for an action.
 
         Args:
@@ -375,9 +375,9 @@ class RollbackExecutor:
 
     def get_rollback_history(
         self,
-        action_id: Optional[str] = None,
+        action_id: str | None = None,
         limit: int = 100,
-    ) -> List[RollbackResult]:
+    ) -> list[RollbackResult]:
         """Get rollback history.
 
         Args:
@@ -431,7 +431,7 @@ class RollbackExecutor:
 
 
 # Global singleton instance
-_rollback_executor: Optional[RollbackExecutor] = None
+_rollback_executor: RollbackExecutor | None = None
 
 
 def get_rollback_executor() -> RollbackExecutor:

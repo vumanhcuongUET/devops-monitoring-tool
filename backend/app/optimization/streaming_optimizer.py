@@ -15,12 +15,11 @@ import asyncio
 import gzip
 import json
 import logging
-from typing import (
-    Dict, Any, List, Optional, AsyncIterator, Callable
-)
-from datetime import datetime
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +38,9 @@ class StreamingChunk:
     chunk_id: int
     total_chunks: int
     is_final: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "chunk_id": self.chunk_id,
@@ -88,7 +87,7 @@ class StreamingOptimizer:
     async def stream_data(
         self,
         data_source: AsyncIterator[Any],
-        total_count: Optional[int] = None
+        total_count: int | None = None
     ) -> AsyncIterator[StreamingChunk]:
         """
         Stream data from an async iterator.
@@ -153,7 +152,7 @@ class StreamingOptimizer:
     async def stream_query_results(
         self,
         query_func: Callable,
-        chunk_size: Optional[int] = None
+        chunk_size: int | None = None
     ) -> AsyncIterator[StreamingChunk]:
         """
         Stream query results in chunks.
@@ -274,9 +273,9 @@ class ResponseOptimizer:
 
     def filter_fields(
         self,
-        data: Dict[str, Any],
-        fields: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        data: dict[str, Any],
+        fields: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Filter response to include only specified fields.
 
@@ -291,18 +290,18 @@ class ResponseOptimizer:
             return data
 
         filtered = {}
-        for field in fields:
-            if field in data:
-                filtered[field] = data[field]
+        for name in fields:
+            if name in data:
+                filtered[name] = data[name]
 
         return filtered
 
     def paginate_response(
         self,
-        data: List[Any],
+        data: list[Any],
         page: int = 1,
         page_size: int = 100
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Paginate a list response.
 
@@ -334,9 +333,9 @@ class ResponseOptimizer:
 
     def optimize_response(
         self,
-        response: Dict[str, Any],
+        response: dict[str, Any],
         compress: bool = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Optimize a response for performance.
 
@@ -368,11 +367,11 @@ class ResponseOptimizer:
 
     def add_performance_metadata(
         self,
-        response: Dict[str, Any],
+        response: dict[str, Any],
         execution_time_ms: float,
         source: str,
         cache_hit: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Add performance metadata to response.
 
@@ -447,7 +446,7 @@ class VirtualScroller:
         self,
         scroll_position: int,
         total_items: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get the window of items to load based on scroll position.
 
@@ -477,8 +476,8 @@ class VirtualScroller:
     def get_batches(
         self,
         total_items: int,
-        batch_size: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        batch_size: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Split items into batches for loading.
 
@@ -507,7 +506,7 @@ class VirtualScroller:
         scroll_position: int,
         scroll_direction: str,
         total_items: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get information for prefetching data.
 
@@ -564,10 +563,10 @@ class BatchProcessor:
 
     async def process_batches(
         self,
-        items: List[Any],
-        process_func: Callable[[List[Any]], Any],
-        progress_callback: Optional[Callable[[int, int], None]] = None
-    ) -> List[Any]:
+        items: list[Any],
+        process_func: Callable[[list[Any]], Any],
+        progress_callback: Callable[[int, int], None] | None = None
+    ) -> list[Any]:
         """
         Process items in batches.
 
@@ -605,10 +604,10 @@ class BatchProcessor:
 
     async def process_batches_parallel(
         self,
-        items: List[Any],
-        process_func: Callable[[List[Any]], Any],
-        progress_callback: Optional[Callable[[int, int], None]] = None
-    ) -> List[Any]:
+        items: list[Any],
+        process_func: Callable[[list[Any]], Any],
+        progress_callback: Callable[[int, int], None] | None = None
+    ) -> list[Any]:
         """
         Process batches in parallel for better performance.
 
@@ -652,7 +651,7 @@ class BatchProcessor:
 
         return results
 
-    def get_batches(self, items: List[Any]) -> List[List[Any]]:
+    def get_batches(self, items: list[Any]) -> list[list[Any]]:
         """
         Split items into batches.
 

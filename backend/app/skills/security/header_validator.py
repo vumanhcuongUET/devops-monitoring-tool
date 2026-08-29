@@ -5,7 +5,7 @@ Checks for missing headers, misconfigurations, and compliance scoring.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -100,7 +100,7 @@ class HeaderValidatorSkill(BaseSkill):
         },
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the security header validator skill.
 
         Args:
@@ -112,7 +112,7 @@ class HeaderValidatorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run security header validation.
 

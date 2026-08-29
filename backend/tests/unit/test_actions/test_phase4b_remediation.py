@@ -1,15 +1,15 @@
 """Tests for Phase 4B autonomous remediation actions."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.actions.remediation_actions import (
+    EvictPodFromNodeAction,
+    FlushEndpointsAction,
+    RemediationActionFactory,
     RemediationActionType,
     RestartStatefulSetPodAction,
-    FlushEndpointsAction,
-    EvictPodFromNodeAction,
-    RemediationActionFactory,
 )
 from app.models.actions import ExecutionResult
 from app.models.alerts import AlertEvent
@@ -127,19 +127,18 @@ class TestRestartStatefulSetPodAction:
         with patch.object(action.executor, "execute_kubectl", side_effect=[
             mock_sts_result,
             mock_pods_result,
+        ]), patch("json.loads", side_effect=[
+            {"spec": {"selector": {"matchLabels": {"app": "mysql"}}}},
+            {"items": []},
         ]):
-            with patch("json.loads", side_effect=[
-                {"spec": {"selector": {"matchLabels": {"app": "mysql"}}}},
-                {"items": []},
-            ]):
-                result = await action.execute(
-                    alert_event=mock_event,
-                    parameters={
-                        "namespace": "database",
-                        "statefulset": "mysql",
-                    },
-                    dry_run=False,
-                )
+            result = await action.execute(
+                alert_event=mock_event,
+                parameters={
+                    "namespace": "database",
+                    "statefulset": "mysql",
+                },
+                dry_run=False,
+            )
 
         assert result.success is True
         assert "no statefulset pods found" in result.stdout.lower() or "needing restart" in result.stdout.lower()
@@ -378,16 +377,15 @@ class TestEvictPodFromNodeAction:
         with patch.object(action.executor, "execute_kubectl", side_effect=[
             mock_pod_result,
             mock_delete_result,
-        ]):
-            with patch("json.loads", return_value={"spec": {"nodeName": "node-2"}}):
-                result = await action.execute(
-                    alert_event=mock_event,
-                    parameters={
-                        "namespace": "default",
-                        "pod_name": "test-pod",
-                    },
-                    dry_run=False,
-                )
+        ]), patch("json.loads", return_value={"spec": {"nodeName": "node-2"}}):
+            result = await action.execute(
+                alert_event=mock_event,
+                parameters={
+                    "namespace": "default",
+                    "pod_name": "test-pod",
+                },
+                dry_run=False,
+            )
 
         assert result.success is True
         assert "node-2" in result.stdout

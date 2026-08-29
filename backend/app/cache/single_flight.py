@@ -21,10 +21,11 @@ This prevents:
 """
 
 import asyncio
-import time
-from typing import Any, Callable, Dict, Optional
-from collections import defaultdict
 import logging
+import time
+from collections import defaultdict
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class SingleFlight:
     def __init__(self):
         # Track in-flight requests
         # {key: {"event": asyncio.Event, "result": Any, "error": Exception}}
-        self._in_flight: Dict[str, Dict[str, Any]] = {}
+        self._in_flight: dict[str, dict[str, Any]] = {}
         # Statistics
         self._stats = defaultdict(lambda: {
             "executions": 0,
@@ -67,7 +68,7 @@ class SingleFlight:
         key: str,
         func: Callable,
         *args,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
         **kwargs
     ) -> Any:
         """
@@ -152,7 +153,7 @@ class SingleFlight:
 
             asyncio.create_task(cleanup())
 
-    def get_stats(self, key: Optional[str] = None) -> Dict[str, Any]:
+    def get_stats(self, key: str | None = None) -> dict[str, Any]:
         """
         Get statistics for single flight operations.
 
@@ -166,7 +167,7 @@ class SingleFlight:
             return dict(self._stats[key])
         return {k: dict(v) for k, v in self._stats.items()}
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """
         Get overall single flight summary.
 
@@ -214,8 +215,8 @@ def single_flight(key_func: Callable):
 
             # Execute with single flight
             return await _single_flight.execute(
-                key=key,
-                func=func,
+                key,
+                func,
                 *args,
                 **kwargs
             )
@@ -226,7 +227,6 @@ def single_flight(key_func: Callable):
 
         return wrapper
 
-    import functools
     from functools import wraps
     return decorator
 

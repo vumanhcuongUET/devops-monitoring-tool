@@ -5,13 +5,12 @@ Provides Git-based configuration management with branch strategies,
 PR workflows, and synchronization capabilities.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+import logging
+import subprocess
 from datetime import datetime
 from enum import Enum
-import subprocess
-import logging
 from pathlib import Path
-import yaml
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ class GitOpsManager:
 
     def _run_git_command(
         self,
-        args: List[str],
+        args: list[str],
         check: bool = True,
         capture: bool = True
     ) -> subprocess.CompletedProcess:
@@ -85,7 +84,7 @@ class GitOpsManager:
             logger.error(f"stderr: {e.stderr}")
             raise
 
-    async def get_repo_status(self) -> Dict[str, Any]:
+    async def get_repo_status(self) -> dict[str, Any]:
         """Get repository status."""
         # Get branch status
         status_result = self._run_git_command(["status", "--porcelain"])
@@ -159,7 +158,7 @@ class GitOpsManager:
         project: str,
         author: str,
         message: str,
-        files: Optional[List[str]] = None
+        files: list[str] | None = None
     ) -> str:
         """Commit configuration change to Git.
 
@@ -212,7 +211,7 @@ class GitOpsManager:
         title: str,
         description: str,
         base_branch: str = "develop"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create pull request for review.
 
         Args:
@@ -318,7 +317,7 @@ class GitOpsManager:
 
     async def pull_changes(
         self,
-        branch: Optional[str] = None
+        branch: str | None = None
     ) -> bool:
         """Pull latest changes from remote.
 
@@ -347,7 +346,7 @@ class GitOpsManager:
 
     async def push_changes(
         self,
-        branch: Optional[str] = None,
+        branch: str | None = None,
         force: bool = False
     ) -> bool:
         """Push changes to remote.
@@ -378,7 +377,7 @@ class GitOpsManager:
     async def sync_from_git(
         self,
         branch: str = "develop"
-    ) -> List[str]:
+    ) -> list[str]:
         """Sync configurations from Git.
 
         Args:
@@ -400,7 +399,7 @@ class GitOpsManager:
         logger.info(f"Synced from Git, changed projects: {changed}")
         return changed
 
-    def _get_changed_projects(self, branch: str = "develop") -> List[str]:
+    def _get_changed_projects(self, branch: str = "develop") -> list[str]:
         """Get list of changed projects."""
         try:
             # Get changed files since last merge
@@ -426,7 +425,7 @@ class GitOpsManager:
         self,
         project: str,
         limit: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get commit history for a project.
 
         Args:
@@ -467,7 +466,7 @@ class GitOpsManager:
         self,
         version: str,
         message: str,
-        project: Optional[str] = None
+        project: str | None = None
     ) -> bool:
         """Create a version tag.
 
@@ -502,8 +501,8 @@ class GitOpsManager:
     async def get_file_diff(
         self,
         file_path: str,
-        version_a: Optional[str] = None,
-        version_b: Optional[str] = None
+        version_a: str | None = None,
+        version_b: str | None = None
     ) -> str:
         """Get diff for a file between two versions.
 
@@ -539,14 +538,13 @@ class GitOpsManager:
             # Convert to web URL if possible
             if url.startswith("git@"):
                 url = url.replace(":", "/").replace("git@", "https://")
-            if url.endswith(".git"):
-                url = url[:-4]
+            url = url.removesuffix(".git")
             return url
 
         except subprocess.CalledProcessError:
             return "unknown"
 
-    async def validate_repo(self) -> Dict[str, Any]:
+    async def validate_repo(self) -> dict[str, Any]:
         """Validate repository health."""
         status = await self.get_repo_status()
 

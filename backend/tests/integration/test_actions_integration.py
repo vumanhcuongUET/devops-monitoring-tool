@@ -3,11 +3,11 @@
 These tests verify component interactions and end-to-end flows.
 """
 
-import pytest
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timezone
+
+import pytest
 
 from app.actions.executor import CommandExecutor
 from app.actions.parser import CommandParser
@@ -15,22 +15,19 @@ from app.actions.validator import CommandValidator
 from app.approvals.store import ApprovalStateTracker
 from app.audit.logger import AuditLogger
 from app.models.actions import (
-    Action,
     ActionStatus,
     CommandType,
     RiskLevel,
-    ExecutionResult,
-    CommandParams,
 )
+from app.models.audit import AuditLogQuery
 from app.models.registry import (
-    RegistryConfig,
-    ProjectConfig,
-    RbacConstraints,
     ClusterConfig,
     NamespaceMapping,
     OwnerContact,
+    ProjectConfig,
+    RbacConstraints,
+    RegistryConfig,
 )
-from app.models.audit import AuditLogQuery
 
 
 @pytest.fixture

@@ -1,9 +1,9 @@
 """Skills API endpoints for Phase 3: Governance & Advanced Skills."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Any, Optional
+from typing import Any
 
-from app.auth import api_key_auth, bearer_auth
+from fastapi import APIRouter, HTTPException
+
 from app.skills.registry import get_skill_registry
 
 router = APIRouter(prefix="/skills", tags=["skills"])
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 
 @router.get("/")
 async def list_skills(
-    category: Optional[str] = None,
+    category: str | None = None,
     enabled_only: bool = True,
     implemented_only: bool = False,
 ) -> dict[str, Any]:
@@ -117,8 +117,8 @@ async def get_skill_recommendations(
 
 @router.get("/executions")
 async def list_executions(
-    skill_id: Optional[str] = None,
-    project: Optional[str] = None,
+    skill_id: str | None = None,
+    project: str | None = None,
     limit: int = 100,
 ) -> dict[str, Any]:
     """List recent skill executions.

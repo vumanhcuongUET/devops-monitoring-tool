@@ -5,10 +5,9 @@ including z-score, IQR, and seasonal decomposition.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
-from scipy import stats
 
 from app.services.prometheus_client import PrometheusClient
 from app.skills.base import (
@@ -61,7 +60,7 @@ class AnomalyDetectorSkill(BaseSkill):
         "high": {"z_score": 2.0, "iqr_multiplier": 1.0},
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the anomaly detector skill.
 
         Args:
@@ -74,7 +73,7 @@ class AnomalyDetectorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run anomaly detection analysis.
 

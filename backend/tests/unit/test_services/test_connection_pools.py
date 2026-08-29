@@ -5,8 +5,9 @@ Phase 9 - Sprint 1 - Day 4
 Tests for connection pooling in service clients
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 
 class TestElasticsearchConnectionPooling:
@@ -15,8 +16,8 @@ class TestElasticsearchConnectionPooling:
     @pytest.mark.asyncio
     async def test_elasticsearch_client_uses_connection_pool(self):
         """Test that Elasticsearch client is initialized with connection pooling."""
-        from app.services.elasticsearch_client import ElasticsearchClient
         from app.config import settings
+        from app.services.elasticsearch_client import ElasticsearchClient
 
         with patch("app.services.elasticsearch_client.AsyncElasticsearch") as mock_es:
             mock_instance = MagicMock()
@@ -58,7 +59,6 @@ class TestPrometheusConnectionPooling:
     async def test_prometheus_client_uses_connection_pool(self):
         """Test that Prometheus client uses persistent client with pooling."""
         from app.services.prometheus_client import PrometheusClient
-        from app.config import settings
 
         with patch("app.services.prometheus_client.httpx.AsyncClient") as mock_client:
             mock_instance = MagicMock()
@@ -98,8 +98,8 @@ class TestKubernetesConnectionPooling:
     @pytest.mark.asyncio
     async def test_kubernetes_client_uses_connection_pool(self):
         """Test that Kubernetes client is configured with connection pooling."""
-        from app.services.kubernetes_client import KubernetesClient
         from app.config import settings
+        from app.services.kubernetes_client import KubernetesClient
 
         with patch("app.services.kubernetes_client.k8s_config") as mock_config:
             with patch("app.services.kubernetes_client.client.CoreV1Api") as mock_core:
@@ -145,7 +145,6 @@ async def test_all_service_clients_have_close_method():
     """Test that all service clients have a close method for cleanup."""
     from app.services.elasticsearch_client import ElasticsearchClient
     from app.services.prometheus_client import PrometheusClient
-    from app.services.kubernetes_client import KubernetesClient
 
     with patch("app.services.elasticsearch_client.AsyncElasticsearch") as mock_es:
         mock_instance = MagicMock()

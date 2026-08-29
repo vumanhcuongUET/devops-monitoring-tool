@@ -8,8 +8,9 @@ Tests the LLM client functionality including:
 - Response parsing
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from anthropic import APIError
 
 

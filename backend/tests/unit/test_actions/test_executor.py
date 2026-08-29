@@ -1,12 +1,11 @@
 """Unit tests for Command Executor."""
 
 import asyncio
-import pytest
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.actions.executor import CommandExecutor, get_command_executor
-from app.models.actions import CommandType, ExecutionResult
 
 
 class TestCommandExecutor:

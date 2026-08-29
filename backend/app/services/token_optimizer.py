@@ -7,10 +7,9 @@ while maintaining triage card accuracy.
 Phase 6: AI Input Optimization & Cost Efficiency
 """
 
-from datetime import timedelta
-from typing import Any, Optional
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from app.models.triage_card import SeverityLevel
 
@@ -76,7 +75,7 @@ class OptimizationResult:
     logs_sampled: int = 0
     metrics_compressed: bool = False
     fallback: bool = False
-    fallback_reason: Optional[str] = None
+    fallback_reason: str | None = None
 
     def __post_init__(self):
         """Initialize default values for list fields."""
@@ -109,7 +108,7 @@ class TokenOptimizer:
     triage card accuracy.
     """
 
-    def __init__(self, config: Optional[OptimizationConfig] = None):
+    def __init__(self, config: OptimizationConfig | None = None):
         """Initialize token optimizer with configuration."""
         self.config = config or OptimizationConfig()
         self._strategies = []
@@ -125,7 +124,7 @@ class TokenOptimizer:
         context_data: dict[str, Any],
         incident_type: str,
         severity: SeverityLevel,
-        token_budget: Optional[int] = None,
+        token_budget: int | None = None,
     ) -> OptimizationResult:
         """
         Apply optimization strategies to minimize token usage.
@@ -162,7 +161,7 @@ class TokenOptimizer:
             anomalies.extend(detected_anomalies)
 
         # Strategy 2: Smart Sampling (for logs)
-        if "logs" in optimized_context and optimized_context["logs"]:
+        if optimized_context.get("logs"):
             optimized_context, sampled_count = await self._apply_smart_sampling(optimized_context, incident_type)
             strategies_applied.append(OptimizationStrategy.SMART_SAMPLING)
             logs_sampled = sampled_count
@@ -210,7 +209,7 @@ class TokenOptimizer:
         context_data: dict[str, Any],
         incident_type: str,
         severity: SeverityLevel,
-        request_id: Optional[str] = None,
+        request_id: str | None = None,
     ) -> OptimizationResult:
         """
         Optimize with automatic fallback on error.
@@ -252,7 +251,7 @@ class TokenOptimizer:
         except Exception as e:
             # Log the error with full context
             logger.error(
-                f"Optimization failed for {request_id}: {str(e)}",
+                f"Optimization failed for {request_id}: {e!s}",
                 exc_info=True,
                 extra={
                     'incident_type': incident_type,
@@ -264,7 +263,7 @@ class TokenOptimizer:
             # Return fallback result
             return self._create_fallback_result(
                 context_data,
-                f"{type(e).__name__}: {str(e)}"
+                f"{type(e).__name__}: {e!s}"
             )
 
     def _validate_result(self, result: OptimizationResult) -> bool:
@@ -323,7 +322,7 @@ class TokenOptimizer:
         if self._anomaly_detector is None:
             self._anomaly_detector = AnomalyDetector(self.config)
 
-        if "metrics" in context and context["metrics"]:
+        if context.get("metrics"):
             context["metrics"], detected_anomalies = await self._anomaly_detector.detect_metrics_anomaly(
                 context["metrics"]
             )
@@ -345,7 +344,7 @@ class TokenOptimizer:
         if self._log_sampler is None:
             self._log_sampler = LogSampler(self.config)
 
-        if "logs" in context and context["logs"]:
+        if context.get("logs"):
             # Handle both dict format (TestDataGenerator) and list format
             logs_data = context["logs"]
             if isinstance(logs_data, dict):
@@ -395,7 +394,7 @@ class TokenOptimizer:
             self._ts_compressor = TimeSeriesCompressor(self.config)
 
         # Compress any time-series data in metrics
-        if "metrics" in context and context["metrics"]:
+        if context.get("metrics"):
             context["metrics"], compressed = await self._ts_compressor.compress_metrics(
                 context["metrics"]
             )
@@ -467,10 +466,10 @@ class TokenOptimizer:
 
 
 # Singleton instance
-_token_optimizer: Optional[TokenOptimizer] = None
+_token_optimizer: TokenOptimizer | None = None
 
 
-def get_token_optimizer(config: Optional[OptimizationConfig] = None) -> TokenOptimizer:
+def get_token_optimizer(config: OptimizationConfig | None = None) -> TokenOptimizer:
     """Get or create the singleton TokenOptimizer instance."""
     global _token_optimizer
     if _token_optimizer is None:

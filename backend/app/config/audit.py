@@ -5,14 +5,13 @@ Provides comprehensive audit logging for configuration changes
 with rotation, compression, and query capabilities.
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, date, timedelta
-from enum import Enum
-import json
 import gzip
-import os
-from pathlib import Path
+import json
 import logging
+from datetime import date, datetime, timedelta
+from enum import Enum
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +65,11 @@ class AuditLogger:
         action: AuditAction,
         project: str,
         user: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         result: str = "success",
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        request_id: Optional[str] = None
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        request_id: str | None = None
     ):
         """Log configuration action.
 
@@ -104,14 +103,14 @@ class AuditLogger:
 
         logger.debug(f"Logged {action.value} for {project} by {user}")
 
-    def _sanitize_details(self, details: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_details(self, details: dict[str, Any]) -> dict[str, Any]:
         """Sanitize sensitive details."""
         try:
             return self.security.sanitize_config(details)
         except Exception:
             return {"sanitized": True}
 
-    def _append_to_log(self, entry: Dict[str, Any]):
+    def _append_to_log(self, entry: dict[str, Any]):
         """Append entry to compressed log file."""
         try:
             # Ensure parent directory exists
@@ -153,14 +152,14 @@ class AuditLogger:
 
     async def get_audit_trail(
         self,
-        project: Optional[str] = None,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-        action: Optional[AuditAction] = None,
-        user: Optional[str] = None,
+        project: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        action: AuditAction | None = None,
+        user: str | None = None,
         limit: int = 1000,
         offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get audit trail with filtering options.
 
         Args:
@@ -223,9 +222,9 @@ class AuditLogger:
 
     async def get_audit_summary(
         self,
-        project: Optional[str] = None,
+        project: str | None = None,
         days: int = 7
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get audit summary for a project.
 
         Args:
@@ -246,10 +245,10 @@ class AuditLogger:
         )
 
         # Calculate statistics
-        action_counts: Dict[str, int] = {}
-        user_counts: Dict[str, int] = {}
-        project_counts: Dict[str, int] = {}
-        result_counts: Dict[str, int] = {}
+        action_counts: dict[str, int] = {}
+        user_counts: dict[str, int] = {}
+        project_counts: dict[str, int] = {}
+        result_counts: dict[str, int] = {}
 
         for entry in entries:
             # Count actions
@@ -289,7 +288,7 @@ class AuditLogger:
         self,
         user: str,
         days: int = 30
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get activity for a specific user.
 
         Args:
@@ -313,7 +312,7 @@ class AuditLogger:
         self,
         project: str,
         limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get configuration change history for a project.
 
         Args:
@@ -331,9 +330,9 @@ class AuditLogger:
 
     def _get_files_in_range(
         self,
-        start_date: Optional[date],
-        end_date: Optional[date]
-    ) -> List[Path]:
+        start_date: date | None,
+        end_date: date | None
+    ) -> list[Path]:
         """Get audit log files in date range."""
         files = []
 
@@ -398,9 +397,9 @@ class AuditLogger:
     async def search_audit_trail(
         self,
         query: str,
-        project: Optional[str] = None,
+        project: str | None = None,
         days: int = 7
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Search audit trail for specific query.
 
         Args:
@@ -441,9 +440,9 @@ class AuditLogger:
     async def get_config_change_history(
         self,
         project: str,
-        config_type: Optional[str] = None,
+        config_type: str | None = None,
         limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get detailed configuration change history.
 
         Args:

@@ -125,7 +125,7 @@ def generate_all_manifests(namespace: str = "devops-ai") -> str:
         Combined YAML manifest
     """
     manifests = []
-    for sa_name in SERVICE_ACCOUNTS.keys():
+    for sa_name in SERVICE_ACCOUNTS:
         manifests.append(f"# {sa_name}\n")
         manifests.append(generate_service_account_manifest(sa_name, namespace))
 

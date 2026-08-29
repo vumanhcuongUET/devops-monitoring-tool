@@ -1,14 +1,13 @@
 """Unit tests for Feedback Collector (Phase 4)."""
 
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
 import pytest
-import json
-from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
 
 from app.feedback.collector import (
-    FeedbackEvent,
     FeedbackCollector,
+    FeedbackEvent,
     get_feedback_collector,
 )
 
@@ -280,7 +279,6 @@ class TestFeedbackCollectorSingleton:
 
     def test_get_feedback_collector_initializes_new_instance(self):
         """Test that first call initializes the collector."""
-        from app.feedback.collector import _collector
 
         # Reset singleton
         with patch("app.feedback.collector._collector", None):

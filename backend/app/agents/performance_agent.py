@@ -8,10 +8,10 @@ Specializes in:
 - Network performance analysis
 """
 
-from typing import Dict, Any, List
 import logging
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ RECOMMENDATION: [Actionable performance recommendation]
 Be quantitative with timing data. Prioritize high-impact optimizations.
 """
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze application performance.
 
@@ -163,8 +163,8 @@ Provide performance analysis with specific optimization recommendations.
             )
 
     def _identify_bottlenecks(
-        self, performance_data: Dict, traces: List
-    ) -> List[Dict]:
+        self, performance_data: dict, traces: list
+    ) -> list[dict]:
         """Identify performance bottlenecks."""
         bottlenecks = []
 
@@ -222,7 +222,7 @@ Provide performance analysis with specific optimization recommendations.
 
         return bottlenecks
 
-    def _find_slow_operations(self, traces: List) -> List[Dict]:
+    def _find_slow_operations(self, traces: list) -> list[dict]:
         """Find slow operations from traces."""
         slow_ops = []
         threshold = 1.0  # 1 second
@@ -241,7 +241,7 @@ Provide performance analysis with specific optimization recommendations.
 
         return sorted(slow_ops, key=lambda x: x["duration"], reverse=True)[:20]
 
-    def _analyze_contention(self, performance_data: Dict) -> List[Dict]:
+    def _analyze_contention(self, performance_data: dict) -> list[dict]:
         """Analyze resource contention issues."""
         contention = []
 
@@ -281,8 +281,8 @@ Provide performance analysis with specific optimization recommendations.
         return contention
 
     def _suggest_optimizations(
-        self, bottlenecks: List, slow_ops: List
-    ) -> List[Dict]:
+        self, bottlenecks: list, slow_ops: list
+    ) -> list[dict]:
         """Suggest performance optimizations."""
         optimizations = []
 
@@ -333,7 +333,7 @@ Provide performance analysis with specific optimization recommendations.
 
         return optimizations
 
-    def _format_bottlenecks(self, bottlenecks: List[Dict]) -> str:
+    def _format_bottlenecks(self, bottlenecks: list[dict]) -> str:
         """Format bottlenecks for display."""
         if not bottlenecks:
             return "No bottlenecks identified"
@@ -348,7 +348,7 @@ Provide performance analysis with specific optimization recommendations.
 
         return "\n".join(lines)
 
-    def _format_slow_operations(self, operations: List[Dict]) -> str:
+    def _format_slow_operations(self, operations: list[dict]) -> str:
         """Format slow operations for display."""
         if not operations:
             return "No slow operations identified"
@@ -363,7 +363,7 @@ Provide performance analysis with specific optimization recommendations.
 
         return "\n".join(lines)
 
-    def _format_contention(self, contention: List[Dict]) -> str:
+    def _format_contention(self, contention: list[dict]) -> str:
         """Format contention for display."""
         if not contention:
             return "No resource contention identified"
@@ -377,7 +377,7 @@ Provide performance analysis with specific optimization recommendations.
 
         return "\n".join(lines)
 
-    def _format_optimizations(self, optimizations: List[Dict]) -> str:
+    def _format_optimizations(self, optimizations: list[dict]) -> str:
         """Format optimizations for display."""
         if not optimizations:
             return "No optimization opportunities identified"

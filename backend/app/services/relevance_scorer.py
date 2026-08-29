@@ -8,9 +8,8 @@ Phase 6: AI Input Optimization - Sprint 3
 
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
-from enum import Enum
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RelevanceScore:
     """Relevance score for a data item."""
-    item: Dict[str, Any]
+    item: dict[str, Any]
     score: float
     keyword_score: float
     temporal_score: float
@@ -42,7 +41,7 @@ class RelevanceScorer:
         'service': 0.1
     }
 
-    def __init__(self, weights: Optional[Dict[str, float]] = None):
+    def __init__(self, weights: dict[str, float] | None = None):
         """
         Initialize relevance scorer.
 
@@ -53,12 +52,12 @@ class RelevanceScorer:
 
     def score_logs(
         self,
-        logs: List[Dict[str, Any]],
+        logs: list[dict[str, Any]],
         incident_type: str,
         alert_message: str,
-        alert_keywords: List[str],
-        incident_timestamp: Optional[datetime] = None
-    ) -> List[RelevanceScore]:
+        alert_keywords: list[str],
+        incident_timestamp: datetime | None = None
+    ) -> list[RelevanceScore]:
         """
         Score logs by relevance to incident.
 
@@ -99,9 +98,9 @@ class RelevanceScorer:
 
     def score_metrics(
         self,
-        metrics: Dict[str, Any],
+        metrics: dict[str, Any],
         incident_type: str
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Score metrics by relevance to incident type.
 
@@ -125,9 +124,9 @@ class RelevanceScorer:
 
     def _score_log(
         self,
-        log: Dict[str, Any],
-        keywords: List[str],
-        incident_timestamp: Optional[datetime],
+        log: dict[str, Any],
+        keywords: list[str],
+        incident_timestamp: datetime | None,
         expected_severity: str
     ) -> RelevanceScore:
         """Score a single log entry."""
@@ -160,7 +159,7 @@ class RelevanceScorer:
             service_score=service_score
         )
 
-    def _calculate_keyword_score(self, log: Dict[str, Any], keywords: List[str]) -> float:
+    def _calculate_keyword_score(self, log: dict[str, Any], keywords: list[str]) -> float:
         """Calculate keyword matching score."""
         if not keywords:
             return 0.5  # Neutral score if no keywords
@@ -174,8 +173,8 @@ class RelevanceScorer:
 
     def _calculate_temporal_score(
         self,
-        log: Dict[str, Any],
-        incident_timestamp: Optional[datetime]
+        log: dict[str, Any],
+        incident_timestamp: datetime | None
     ) -> float:
         """Calculate temporal proximity score."""
         if not incident_timestamp:
@@ -204,7 +203,7 @@ class RelevanceScorer:
         else:
             return 0.1
 
-    def _calculate_severity_score(self, log: Dict[str, Any], expected_severity: str) -> float:
+    def _calculate_severity_score(self, log: dict[str, Any], expected_severity: str) -> float:
         """Calculate severity matching score."""
         log_severity = log.get('severity', log.get('level', 'info')).lower()
 
@@ -225,7 +224,7 @@ class RelevanceScorer:
         except ValueError:
             return 0.5
 
-    def _calculate_service_score(self, log: Dict[str, Any]) -> float:
+    def _calculate_service_score(self, log: dict[str, Any]) -> float:
         """Calculate service relevance score."""
         # Extract service/pod information
         service = log.get('service', log.get('kubernetes', {}).get('service_name', ''))
@@ -233,7 +232,7 @@ class RelevanceScorer:
         # If log has service info, give it higher score
         return 0.8 if service else 0.3
 
-    def _extract_keywords(self, text: str) -> List[str]:
+    def _extract_keywords(self, text: str) -> list[str]:
         """Extract keywords from text."""
         if not text:
             return []
@@ -276,10 +275,10 @@ class RelevanceScorer:
 
 
 # Singleton instance
-_relevance_scorer: Optional[RelevanceScorer] = None
+_relevance_scorer: RelevanceScorer | None = None
 
 
-def get_relevance_scorer(weights: Optional[Dict[str, float]] = None) -> RelevanceScorer:
+def get_relevance_scorer(weights: dict[str, float] | None = None) -> RelevanceScorer:
     """Get or create the singleton RelevanceScorer instance."""
     global _relevance_scorer
     if _relevance_scorer is None:

@@ -9,15 +9,15 @@ This skill scans source code for:
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,14 +105,14 @@ class SastScannerSkill(BaseSkill):
         },
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run SAST scan on source code.
 
@@ -188,7 +188,7 @@ class SastScannerSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"SAST scan failed: {str(e)}"],
+                errors=[f"SAST scan failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -322,7 +322,6 @@ class SastScannerSkill(BaseSkill):
             Detected language
         """
         # Simple detection based on file extensions
-        import os
 
         common_files = {
             "python": [".py", "requirements.txt", "setup.py", "pyproject.toml"],

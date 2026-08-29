@@ -8,11 +8,10 @@ Phase 6: AI Input Optimization & Cost Efficiency
 Enhanced for Day 3: Temporal scoring, keyword extraction, 4-factor relevance
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Any, List, Tuple, Dict, Optional, Set
-from dataclasses import dataclass
-from enum import Enum
 import re
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 
 
 class LogSeverity(str, Enum):
@@ -38,7 +37,7 @@ class LogScore:
     """Score for a log entry."""
     log: dict
     score: float
-    reasons: List[str]
+    reasons: list[str]
 
 
 @dataclass
@@ -50,7 +49,7 @@ class RelevanceScore:
     severity_score: float      # 0.2 weight
     service_score: float       # 0.1 weight
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             'total': self.total_score,
             'keyword': self.keyword_score,
@@ -82,7 +81,7 @@ class KeywordExtractor:
         r'\b\w+@\w+\.\w+\b',                  # Email addresses
     ]
 
-    def extract_keywords(self, alert_message: str) -> List[str]:
+    def extract_keywords(self, alert_message: str) -> list[str]:
         """
         Extract relevant keywords from alert message.
 
@@ -129,7 +128,7 @@ class KeywordExtractor:
 
         return keyword_list
 
-    def _extract_service_names(self, text: str) -> Set[str]:
+    def _extract_service_names(self, text: str) -> set[str]:
         """Extract service/component names."""
         services = set()
 
@@ -149,7 +148,7 @@ class KeywordExtractor:
 
         return services
 
-    def _extract_error_types(self, text: str) -> Set[str]:
+    def _extract_error_types(self, text: str) -> set[str]:
         """Extract error types and status codes."""
         errors = set()
 
@@ -204,12 +203,12 @@ class LogSampler:
 
     async def sample_logs(
         self,
-        logs: List[dict],
+        logs: list[dict],
         incident_type: str,
         max_results: int = 20,
-        alert_keywords: List[str] = None,
+        alert_keywords: list[str] = None,
         incident_timestamp: datetime = None
-    ) -> List[dict]:
+    ) -> list[dict]:
         """
         Sample logs based on priority and relevance.
 
@@ -277,9 +276,9 @@ class LogSampler:
 
     async def sample_apm_errors(
         self,
-        apm_errors: List[dict],
+        apm_errors: list[dict],
         max_results: int = 10
-    ) -> List[dict]:
+    ) -> list[dict]:
         """
         Sample APM errors by occurrence count and relevance.
 
@@ -302,7 +301,7 @@ class LogSampler:
 
         return sorted_errors[:max_results]
 
-    def _categorize_by_severity(self, logs: List[dict]) -> dict[LogSeverity, List[dict]]:
+    def _categorize_by_severity(self, logs: list[dict]) -> dict[LogSeverity, list[dict]]:
         """Categorize logs by severity level."""
         categorized = {
             LogSeverity.CRITICAL: [],
@@ -349,11 +348,11 @@ class LogSampler:
 
     def _select_top_logs(
         self,
-        logs: List[dict],
+        logs: list[dict],
         quota: int,
-        alert_keywords: List[str],
+        alert_keywords: list[str],
         incident_timestamp: datetime
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Select top logs from a category."""
         if not logs:
             return []
@@ -367,10 +366,10 @@ class LogSampler:
 
     def _score_logs(
         self,
-        logs: List[dict],
-        alert_keywords: List[str],
+        logs: list[dict],
+        alert_keywords: list[str],
         incident_timestamp: datetime
-    ) -> List[LogScore]:
+    ) -> list[LogScore]:
         """Score logs based on multiple factors."""
         scored = []
         keywords = alert_keywords or []
@@ -445,10 +444,10 @@ class LogSampler:
 
     def configure_incident(
         self,
-        timestamp: Optional[datetime],
+        timestamp: datetime | None,
         alert_message: str = "",
-        service: Optional[str] = None,
-        severity: Optional[str] = None
+        service: str | None = None,
+        severity: str | None = None
     ):
         """
         Configure incident context for relevance scoring (NEW for Day 3).
@@ -466,7 +465,7 @@ class LogSampler:
         self.incident_service = service
         self.incident_severity = severity
 
-    def calculate_relevance_score(self, log: Dict) -> RelevanceScore:
+    def calculate_relevance_score(self, log: dict) -> RelevanceScore:
         """
         Calculate comprehensive relevance score (NEW for Day 3).
 
@@ -497,7 +496,7 @@ class LogSampler:
             service_score=round(service_score, 3)
         )
 
-    def _calculate_keyword_score(self, log: Dict) -> float:
+    def _calculate_keyword_score(self, log: dict) -> float:
         """Calculate keyword match score (0.4 weight)."""
         if not self.incident_keywords:
             return 0.0
@@ -510,7 +509,7 @@ class LogSampler:
 
         return (matched / len(self.incident_keywords)) * 0.4
 
-    def _calculate_temporal_score(self, log: Dict) -> float:
+    def _calculate_temporal_score(self, log: dict) -> float:
         """Calculate temporal proximity score (0.3 weight)."""
         if not self.incident_timestamp:
             return 0.0
@@ -520,7 +519,7 @@ class LogSampler:
         )
         return base_score * 0.3
 
-    def _calculate_severity_score(self, log: Dict) -> float:
+    def _calculate_severity_score(self, log: dict) -> float:
         """Calculate severity match score (0.2 weight)."""
         if not self.incident_severity:
             return 0.0
@@ -545,7 +544,7 @@ class LogSampler:
         else:
             return 0.0
 
-    def _calculate_service_score(self, log: Dict) -> float:
+    def _calculate_service_score(self, log: dict) -> float:
         """Calculate service relevance score (0.1 weight)."""
         if not self.incident_service:
             return 0.0
@@ -563,7 +562,7 @@ class LogSampler:
 
     def _score_temporal_proximity(
         self,
-        log: Dict,
+        log: dict,
         incident_timestamp: datetime
     ) -> float:
         """
@@ -611,10 +610,10 @@ class LogSampler:
 
     def sample_logs_smart(
         self,
-        logs: List[Dict],
-        incident_config: Dict,
+        logs: list[dict],
+        incident_config: dict,
         max_results: int = 50
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Sample logs using comprehensive relevance scoring (NEW for Day 3).
 
@@ -662,10 +661,10 @@ class LogSampler:
 
     def sample_apm_errors_smart(
         self,
-        apm_errors: List[Dict],
-        incident_config: Dict,
+        apm_errors: list[dict],
+        incident_config: dict,
         max_results: int = 10
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Sample APM errors with relevance scoring (NEW for Day 3).
 
@@ -711,7 +710,7 @@ class LogSampler:
 
         return scored_errors[:max_results]
 
-    def _calculate_apm_error_score(self, error: Dict) -> float:
+    def _calculate_apm_error_score(self, error: dict) -> float:
         """
         Calculate APM error importance score (NEW for Day 3).
 

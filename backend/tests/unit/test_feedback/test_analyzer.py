@@ -1,13 +1,14 @@
 """Unit tests for Feedback Analyzer (Phase 4)."""
 
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
 
 from app.feedback.analyzer import (
     ActionPattern,
-    LearningMetrics,
     FeedbackAnalyzer,
+    LearningMetrics,
     get_feedback_analyzer,
 )
 from app.feedback.collector import FeedbackCollector, FeedbackEvent
@@ -385,7 +386,6 @@ class TestFeedbackAnalyzerSingleton:
 
     def test_get_feedback_analyzer_initializes_new_instance(self):
         """Test that first call initializes the analyzer."""
-        from app.feedback.analyzer import _analyzer
 
         with patch("app.feedback.analyzer._analyzer", None):
             analyzer = get_feedback_analyzer()

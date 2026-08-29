@@ -8,8 +8,7 @@ Phase 6: AI Input Optimization - Sprint 3
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
-from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class TokenBudgetManager:
     # Maximum hard limit
     MAX_BUDGET = 5000
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize token budget manager.
 
@@ -60,7 +59,7 @@ class TokenBudgetManager:
         self,
         severity: str,
         incident_type: str,
-        context_data: Optional[Dict[str, Any]] = None
+        context_data: dict[str, Any] | None = None
     ) -> BudgetAllocation:
         """
         Calculate token budget for a request.
@@ -99,7 +98,7 @@ class TokenBudgetManager:
     def _calculate_complexity(
         self,
         incident_type: str,
-        context_data: Optional[Dict[str, Any]]
+        context_data: dict[str, Any] | None
     ) -> float:
         """
         Calculate incident complexity score (0.0 to 1.0).
@@ -138,7 +137,7 @@ class TokenBudgetManager:
 
         # Data source diversity (up to 0.2)
         sources = sum(1 for k in ['logs', 'metrics', 'apm_data', 'kubernetes_state', 'alerts']
-                      if k in context_data and context_data[k])
+                      if context_data.get(k))
         source_complexity = min(sources * 0.04, 0.2)
         complexity += source_complexity
 
@@ -176,10 +175,10 @@ class TokenBudgetManager:
 
 
 # Singleton instance
-_budget_manager: Optional[TokenBudgetManager] = None
+_budget_manager: TokenBudgetManager | None = None
 
 
-def get_token_budget_manager(config: Optional[Dict[str, Any]] = None) -> TokenBudgetManager:
+def get_token_budget_manager(config: dict[str, Any] | None = None) -> TokenBudgetManager:
     """Get or create the singleton TokenBudgetManager instance."""
     global _budget_manager
     if _budget_manager is None:

@@ -1,15 +1,15 @@
 """Deployment Health Check Skill - Check health status of deployments."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,14 +32,14 @@ class DeploymentHealthCheckSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Check deployment health.
 
@@ -80,7 +80,7 @@ class DeploymentHealthCheckSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Deployment health check failed: {str(e)}"],
+                errors=[f"Deployment health check failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -118,9 +118,9 @@ class DeploymentHealthCheckSkill(BaseSkill):
                     estimated_effort="30 minutes",
                     risk_level="medium",
                     commands=[
-                        f"# Check deployment status",
+                        "# Check deployment status",
                         f"kubectl get deployment {deployment['name']} -n {deployment['namespace']}",
-                        f"# View pod logs",
+                        "# View pod logs",
                         f"kubectl logs -l app={deployment['name']} -n {deployment['namespace']}",
                     ],
                 ))
@@ -130,9 +130,9 @@ class DeploymentHealthCheckSkill(BaseSkill):
     async def _fetch_deployment_status(
         self,
         project: str,
-        namespace: Optional[str],
-        deployment: Optional[str],
-        context: Optional[dict[str, Any]],
+        namespace: str | None,
+        deployment: str | None,
+        context: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
         """Fetch deployment status from Kubernetes."""
         return []

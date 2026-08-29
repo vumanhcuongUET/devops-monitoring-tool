@@ -5,8 +5,8 @@ Dynamically selects the optimal Claude model based on query complexity
 and cost constraints.
 """
 
-from typing import Dict, Any, Optional
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class ModelSelector:
     def __init__(
         self,
         default_model: str = "balanced",
-        cost_limit: Optional[float] = None,
+        cost_limit: float | None = None,
     ):
         """
         Initialize model selector.
@@ -74,12 +74,12 @@ class ModelSelector:
         """
         self.default_model = default_model
         self.cost_limit = cost_limit
-        self._usage_stats: Dict[str, int] = {}
+        self._usage_stats: dict[str, int] = {}
 
     def select_model(
         self,
-        context: Dict[str, Any],
-        task_type: Optional[str] = None,
+        context: dict[str, Any],
+        task_type: str | None = None,
     ) -> str:
         """
         Select model based on query complexity and context.
@@ -113,7 +113,7 @@ class ModelSelector:
 
         return self.MODELS[model]
 
-    def _calculate_complexity(self, context: Dict[str, Any]) -> float:
+    def _calculate_complexity(self, context: dict[str, Any]) -> float:
         """
         Calculate complexity score (0.0 to 1.0).
 
@@ -163,7 +163,7 @@ class ModelSelector:
         # Clamp to [0, 1]
         return max(0.0, min(1.0, score))
 
-    def _select_by_cost(self, context: Dict[str, Any]) -> Optional[str]:
+    def _select_by_cost(self, context: dict[str, Any]) -> str | None:
         """Select model based on cost limit."""
         # Estimate token count
         estimated_tokens = self._estimate_tokens(context)
@@ -186,7 +186,7 @@ class ModelSelector:
         )
         return None
 
-    def _estimate_tokens(self, context: Dict[str, Any]) -> int:
+    def _estimate_tokens(self, context: dict[str, Any]) -> int:
         """Estimate token count for the context."""
         # Rough estimation: 1 token ≈ 4 characters
         total_chars = 0
@@ -226,7 +226,7 @@ class ModelSelector:
         tier = task_mappings.get(task_type, self.default_model)
         return self.MODELS[tier]
 
-    def estimate_cost(self, context: Dict[str, Any], model: str) -> Dict[str, float]:
+    def estimate_cost(self, context: dict[str, Any], model: str) -> dict[str, float]:
         """Estimate cost for running analysis with specific model."""
         # Find model tier
         tier = None
@@ -252,6 +252,6 @@ class ModelSelector:
             "total_cost": input_cost + output_cost,
         }
 
-    def get_usage_stats(self) -> Dict[str, int]:
+    def get_usage_stats(self) -> dict[str, int]:
         """Get model usage statistics."""
         return self._usage_stats.copy()

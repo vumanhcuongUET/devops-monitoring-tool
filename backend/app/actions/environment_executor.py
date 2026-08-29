@@ -12,9 +12,7 @@ via the env parameter rather than shell string interpolation.
 """
 
 import asyncio
-import atexit
 import logging
-from app.models.actions import ExecutionResult
 import os
 import shlex
 import subprocess
@@ -22,9 +20,10 @@ import threading
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from app.governance.ai_rbac import AIPermission, ENVIRONMENT_PERMISSIONS
+from app.governance.ai_rbac import ENVIRONMENT_PERMISSIONS, AIPermission
+from app.models.actions import ExecutionResult
 from app.utils.logging import sanitize_command
 
 logger = logging.getLogger(__name__)
@@ -163,13 +162,13 @@ class EnvironmentAwareCommandExecutor:
         self.default_environment = default_environment
         self.dry_run = dry_run
         self.enable_logging = enable_logging
-        self._execution_history: List[ExecutionResult] = []
+        self._execution_history: list[ExecutionResult] = []
 
     async def execute(
         self,
         command: str,
-        environment: Optional[ExecutionEnvironment] = None,
-        required_permission: Optional[AIPermission] = None,
+        environment: ExecutionEnvironment | None = None,
+        required_permission: AIPermission | None = None,
         timeout_seconds: int = 30,
     ) -> ExecutionResult:
         """Execute a command with environment-specific service account.
@@ -385,7 +384,7 @@ class EnvironmentAwareCommandExecutor:
     def get_execution_history(
         self,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get execution history.
 
         Args:
@@ -400,7 +399,7 @@ class EnvironmentAwareCommandExecutor:
     def get_environment_info(
         self,
         environment: ExecutionEnvironment,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Get environment configuration information.
 
         Args:
@@ -496,12 +495,12 @@ class EnvironmentAwareCommandExecutor:
 
 
 # Singleton instance with thread-safe initialization
-_executor_instance: Optional[EnvironmentAwareCommandExecutor] = None
+_executor_instance: EnvironmentAwareCommandExecutor | None = None
 _executor_lock = threading.Lock()
 
 
 def get_executor(
-    environment: Optional[ExecutionEnvironment] = None,
+    environment: ExecutionEnvironment | None = None,
     dry_run: bool = False,
 ) -> EnvironmentAwareCommandExecutor:
     """Get the executor singleton instance (thread-safe).

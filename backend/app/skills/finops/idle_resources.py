@@ -8,15 +8,15 @@ This skill identifies:
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,14 +43,14 @@ class IdleResourcesSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze project for idle resources.
 
@@ -98,7 +98,7 @@ class IdleResourcesSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Idle resources analysis failed: {str(e)}"],
+                errors=[f"Idle resources analysis failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -137,7 +137,7 @@ class IdleResourcesSkill(BaseSkill):
                 estimated_effort="5 minutes",
                 risk_level="low",
                 commands=[
-                    f"# Terminate instance after confirmation",
+                    "# Terminate instance after confirmation",
                     f"aws ec2 terminate-instances --instance-ids {instance['id']}",
                 ],
             ))
@@ -147,7 +147,7 @@ class IdleResourcesSkill(BaseSkill):
     async def _fetch_resource_data(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Fetch resource data from cloud provider."""
         # Mock implementation

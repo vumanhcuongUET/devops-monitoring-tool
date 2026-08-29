@@ -1,13 +1,11 @@
 """Actions API endpoints for Phase 2: Human-in-the-loop & Action Proposer."""
 
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.actions.engine import get_action_engine
-from app.api.v1.analyze import _collect_context_data
 from app.api.ws.live import manager
 from app.models.actions import (
     Action,
@@ -28,8 +26,8 @@ class ActionResponse(BaseModel):
     """Response wrapper for action operations."""
 
     success: bool
-    action: Optional[Action] = None
-    error: Optional[str] = None
+    action: Action | None = None
+    error: str | None = None
 
 
 class BulkActionResponse(BaseModel):
@@ -89,8 +87,8 @@ async def create_action(request: Request, body: CreateActionRequest) -> ActionRe
 @router.get("", response_model=ActionListResponse)
 async def list_actions(
     request: Request,
-    project: Optional[str] = None,
-    status: Optional[ActionStatus] = None,
+    project: str | None = None,
+    status: ActionStatus | None = None,
     limit: int = 100,
 ) -> ActionListResponse:
     """List all actions with optional filtering.

@@ -5,7 +5,7 @@ Detects unsafe directives and generates production-ready CSP policies.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -71,7 +71,7 @@ class CSPAnalyzerSkill(BaseSkill):
         "report-to",
     ]
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the CSP analyzer skill.
 
         Args:
@@ -83,7 +83,7 @@ class CSPAnalyzerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run CSP analysis.
 
@@ -336,7 +336,7 @@ class CSPAnalyzerSkill(BaseSkill):
 
         return len(errors) == 0, errors
 
-    async def _fetch_csp_header(self, url: str) -> Optional[str]:
+    async def _fetch_csp_header(self, url: str) -> str | None:
         """Fetch CSP header from URL.
 
         Args:

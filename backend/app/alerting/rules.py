@@ -6,7 +6,6 @@ import yaml
 
 from app.models.alerts import AlertRule
 
-
 RULES_FILE = "data/alert_rules.json"
 DEFAULT_RULES_FILE = Path(__file__).parent / "default_rules.yaml"
 

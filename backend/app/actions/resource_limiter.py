@@ -3,8 +3,8 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,9 @@ class ResourceCheckResult:
     """Result of a resource limit check."""
     allowed: bool
     reason: str
-    resource_statuses: List[ResourceStatus]
-    blocking_resource: Optional[ResourceType] = None
-    recommendations: List[str] = field(default_factory=list)
+    resource_statuses: list[ResourceStatus]
+    blocking_resource: ResourceType | None = None
+    recommendations: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -61,7 +61,7 @@ class ResourceLimiter:
 
     def __init__(self):
         """Initialize the resource limiter."""
-        self._thresholds: Dict[ResourceType, ResourceThreshold] = {}
+        self._thresholds: dict[ResourceType, ResourceThreshold] = {}
         self._load_default_thresholds()
 
     def _load_default_thresholds(self):
@@ -100,7 +100,7 @@ class ResourceLimiter:
         self._thresholds[threshold.resource_type] = threshold
         logger.info(f"Updated threshold for {threshold.resource_type.value}")
 
-    def get_threshold(self, resource_type: ResourceType) -> Optional[ResourceThreshold]:
+    def get_threshold(self, resource_type: ResourceType) -> ResourceThreshold | None:
         """Get the threshold for a resource type.
 
         Args:
@@ -114,7 +114,7 @@ class ResourceLimiter:
     def check_resources(
         self,
         k8s_client: Any,
-        check_types: Optional[List[ResourceType]] = None,
+        check_types: list[ResourceType] | None = None,
     ) -> ResourceCheckResult:
         """Check if cluster has sufficient resources for action execution.
 
@@ -449,7 +449,7 @@ class ResourceLimiter:
         except (ValueError, TypeError):
             return 0.0
 
-    def get_all_thresholds(self) -> Dict[ResourceType, ResourceThreshold]:
+    def get_all_thresholds(self) -> dict[ResourceType, ResourceThreshold]:
         """Get all resource thresholds.
 
         Returns:
@@ -459,7 +459,7 @@ class ResourceLimiter:
 
 
 # Global singleton instance
-_resource_limiter: Optional[ResourceLimiter] = None
+_resource_limiter: ResourceLimiter | None = None
 
 
 def get_resource_limiter() -> ResourceLimiter:

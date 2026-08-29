@@ -5,7 +5,7 @@ Supports Locust and k6 result parsing and analysis.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -57,7 +57,7 @@ class LoadTestAnalyzerSkill(BaseSkill):
         "error_rate_percent": {"warning": 1.0, "critical": 5.0},
     }
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the load test analyzer skill.
 
         Args:
@@ -69,7 +69,7 @@ class LoadTestAnalyzerSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run load test analysis.
 
@@ -507,7 +507,7 @@ class LoadTestAnalyzerSkill(BaseSkill):
         regressions = []
         improvements = []
 
-        for metric in baseline.keys():
+        for metric in baseline:
             current_value = current.get(metric.replace("_ms", "") if "_ms" not in metric else metric, 0)
             baseline_value = baseline[metric]
 

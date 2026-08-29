@@ -6,7 +6,7 @@ failure patterns, retry strategies, and prevention recommendations.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
     AnalysisResult,
@@ -61,7 +61,7 @@ class DLQMonitorSkill(BaseSkill):
         "security_patch",
     ]
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the DLQ monitor skill.
 
         Args:
@@ -75,7 +75,7 @@ class DLQMonitorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run DLQ analysis.
 
@@ -300,7 +300,7 @@ class DLQMonitorSkill(BaseSkill):
         self,
         project: str,
         time_range_hours: int,
-        action_type_filter: Optional[str],
+        action_type_filter: str | None,
     ) -> dict[str, Any]:
         """Query DLQ entries from storage.
 

@@ -9,16 +9,16 @@ This skill analyzes dependency health to:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.config import settings
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class DependencyHealthSkill(BaseSkill):
     priority = SkillPriority.MEDIUM
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the Dependency Health skill."""
         super().__init__(config)
 
@@ -56,7 +56,7 @@ class DependencyHealthSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze dependency health.
 
@@ -156,8 +156,8 @@ class DependencyHealthSkill(BaseSkill):
     async def _get_dependencies(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, List[Dict[str, Any]]]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, list[dict[str, Any]]]:
         """Get service dependency graph from configuration.
 
         Returns:
@@ -181,10 +181,7 @@ class DependencyHealthSkill(BaseSkill):
                 "endpoint": f"{base_url}/health",
             }
             # Categorize based on service type
-            if "postgres" in service_id or "mysql" in service_id or "mongo" in service_id:
-                service_info["connection_string"] = base_url.replace("http://", "").replace("https://", "")
-                dependencies["databases"].append(service_info)
-            elif "redis" in service_id:
+            if "postgres" in service_id or "mysql" in service_id or "mongo" in service_id or "redis" in service_id:
                 service_info["connection_string"] = base_url.replace("http://", "").replace("https://", "")
                 dependencies["databases"].append(service_info)
             elif "auth" in service_id:
@@ -206,9 +203,9 @@ class DependencyHealthSkill(BaseSkill):
 
     async def _check_upstream_health(
         self,
-        upstream_services: List[Dict[str, Any]],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        upstream_services: list[dict[str, Any]],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check health of upstream services.
 
         Returns:
@@ -239,9 +236,9 @@ class DependencyHealthSkill(BaseSkill):
 
     async def _check_downstream_health(
         self,
-        downstream_services: List[Dict[str, Any]],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        downstream_services: list[dict[str, Any]],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check health of downstream services.
 
         Returns:
@@ -272,9 +269,9 @@ class DependencyHealthSkill(BaseSkill):
 
     async def _check_database_health(
         self,
-        databases: List[Dict[str, Any]],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        databases: list[dict[str, Any]],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check database connection health.
 
         Returns:
@@ -307,9 +304,9 @@ class DependencyHealthSkill(BaseSkill):
 
     async def _check_external_apis(
         self,
-        external_apis: List[Dict[str, Any]],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        external_apis: list[dict[str, Any]],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check external API availability.
 
         Returns:
@@ -340,10 +337,10 @@ class DependencyHealthSkill(BaseSkill):
 
     def _calculate_health_score(
         self,
-        upstream_health: Dict[str, Any],
-        downstream_health: Dict[str, Any],
-        database_health: Dict[str, Any],
-        external_health: Dict[str, Any],
+        upstream_health: dict[str, Any],
+        downstream_health: dict[str, Any],
+        database_health: dict[str, Any],
+        external_health: dict[str, Any],
     ) -> float:
         """Calculate overall dependency health score.
 
@@ -371,11 +368,11 @@ class DependencyHealthSkill(BaseSkill):
 
     def _identify_critical_issues(
         self,
-        upstream_health: Dict[str, Any],
-        downstream_health: Dict[str, Any],
-        database_health: Dict[str, Any],
-        external_health: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+        upstream_health: dict[str, Any],
+        downstream_health: dict[str, Any],
+        database_health: dict[str, Any],
+        external_health: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """Identify critical dependency issues.
 
         Returns:
@@ -409,9 +406,9 @@ class DependencyHealthSkill(BaseSkill):
     def _generate_recommendations(
         self,
         health_score: float,
-        critical_issues: List[Dict[str, Any]],
-        dependencies: Dict[str, Any],
-    ) -> List[Recommendation]:
+        critical_issues: list[dict[str, Any]],
+        dependencies: dict[str, Any],
+    ) -> list[Recommendation]:
         """Generate dependency health recommendations.
 
         Returns:

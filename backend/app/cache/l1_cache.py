@@ -16,14 +16,11 @@ import json
 import time
 from collections import defaultdict
 from contextvars import ContextVar
-from typing import Any, Dict, Optional
 from functools import wraps
+from typing import Any
 
 # Context variable for request-scoped cache
-request_cache: ContextVar[Dict[str, Any]] = ContextVar(
-    "request_cache",
-    default={}
-)
+request_cache: ContextVar[dict[str, Any]] = ContextVar("request_cache", default=None)
 
 
 class L1Cache:
@@ -47,7 +44,7 @@ class L1Cache:
         self._stats = defaultdict(lambda: {"hits": 0, "misses": 0})
 
     @staticmethod
-    def _generate_key(source: str, params: Dict[str, Any]) -> str:
+    def _generate_key(source: str, params: dict[str, Any]) -> str:
         """
         Generate a unique cache key from source and parameters.
 
@@ -63,7 +60,7 @@ class L1Cache:
         key_str = json.dumps(key_dict, sort_keys=True, default=str)
         return hashlib.sha256(key_str.encode()).hexdigest()
 
-    def get(self, source: str, params: Dict[str, Any]) -> Optional[Any]:
+    def get(self, source: str, params: dict[str, Any]) -> Any | None:
         """
         Get cached result for current request.
 
@@ -74,7 +71,7 @@ class L1Cache:
         Returns:
             Cached value if exists, None otherwise
         """
-        cache = request_cache.get()
+        cache = request_cache.get({})
         key = self._generate_key(source, params)
         value = cache.get(key)
 
@@ -85,7 +82,7 @@ class L1Cache:
 
         return value
 
-    def set(self, source: str, params: Dict[str, Any], value: Any) -> None:
+    def set(self, source: str, params: dict[str, Any], value: Any) -> None:
         """
         Cache result for current request.
 
@@ -94,7 +91,7 @@ class L1Cache:
             params: Query parameters
             value: Value to cache
         """
-        cache = request_cache.get()
+        cache = request_cache.get({})
         key = self._generate_key(source, params)
         cache[key] = value
         request_cache.set(cache)
@@ -102,7 +99,7 @@ class L1Cache:
     def get_or_set(
         self,
         source: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         fetch_func,
         *func_args,
         **func_kwargs
@@ -135,7 +132,7 @@ class L1Cache:
         request_cache.set({})
         self._stats.clear()
 
-    def get_stats(self) -> Dict[str, Dict[str, int]]:
+    def get_stats(self) -> dict[str, dict[str, int]]:
         """
         Get cache statistics for current request.
 
@@ -144,7 +141,7 @@ class L1Cache:
         """
         return dict(self._stats)
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """
         Get cache summary for current request.
 
@@ -160,7 +157,7 @@ class L1Cache:
             "total_hits": total_hits,
             "total_misses": total_misses,
             "total_requests": total,
-            "cache_size": len(request_cache.get()),
+            "cache_size": len(request_cache.get({})),
             "hit_rate": round(hit_rate, 4),
             "keys_cached": len(self._stats),
         }

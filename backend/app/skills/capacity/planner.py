@@ -2,15 +2,15 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,14 @@ class CapacityPlannerSkill(BaseSkill):
     version = "1.0.0"
     requires_prometheus = True
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run capacity planning analysis.
 
@@ -98,7 +98,7 @@ class CapacityPlannerSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Capacity planning failed: {str(e)}"],
+                errors=[f"Capacity planning failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -179,7 +179,7 @@ class CapacityPlannerSkill(BaseSkill):
     async def _fetch_metrics(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Fetch metrics from Prometheus."""
         # Implementation would query Prometheus

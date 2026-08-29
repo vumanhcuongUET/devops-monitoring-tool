@@ -11,14 +11,11 @@ import ipaddress
 import re
 import socket
 import time
-from functools import lru_cache
-from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 import httpx
 
 from app.config import settings
-
 
 # =============================================================================
 # Enhanced SSRF Protection with DNS Caching
@@ -41,11 +38,11 @@ class SSRFProtection:
     """
 
     # DNS cache: hostname -> (ip_list, timestamp)
-    _dns_cache: Dict[str, Tuple[List[str], float]] = {}
+    _dns_cache: dict[str, tuple[list[str], float]] = {}
     _cache_ttl = 300  # 5 minutes TTL for DNS cache
 
     # Blocked networks (private, loopback, link-local)
-    BLOCKED_NETWORKS: Set[str] = {
+    BLOCKED_NETWORKS: set[str] = {
         "127.0.0.0/8",      # Loopback
         "169.254.0.0/16",   # Link-local
         "10.0.0.0/8",       # Private Class A
@@ -67,7 +64,7 @@ class SSRFProtection:
     }
 
     # Blocked hostnames (cloud metadata services)
-    BLOCKED_HOSTNAMES: Set[str] = {
+    BLOCKED_HOSTNAMES: set[str] = {
         "metadata.google.internal",
         "metadata.internal",
         "169.254.169.254",  # AWS/GCP/Azure metadata
@@ -77,8 +74,8 @@ class SSRFProtection:
     def resolve_and_validate(
         cls,
         hostname: str,
-        port: Optional[int] = None,
-    ) -> Tuple[bool, str]:
+        port: int | None = None,
+    ) -> tuple[bool, str]:
         """
         Resolve hostname and validate against SSRF rules.
 
@@ -122,7 +119,7 @@ class SSRFProtection:
         return cls._validate_ips(resolved_ips, hostname)
 
     @classmethod
-    def _resolve_dns(cls, hostname: str) -> List[str]:
+    def _resolve_dns(cls, hostname: str) -> list[str]:
         """
         Resolve hostname to IP addresses.
 
@@ -154,7 +151,7 @@ class SSRFProtection:
             raise ValueError(f"DNS resolution failed for {hostname}: {e}")
 
     @classmethod
-    def _validate_ips(cls, ips: List[str], hostname: str) -> Tuple[bool, str]:
+    def _validate_ips(cls, ips: list[str], hostname: str) -> tuple[bool, str]:
         """
         Validate resolved IP addresses against blocked networks.
 
@@ -206,7 +203,7 @@ class SSRFProtection:
         cls._dns_cache.clear()
 
     @classmethod
-    def get_cache_stats(cls) -> Dict[str, any]:
+    def get_cache_stats(cls) -> dict[str, any]:
         """Get DNS cache statistics."""
         now = time.time()
         valid_entries = sum(

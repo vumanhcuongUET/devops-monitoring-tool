@@ -9,22 +9,22 @@ Provides REST API for configuration management including:
 - GitOps operations
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Path
-from typing import List, Optional, Dict, Any
-from datetime import date, datetime
-from pydantic import BaseModel, Field
 import logging
+from datetime import date, datetime
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Path, Query
+from pydantic import BaseModel, Field
 
 from app.config import (
+    AuditAction,
+    AuditLogger,
+    ChangeType,
+    ConfigSecurity,
+    ConfigType,
     ConfigValidator,
     ConfigVersionManager,
-    ConfigVersion,
-    ChangeType,
     GitOpsManager,
-    ConfigSecurity,
-    AuditLogger,
-    AuditAction,
-    ConfigType
 )
 
 logger = logging.getLogger(__name__)
@@ -33,19 +33,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/config", tags=["configuration"])
 
 # Global instances (set via dependency injection)
-_validator: Optional[ConfigValidator] = None
-_version_manager: Optional[ConfigVersionManager] = None
-_git_ops: Optional[GitOpsManager] = None
-_audit_logger: Optional[AuditLogger] = None
-_security: Optional[ConfigSecurity] = None
+_validator: ConfigValidator | None = None
+_version_manager: ConfigVersionManager | None = None
+_git_ops: GitOpsManager | None = None
+_audit_logger: AuditLogger | None = None
+_security: ConfigSecurity | None = None
 
 
 def set_config_instances(
     validator: ConfigValidator,
     version_manager: ConfigVersionManager,
-    git_ops: Optional[GitOpsManager] = None,
-    audit_logger: Optional[AuditLogger] = None,
-    security: Optional[ConfigSecurity] = None
+    git_ops: GitOpsManager | None = None,
+    audit_logger: AuditLogger | None = None,
+    security: ConfigSecurity | None = None
 ):
     """Set global instances for dependency injection."""
     global _validator, _version_manager, _git_ops, _audit_logger, _security
@@ -61,20 +61,20 @@ def set_config_instances(
 class ConfigValidationRequest(BaseModel):
     """Request for configuration validation."""
     config_type: str = Field(..., description="Type of configuration to validate")
-    config: Dict[str, Any] = Field(..., description="Configuration data")
+    config: dict[str, Any] = Field(..., description="Configuration data")
 
 
 class ConfigValidationResponse(BaseModel):
     """Response from configuration validation."""
     is_valid: bool
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
 
 class VersionCreateRequest(BaseModel):
     """Request for version creation."""
     project: str = Field(..., description="Project name")
-    config: Dict[str, Any] = Field(..., description="Configuration data")
+    config: dict[str, Any] = Field(..., description="Configuration data")
     author: str = Field(..., description="Author name")
     message: str = Field(..., description="Commit message")
     change_type: str = Field(default="update", description="Type of change")
@@ -316,8 +316,8 @@ async def diff_versions(request: VersionDiffRequest):
 @router.get("/versions/{project}/history")
 async def get_version_history(
     project: str = Path(..., description="Project name"),
-    since: Optional[date] = Query(None, description="Start date"),
-    until: Optional[date] = Query(None, description="End date")
+    since: date | None = Query(None, description="Start date"),
+    until: date | None = Query(None, description="End date")
 ):
     """Get version history for a project within a time range.
 
@@ -354,11 +354,11 @@ async def get_version_history(
 
 @router.get("/audit/trail")
 async def get_audit_trail(
-    project: Optional[str] = Query(None, description="Filter by project"),
-    start_date: Optional[date] = Query(None, description="Start date"),
-    end_date: Optional[date] = Query(None, description="End date"),
-    action: Optional[str] = Query(None, description="Filter by action"),
-    user: Optional[str] = Query(None, description="Filter by user"),
+    project: str | None = Query(None, description="Filter by project"),
+    start_date: date | None = Query(None, description="Start date"),
+    end_date: date | None = Query(None, description="End date"),
+    action: str | None = Query(None, description="Filter by action"),
+    user: str | None = Query(None, description="Filter by user"),
     limit: int = Query(1000, ge=1, le=10000, description="Maximum entries"),
     offset: int = Query(0, ge=0, description="Pagination offset")
 ):
@@ -411,7 +411,7 @@ async def get_audit_trail(
 
 @router.get("/audit/summary")
 async def get_audit_summary(
-    project: Optional[str] = Query(None, description="Filter by project"),
+    project: str | None = Query(None, description="Filter by project"),
     days: int = Query(7, ge=1, le=365, description="Number of days to summarize")
 ):
     """Get audit summary for a project.
@@ -559,7 +559,7 @@ async def get_git_status():
 
 
 @router.post("/security/scan")
-async def scan_config_for_secrets(config: Dict[str, Any]):
+async def scan_config_for_secrets(config: dict[str, Any]):
     """Scan configuration for potential secrets.
 
     Args:
@@ -568,6 +568,7 @@ async def scan_config_for_secrets(config: Dict[str, Any]):
     Returns:
         Scan results with secret field locations
     """
+    global _security
     try:
         if not _security:
             # Create security instance if not set
@@ -587,7 +588,7 @@ async def scan_config_for_secrets(config: Dict[str, Any]):
 
 @router.post("/security/sanitize")
 async def sanitize_config(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     level: str = Query("internal", description="Security level (public, internal, confidential)")
 ):
     """Sanitize configuration for safe display.
@@ -602,6 +603,7 @@ async def sanitize_config(
     try:
         from app.config.security import SecurityLevel
 
+        global _security
         if not _security:
             _security = ConfigSecurity()
 

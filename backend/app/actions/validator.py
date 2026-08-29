@@ -1,10 +1,9 @@
 """Command validator for RBAC and policy enforcement."""
 
-from typing import Optional
 
 from app.actions.parser import get_command_parser
-from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
-from app.models.actions import CommandParams, CommandType, RiskLevel
+from app.actions.rate_limiter import get_rate_limiter
+from app.models.actions import CommandParams, RiskLevel
 from app.registry.loader import get_registry
 
 
@@ -50,7 +49,7 @@ class CommandValidator:
         self,
         command: str,
         project: str,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> ValidationResult:
         """Validate a command for a specific project and user."""
         # Parse the command
@@ -174,7 +173,7 @@ class CommandValidator:
         self,
         project: str,
         action_type: str = "restart",
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> tuple[bool, str, dict]:
         """Check if action rate limit has been exceeded.
 
@@ -209,7 +208,7 @@ class CommandValidator:
 
 
 # Singleton instance
-_validator: Optional[CommandValidator] = None
+_validator: CommandValidator | None = None
 
 
 def get_command_validator() -> CommandValidator:

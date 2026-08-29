@@ -8,8 +8,9 @@ Tests the SLO client functionality including:
 - Slow APIs retrieval
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.mark.unit

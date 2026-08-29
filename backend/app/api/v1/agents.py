@@ -13,7 +13,7 @@ matching the optimization/config API module pattern.
 import json
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -26,14 +26,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 # Injected from lifespan (see main.py)
-_orchestrator: Optional[AgentOrchestrator] = None
+_orchestrator: AgentOrchestrator | None = None
 
 VALID_AGENTS = ["log", "metrics", "k8s", "cost", "security", "performance"]
 MAX_CONTEXT_BYTES = 512 * 1024  # 512KB payload guard
 MAX_CONTEXT_KEYS = 50
 
 
-def set_agent_instances(orchestrator: Optional[AgentOrchestrator]) -> None:
+def set_agent_instances(orchestrator: AgentOrchestrator | None) -> None:
     """Inject the orchestrator instance from the application lifespan."""
     global _orchestrator
     _orchestrator = orchestrator
@@ -46,7 +46,7 @@ class AgentAnalysisRequest(BaseModel):
         ...,
         description="Analysis context (logs, metrics, k8s_state, resources, security_data, traces)",
     )
-    agents: Optional[list[str]] = Field(
+    agents: list[str] | None = Field(
         None,
         description=f"Specific agents to run (None = auto-select). Valid: {VALID_AGENTS}",
     )
@@ -59,7 +59,7 @@ class AgentAnalysisRequest(BaseModel):
 
     @field_validator("agents")
     @classmethod
-    def validate_agents(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+    def validate_agents(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return None
         invalid = [a for a in v if a not in VALID_AGENTS]

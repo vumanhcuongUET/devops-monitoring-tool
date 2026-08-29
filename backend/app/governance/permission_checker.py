@@ -8,17 +8,15 @@ This module provides the AIPermissionChecker class which:
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from app.governance.ai_rbac import (
     AIPermission,
     check_permission,
-    get_required_permission,
     get_action_risk_level,
-    can_auto_approve,
+    get_required_permission,
 )
-from app.models.registry import ProjectConfig
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +51,7 @@ class PermissionCheckResult:
         self.environment = environment
         self.timestamp = datetime.now(timezone.utc)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "allowed": self.allowed,
@@ -96,18 +94,18 @@ class AIPermissionChecker:
         self.max_checks_per_minute = max_checks_per_minute
 
         # Rate limiting state
-        self._check_timestamps: List[datetime] = []
+        self._check_timestamps: list[datetime] = []
 
         # Audit log (bounded size)
-        self._audit_log: List[Dict[str, Any]] = []
+        self._audit_log: list[dict[str, Any]] = []
 
     def check(
         self,
         action: str,
-        environment: Optional[str] = None,
-        project: Optional[str] = None,
-        user: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        environment: str | None = None,
+        project: str | None = None,
+        user: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> PermissionCheckResult:
         """Check if an action is allowed.
 
@@ -126,7 +124,7 @@ class AIPermissionChecker:
         # Rate limit check
         if self.enable_rate_limit:
             if not self._check_rate_limit():
-                logger.warning(f"Rate limit exceeded for permission checks")
+                logger.warning("Rate limit exceeded for permission checks")
                 return PermissionCheckResult(
                     allowed=False,
                     required_permission=AIPermission.VIEW,
@@ -170,9 +168,9 @@ class AIPermissionChecker:
     def check_command(
         self,
         command: str,
-        environment: Optional[str] = None,
-        project: Optional[str] = None,
-        user: Optional[str] = None,
+        environment: str | None = None,
+        project: str | None = None,
+        user: str | None = None,
     ) -> PermissionCheckResult:
         """Check if a command is allowed.
 
@@ -195,11 +193,11 @@ class AIPermissionChecker:
 
     def check_batch(
         self,
-        actions: List[str],
-        environment: Optional[str] = None,
-        project: Optional[str] = None,
-        user: Optional[str] = None,
-    ) -> List[PermissionCheckResult]:
+        actions: list[str],
+        environment: str | None = None,
+        project: str | None = None,
+        user: str | None = None,
+    ) -> list[PermissionCheckResult]:
         """Check multiple actions.
 
         Args:
@@ -220,8 +218,8 @@ class AIPermissionChecker:
 
     def get_allowed_actions(
         self,
-        environment: Optional[str] = None,
-    ) -> List[str]:
+        environment: str | None = None,
+    ) -> list[str]:
         """Get list of allowed action types for an environment.
 
         Args:
@@ -248,9 +246,9 @@ class AIPermissionChecker:
     def get_audit_log(
         self,
         limit: int = 100,
-        project: Optional[str] = None,
-        environment: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        project: str | None = None,
+        environment: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get audit log entries.
 
         Args:
@@ -295,9 +293,9 @@ class AIPermissionChecker:
         self,
         result: PermissionCheckResult,
         action: str,
-        project: Optional[str],
-        user: Optional[str],
-        context: Optional[Dict[str, Any]],
+        project: str | None,
+        user: str | None,
+        context: dict[str, Any] | None,
     ) -> None:
         """Log a permission check to audit trail.
 
@@ -337,7 +335,7 @@ class AIPermissionChecker:
             f"env={result.environment}, project={project}"
         )
 
-    def _extract_action(self, command: str) -> Optional[str]:
+    def _extract_action(self, command: str) -> str | None:
         """Extract action from a command string.
 
         Args:
@@ -354,7 +352,7 @@ class AIPermissionChecker:
 
 
 # Singleton instance
-_permission_checker: Optional[AIPermissionChecker] = None
+_permission_checker: AIPermissionChecker | None = None
 
 
 def get_permission_checker(

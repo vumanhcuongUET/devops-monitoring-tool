@@ -7,11 +7,11 @@ Tests the notification functionality including:
 - Webhook notifications
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 
-from app.alerting.notifiers import SlackNotifier, EmailNotifier, WebhookNotifier
+import pytest
+
+from app.alerting.notifiers import EmailNotifier, SlackNotifier, WebhookNotifier
 
 
 @pytest.mark.unit

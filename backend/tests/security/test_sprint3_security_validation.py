@@ -12,18 +12,17 @@ Author: Phase 8 Sprint 3 (Day 13)
 Date: 2026-08-24
 """
 
-import pytest
-import time
-import hmac
 import hashlib
-import json
-from httpx import AsyncClient
+import hmac
+import time
 
-from app.actions.rate_limiter import get_rate_limiter, RateLimitConfig
-from app.actions.chain_monitor import get_chain_monitor, ChainEvent
-from app.middleware.security import SecurityHeadersMiddleware
+import pytest
+
+from app.actions.chain_monitor import get_chain_monitor
+from app.actions.rate_limiter import RateLimitConfig, get_rate_limiter
 from app.approvals.webhook import verify_slack_signature, verify_teams_hmac_signature
 from app.audit.logger import get_audit_logger
+from app.middleware.security import SecurityHeadersMiddleware
 from app.models.audit import AuditEventType
 
 
@@ -46,7 +45,7 @@ class TestCSPSecurityValidation:
         # Should allow only specific sources
         assert "default-src 'self'" in policy
         assert "script-src 'self'" in policy
-        assert f"'nonce-test-nonce'" in policy
+        assert "'nonce-test-nonce'" in policy
 
     def test_csp_in_development_allows_unsafe_inline(self):
         """Verify development mode allows unsafe-inline for debugging."""
@@ -343,7 +342,6 @@ class TestAuditLoggingSecurityValidation:
 
     def test_chain_limit_exceeded_logged(self):
         """Verify chain limit exceeded is logged to audit."""
-        from app.audit.logger import get_audit_logger
 
         audit_logger = get_audit_logger()
 
@@ -362,7 +360,6 @@ class TestAuditLoggingSecurityValidation:
 
     def test_security_events_have_required_fields(self):
         """Verify security audit events have required fields."""
-        from app.audit.logger import get_audit_logger
 
         audit_logger = get_audit_logger()
 
@@ -434,10 +431,10 @@ class TestSecurityHeadersValidation:
     @pytest.mark.asyncio
     async def test_all_security_headers_present(self):
         """Verify all required security headers are present."""
-        from starlette.testclient import TestClient
         from starlette.applications import Starlette
-        from starlette.routing import Route
         from starlette.responses import JSONResponse
+        from starlette.routing import Route
+        from starlette.testclient import TestClient
 
         async def test_endpoint(request):
             return JSONResponse({"status": "ok"})
@@ -469,10 +466,10 @@ class TestSecurityHeadersValidation:
     @pytest.mark.asyncio
     async def test_api_responses_no_cache(self):
         """Verify API responses have no-cache headers."""
-        from starlette.testclient import TestClient
         from starlette.applications import Starlette
-        from starlette.routing import Route
         from starlette.responses import JSONResponse
+        from starlette.routing import Route
+        from starlette.testclient import TestClient
 
         async def api_endpoint(request):
             return JSONResponse({"data": "sensitive"})
@@ -549,7 +546,6 @@ class TestSecurityAcceptanceCriteria:
 
     def test_audit_logs_complete(self):
         """Acceptance: Audit logs are complete."""
-        from app.audit.logger import get_audit_logger
 
         audit_logger = get_audit_logger()
 

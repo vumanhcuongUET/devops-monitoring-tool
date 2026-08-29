@@ -10,15 +10,15 @@ This skill analyzes systems to check:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class GDPRAuditorSkill(BaseSkill):
     priority = SkillPriority.HIGH
     version = "1.0.0"
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         """Initialize the GDPR Auditor skill."""
         super().__init__(config)
 
@@ -57,7 +57,7 @@ class GDPRAuditorSkill(BaseSkill):
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Analyze GDPR compliance.
 
@@ -149,8 +149,8 @@ class GDPRAuditorSkill(BaseSkill):
     async def _get_data_inventory(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Get data inventory for the project.
 
         Returns:
@@ -171,8 +171,8 @@ class GDPRAuditorSkill(BaseSkill):
     async def _check_consent_management(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check consent management implementation.
 
         Returns:
@@ -190,8 +190,8 @@ class GDPRAuditorSkill(BaseSkill):
     async def _check_data_subject_rights(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check data subject rights implementation.
 
         Returns:
@@ -209,9 +209,9 @@ class GDPRAuditorSkill(BaseSkill):
 
     def _check_retention_policies(
         self,
-        data_inventory: Dict[str, Any],
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        data_inventory: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check data retention policies.
 
         Returns:
@@ -231,8 +231,8 @@ class GDPRAuditorSkill(BaseSkill):
     async def _check_security_measures(
         self,
         project: str,
-        context: Optional[dict[str, Any]],
-    ) -> Dict[str, Any]:
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Check security measures for data protection.
 
         Returns:
@@ -250,10 +250,10 @@ class GDPRAuditorSkill(BaseSkill):
 
     def _calculate_compliance_score(
         self,
-        consent_compliance: Dict[str, Any],
-        subject_rights: Dict[str, Any],
-        retention_compliance: Dict[str, Any],
-        security_compliance: Dict[str, Any],
+        consent_compliance: dict[str, Any],
+        subject_rights: dict[str, Any],
+        retention_compliance: dict[str, Any],
+        security_compliance: dict[str, Any],
     ) -> float:
         """Calculate overall GDPR compliance score.
 
@@ -272,10 +272,10 @@ class GDPRAuditorSkill(BaseSkill):
     def _generate_recommendations(
         self,
         compliance_score: float,
-        consent_compliance: Dict[str, Any],
-        subject_rights: Dict[str, Any],
-        retention_compliance: Dict[str, Any],
-    ) -> List[Recommendation]:
+        consent_compliance: dict[str, Any],
+        subject_rights: dict[str, Any],
+        retention_compliance: dict[str, Any],
+    ) -> list[Recommendation]:
         """Generate GDPR compliance recommendations.
 
         Returns:

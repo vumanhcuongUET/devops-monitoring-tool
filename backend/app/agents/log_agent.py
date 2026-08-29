@@ -8,13 +8,13 @@ Specializes in:
 - Common application issue patterns
 """
 
-import re
-from datetime import datetime
-from typing import Dict, Any, List, Optional
-from collections import Counter
 import logging
+import re
+from collections import Counter
+from datetime import datetime
+from typing import Any
 
-from .base import BaseAgent, AgentResponse
+from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ RECOMMENDATION: [Actionable recommendation]
 Be specific, evidence-based, and actionable. If data is insufficient, state what additional information would help.
 """
 
-    async def analyze(self, context: Dict[str, Any]) -> AgentResponse:
+    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
         """
         Analyze log data for patterns and issues.
 
@@ -152,7 +152,7 @@ Provide analysis focusing on root causes and actionable recommendations.
                 error=str(e),
             )
 
-    def _extract_errors(self, logs: List[Dict]) -> List[Dict]:
+    def _extract_errors(self, logs: list[dict]) -> list[dict]:
         """Extract error-level logs."""
         errors = []
         for log in logs:
@@ -162,7 +162,7 @@ Provide analysis focusing on root causes and actionable recommendations.
                 errors.append(log)
         return errors
 
-    def _find_error_patterns(self, error_logs: List[Dict]) -> Dict[str, int]:
+    def _find_error_patterns(self, error_logs: list[dict]) -> dict[str, int]:
         """Find recurring error patterns."""
         patterns = Counter()
 
@@ -218,7 +218,7 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         return "->".join(signature) if signature else "unknown"
 
-    def _detect_anomalies(self, logs: List[Dict]) -> List[Dict]:
+    def _detect_anomalies(self, logs: list[dict]) -> list[dict]:
         """Detect anomalies in log patterns."""
         anomalies = []
 
@@ -249,7 +249,7 @@ Provide analysis focusing on root causes and actionable recommendations.
         return anomalies
 
     @staticmethod
-    def _timestamp_to_epoch(timestamp: Any) -> Optional[float]:
+    def _timestamp_to_epoch(timestamp: Any) -> float | None:
         """Convert a log timestamp (ISO string or numeric epoch) to seconds."""
         if isinstance(timestamp, (int, float)):
             return float(timestamp)
@@ -259,7 +259,7 @@ Provide analysis focusing on root causes and actionable recommendations.
         except ValueError:
             return None
 
-    def _find_error_bursts(self, logs: List[Dict]) -> List[Dict]:
+    def _find_error_bursts(self, logs: list[dict]) -> list[dict]:
         """Find periods of high error frequency."""
         # Group logs by time window (1 minute)
         window_size = 60  # seconds
@@ -284,7 +284,7 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         return bursts
 
-    def _prepare_log_sample(self, logs: List[Dict], max_lines: int = 100) -> str:
+    def _prepare_log_sample(self, logs: list[dict], max_lines: int = 100) -> str:
         """Prepare a readable sample of logs for analysis."""
         sample = []
         for i, log in enumerate(logs[:max_lines]):
@@ -298,7 +298,7 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         return "\n".join(sample)
 
-    def _format_error_patterns(self, patterns: Dict[str, int]) -> str:
+    def _format_error_patterns(self, patterns: dict[str, int]) -> str:
         """Format error patterns for display."""
         if not patterns:
             return "No patterns detected"
@@ -309,7 +309,7 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         return "\n".join(lines)
 
-    def _format_anomalies(self, anomalies: List[Dict]) -> str:
+    def _format_anomalies(self, anomalies: list[dict]) -> str:
         """Format anomalies for display."""
         if not anomalies:
             return "No anomalies detected"

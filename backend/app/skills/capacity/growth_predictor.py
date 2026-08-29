@@ -1,16 +1,16 @@
 """Growth Predictor Skill - Predict growth based on historical patterns."""
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from app.skills.base import (
-    BaseSkill,
-    SkillConfig,
-    SkillCategory,
-    SkillPriority,
     AnalysisResult,
+    BaseSkill,
     Recommendation,
+    SkillCategory,
+    SkillConfig,
+    SkillPriority,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,14 @@ class GrowthPredictorSkill(BaseSkill):
     version = "1.0.0"
     requires_prometheus = True
 
-    def __init__(self, config: Optional[SkillConfig] = None):
+    def __init__(self, config: SkillConfig | None = None):
         super().__init__(config)
 
     async def analyze(
         self,
         project: str,
         parameters: dict[str, Any],
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
         """Run growth prediction analysis.
 
@@ -81,7 +81,7 @@ class GrowthPredictorSkill(BaseSkill):
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                errors=[f"Growth prediction failed: {str(e)}"],
+                errors=[f"Growth prediction failed: {e!s}"],
             )
 
     async def get_recommendations(
@@ -130,7 +130,7 @@ class GrowthPredictorSkill(BaseSkill):
         self,
         project: str,
         days: int,
-        context: Optional[dict[str, Any]],
+        context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Fetch historical metrics."""
         # Implementation would query Prometheus

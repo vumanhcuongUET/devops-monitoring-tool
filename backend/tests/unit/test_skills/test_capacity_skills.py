@@ -3,11 +3,10 @@ bottleneck_detector.py / growth_predictor.py) and the registry stub flag."""
 
 import pytest
 
-from app.skills.base import SkillConfig
-from app.skills.capacity.planner import CapacityPlannerSkill
 from app.skills.capacity.bottleneck_detector import BottleneckDetectorSkill
 from app.skills.capacity.growth_predictor import GrowthPredictorSkill
-from app.skills.registry import SkillRegistry, STUB_SKILLS
+from app.skills.capacity.planner import CapacityPlannerSkill
+from app.skills.registry import STUB_SKILLS, SkillRegistry
 
 
 @pytest.mark.asyncio

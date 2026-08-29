@@ -29,7 +29,6 @@ opentelemetry-instrumentation-fastapi==0.65b0  # was opentelemetry-instrumentati
 opentelemetry-instrumentation-httpx==0.65b0  # was opentelemetry-instrumentation-httpx>=0.43b0
 opentelemetry-instrumentation-asyncio==0.65b0  # was opentelemetry-instrumentation-asyncio>=0.43b0
 opentelemetry-exporter-otlp-proto-grpc==1.44.0  # was opentelemetry-exporter-otlp-proto-grpc>=1.22.0
-opentelemetry-resource-detector-container>=0.43b0
 
 # Testing dependencies
 pytest==9.1.1  # was pytest>=8.0.0

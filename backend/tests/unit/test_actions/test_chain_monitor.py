@@ -17,12 +17,17 @@ from app.actions.chain_monitor import (
 
 @pytest.fixture(autouse=True)
 def reset_chain_monitor():
-    """Reset the global chain monitor before each test."""
-    global _chain_monitor
-    from app.actions.chain_monitor import _chain_monitor
-    _chain_monitor = None
+    """Reset the global chain monitor before each test.
+
+    Must rebind the module attribute -- ``from ... import _chain_monitor``
+    creates a local alias, so assigning to it never reset the singleton and
+    leaked ``enabled=False`` config into later test files.
+    """
+    import app.actions.chain_monitor as chain_monitor_module
+
+    chain_monitor_module._chain_monitor = None
     yield
-    _chain_monitor = None
+    chain_monitor_module._chain_monitor = None
 
 
 class TestChainEvent:
@@ -427,8 +432,8 @@ class TestGlobalChainMonitor:
     def test_singleton_with_config(self):
         """Test that config is applied on first call."""
         # Reset the singleton first
-        from app.actions.chain_monitor import _chain_monitor
-        _chain_monitor = None
+        import app.actions.chain_monitor as chain_monitor_module
+        chain_monitor_module._chain_monitor = None
 
         # Pass both config and a simple callback to avoid default handler
         config = ChainMonitorConfig(enabled=False)
@@ -440,8 +445,8 @@ class TestGlobalChainMonitor:
     def test_singleton_with_callback(self):
         """Test that callback is applied on first call."""
         # Reset the singleton first
-        from app.actions.chain_monitor import _chain_monitor
-        _chain_monitor = None
+        import app.actions.chain_monitor as chain_monitor_module
+        chain_monitor_module._chain_monitor = None
 
         mock_callback = Mock()
         monitor = get_chain_monitor(alert_callback=mock_callback)
@@ -452,8 +457,8 @@ class TestGlobalChainMonitor:
     def test_singleton_default_callback(self):
         """Test that default combined handler is used when no callback provided."""
         # Reset the singleton first
-        from app.actions.chain_monitor import _chain_monitor
-        _chain_monitor = None
+        import app.actions.chain_monitor as chain_monitor_module
+        chain_monitor_module._chain_monitor = None
 
         monitor = get_chain_monitor()
 

@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import urllib.parse
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -186,7 +187,7 @@ class TestSlackApprovalWebhook:
             "user": {"id": "U123", "name": "john.doe"},
         }
         mock_request.body.return_value = b"timestamp_data"
-        mock_request.form.return_value = {"payload": json.dumps(payload)}
+        mock_request.body = AsyncMock(return_value=urllib.parse.urlencode({"payload": json.dumps(payload)}).encode())
 
         # Setup mocks
         mock_action_engine.approve_action.return_value = MagicMock(
@@ -226,7 +227,7 @@ class TestSlackApprovalWebhook:
             "user": {"id": "U123", "name": "john.doe"},
         }
         mock_request.body.return_value = b"timestamp_data"
-        mock_request.form.return_value = {"payload": json.dumps(payload)}
+        mock_request.body = AsyncMock(return_value=urllib.parse.urlencode({"payload": json.dumps(payload)}).encode())
 
         # Setup mocks
         mock_action_engine.reject_action.return_value = MagicMock(
@@ -265,7 +266,7 @@ class TestSlackApprovalWebhook:
             "user": {"id": "U123", "name": "john.doe"},
         }
         mock_request.body.return_value = b"timestamp_data"
-        mock_request.form.return_value = {"payload": json.dumps(payload)}
+        mock_request.body = AsyncMock(return_value=urllib.parse.urlencode({"payload": json.dumps(payload)}).encode())
 
         # Setup mock action data
         mock_action_engine.get_action.return_value = {
@@ -296,7 +297,7 @@ class TestSlackApprovalWebhook:
     async def test_invalid_signature_returns_401(self, mock_request):
         """Test invalid signature returns 401."""
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": "{}"}
+        mock_request.body = AsyncMock(return_value=b"payload=%7B%7D")
 
         with patch("app.approvals.webhook.verify_slack_signature", return_value=False), \
              patch("app.approvals.webhook.settings") as mock_settings_class:
@@ -316,7 +317,7 @@ class TestSlackApprovalWebhook:
     async def test_old_timestamp_returns_401(self, mock_request):
         """Test old timestamp returns 401."""
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": "{}"}
+        mock_request.body = AsyncMock(return_value=b"payload=%7B%7D")
 
         # Make verify_slack_signature raise HTTPException for old timestamp
         with patch("app.approvals.webhook.verify_slack_signature") as mock_verify, \
@@ -338,7 +339,7 @@ class TestSlackApprovalWebhook:
     async def test_missing_payload_returns_400(self, mock_request):
         """Test missing payload returns 400."""
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {}  # No payload
+        mock_request.body = AsyncMock(return_value=b"")
 
         with patch("app.approvals.webhook.verify_slack_signature", return_value=True), \
              patch("app.approvals.webhook.settings") as mock_settings_class:
@@ -364,7 +365,7 @@ class TestSlackApprovalWebhook:
             "user": {"id": "U123", "name": "john.doe"},
         }
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": json.dumps(payload)}
+        mock_request.body = AsyncMock(return_value=urllib.parse.urlencode({"payload": json.dumps(payload)}).encode())
 
         with patch("app.approvals.webhook.verify_slack_signature", return_value=True), \
              patch("app.approvals.webhook.settings") as mock_settings_class:
@@ -394,7 +395,7 @@ class TestSlackApprovalWebhook:
             "user": {"id": "U123", "name": "john.doe"},
         }
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": json.dumps(payload)}
+        mock_request.body = AsyncMock(return_value=urllib.parse.urlencode({"payload": json.dumps(payload)}).encode())
 
         # Setup mock to return None
         mock_action_engine.get_action.return_value = None
@@ -424,7 +425,7 @@ class TestSlackApprovalWebhook:
             "user": {"id": "U123", "name": "john.doe"},
         }
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": json.dumps(payload)}
+        mock_request.body = AsyncMock(return_value=urllib.parse.urlencode({"payload": json.dumps(payload)}).encode())
 
         with patch("app.approvals.webhook.verify_slack_signature", return_value=True), \
              patch("app.approvals.webhook.settings") as mock_settings_class:
@@ -445,7 +446,7 @@ class TestSlackApprovalWebhook:
     async def test_invalid_json_payload_returns_400(self, mock_request):
         """Test invalid JSON payload returns 400."""
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": "invalid json{"}
+        mock_request.body = AsyncMock(return_value=b"payload=invalid%20json%7B")
 
         with patch("app.approvals.webhook.verify_slack_signature", return_value=True), \
              patch("app.approvals.webhook.settings") as mock_settings_class:
@@ -466,7 +467,7 @@ class TestSlackApprovalWebhook:
     async def test_ip_whitelist_check(self, mock_request):
         """Test IP whitelist validation."""
         mock_request.body.return_value = b"test_body"
-        mock_request.form.return_value = {"payload": "{}"}
+        mock_request.body = AsyncMock(return_value=b"payload=%7B%7D")
         mock_request.client.host = "192.168.1.100"  # Unauthorized IP
 
         with patch("app.approvals.webhook.verify_slack_signature", return_value=True), \

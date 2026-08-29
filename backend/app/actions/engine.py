@@ -332,9 +332,13 @@ class ActionEngine:
         environment = context.get("environment", "production")
         project = state.get("project", "")
 
-        # Parse command to get action type for rate limiting
+        # Parse command to get action type for rate limiting. The tracker stores
+        # parsed_params as a JSON dict; tolerate legacy attribute-style values.
         parsed_params = state.get("parsed_params")
-        action_type = parsed_params.action if parsed_params else "unknown"
+        if isinstance(parsed_params, dict):
+            action_type = parsed_params.get("action", "unknown")
+        else:
+            action_type = getattr(parsed_params, "action", "unknown")
 
         # Check rate limits before execution (Phase 8)
         rate_limiter = get_rate_limiter()

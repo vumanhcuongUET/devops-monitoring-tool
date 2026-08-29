@@ -11,6 +11,7 @@ import hmac
 import json
 import logging
 import time
+import urllib.parse
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -156,9 +157,10 @@ async def slack_approval_webhook(
             if client_ip not in settings.ALLOWED_WEBHOOK_IPS:
                 logger.warning(f"Webhook request from unauthorized IP: {client_ip}")
                 raise HTTPException(status_code=403, detail="IP not allowed")
-        # Parse the request payload
-        form_data = await request.form()
-        payload_str = form_data.get("payload", "")
+        # Parse the request payload. Slack sends application/x-www-form-urlencoded;
+        # parse it directly (starlette's request.form() would require python-multipart).
+        # raw_body was already read for signature verification above.
+        payload_str = urllib.parse.parse_qs(raw_body.decode("utf-8", errors="replace")).get("payload", [""])[0]
 
         if not payload_str:
             raise HTTPException(status_code=400, detail="Missing payload")

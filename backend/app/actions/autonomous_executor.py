@@ -16,6 +16,7 @@ from app.models.actions import ExecutionResult
 from app.models.alerts import AlertEvent, AlertRule
 
 from app.audit.logger import AuditLogger
+from app.models.audit import AuditEventType
 
 # Backwards-compat alias (class now lives in app.actions.rate_limiter)
 RateLimiter = AutonomousRateLimiter
@@ -179,19 +180,20 @@ class AutonomousExecutor:
         parameters["alert_rule_id"] = alert_rule.id
 
         # Log audit event
-        self.audit_logger.log_action_created(
+        self.audit_logger.log_event(
+            event_type=AuditEventType.ACTION_CREATED,
+            user="autonomous_system",
             action_id=f"autonomous_{alert_event.id}",
-            command=f"{action_type_str} triggered by alert {alert_rule.name}",
             project=alert_rule.labels.get("project", "unknown"),
-            environment=environment,
-            created_by="autonomous_system",
-            risk_level="low",  # Autonomous actions are low-risk
-            metadata={
+            details={
+                "command": f"{action_type_str} triggered by alert {alert_rule.name}",
+                "environment": environment,
+                "risk_level": "low",  # Autonomous actions are low-risk
                 "alert_event_id": alert_event.id,
                 "alert_rule_id": alert_rule.id,
                 "action_type": action_type_str,
                 "dry_run": dry_run,
-            }
+            },
         )
 
         # Create and execute action
@@ -217,18 +219,26 @@ class AutonomousExecutor:
 
         # Log execution result
         if result.success:
-            self.audit_logger.log_action_executed(
+            self.audit_logger.log_event(
+                event_type=AuditEventType.ACTION_EXECUTED,
+                user="autonomous_system",
                 action_id=f"autonomous_{alert_event.id}",
-                command=f"{action_type_str} completed successfully",
-                exit_code=result.exit_code or 0,
-                stdout=result.stdout or "",
-                stderr=result.stderr or "",
-                duration_seconds=result.duration_seconds or 0,
+                success=True,
+                execution_duration_seconds=result.duration_seconds or 0,
+                details={
+                    "command": f"{action_type_str} completed successfully",
+                    "exit_code": result.exit_code or 0,
+                    "stdout": result.stdout or "",
+                    "stderr": result.stderr or "",
+                },
             )
         else:
-            self.audit_logger.log_action_failed(
+            self.audit_logger.log_event(
+                event_type=AuditEventType.ACTION_FAILED,
+                user="autonomous_system",
                 action_id=f"autonomous_{alert_event.id}",
-                error_message=result.error_message or "Unknown error",
+                success=False,
+                details={"error_message": result.error_message or "Unknown error"},
             )
 
         return result

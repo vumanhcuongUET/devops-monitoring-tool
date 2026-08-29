@@ -15,6 +15,7 @@ import time
 from typing import Any
 
 import pytest
+from unittest.mock import MagicMock
 
 from app.services.apm_client import ApmClient
 from app.services.elasticsearch_client import ElasticsearchClient
@@ -111,10 +112,11 @@ class TestPerformanceBenchmarks:
 
         Target: < 3.0 seconds for summary
         """
-        client = ApmClient()
-        start = time.time()
-
         try:
+            # ApmClient takes the ES client since the Phase 9 refactor
+            client = ApmClient(es_client=MagicMock())
+            start = time.time()
+
             summary = await client.get_summary()
             duration = time.time() - start
 
@@ -245,6 +247,14 @@ class TestPerformanceBenchmarks:
                     "error_rate_percent": 0.5,
                     "throughput": 1000,
                 }
+
+            async def get_cpu_percent(self):
+                await asyncio.sleep(self.delay)
+                return 45.0
+
+            async def get_memory_percent(self):
+                await asyncio.sleep(self.delay)
+                return 60.0
 
         async def make_request():
             k8s = MockClient()

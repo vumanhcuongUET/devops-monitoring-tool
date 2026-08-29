@@ -106,7 +106,7 @@ jobs:
       - name: Run integration tests
         run: |
           cd backend
-          pytest tests/integration/ -v -m "not security" || true
+          pytest tests/integration/ -v -m "not security"
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

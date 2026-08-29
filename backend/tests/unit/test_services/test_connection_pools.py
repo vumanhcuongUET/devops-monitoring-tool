@@ -120,12 +120,11 @@ class TestConnectionPoolConfiguration:
         """Test that default pool sizes are set correctly."""
         from app.config import settings
 
-        assert hasattr(settings, "ES_MAX_CONNECTIONS")
+        # ES_MAX_CONNECTIONS removed with the invalid kwarg (review N1)
         assert hasattr(settings, "PROM_MAX_CONNECTIONS")
         assert hasattr(settings, "K8S_MAX_CONNECTIONS")
 
         # Verify default values
-        assert settings.ES_MAX_CONNECTIONS == 20
         assert settings.PROM_MAX_CONNECTIONS == 20
         assert settings.K8S_MAX_CONNECTIONS == 10
 
@@ -133,7 +132,6 @@ class TestConnectionPoolConfiguration:
         """Test that pool sizes are positive integers."""
         from app.config import settings
 
-        assert settings.ES_MAX_CONNECTIONS > 0
         assert settings.PROM_MAX_CONNECTIONS > 0
         assert settings.K8S_MAX_CONNECTIONS > 0
 

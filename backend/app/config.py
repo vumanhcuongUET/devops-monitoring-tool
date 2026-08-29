@@ -113,7 +113,6 @@ class Settings(BaseSettings):
     DATABASE_POOL_RECYCLE: int = 3600
 
     # Connection Pool Settings
-    ES_MAX_CONNECTIONS: int = 20
     PROM_MAX_CONNECTIONS: int = 20
     K8S_MAX_CONNECTIONS: int = 10
 

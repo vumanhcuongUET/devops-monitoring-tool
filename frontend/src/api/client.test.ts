@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import axios from 'axios'
-import { api } from './client'
 
 // Mock axios
 vi.mock('axios', () => ({

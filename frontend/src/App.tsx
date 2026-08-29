@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import type { ComponentType } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppShell } from './components/layout/AppShell'
@@ -6,14 +7,18 @@ import { LoadingSkeleton } from './components/common/LoadingSkeleton'
 import { useAlertNotifications } from './hooks/useAlertNotifications'
 
 // Code split pages with lazy loading
-const OverviewPage = lazy(() => import('./pages/OverviewPage'))
-const LogsPage = lazy(() => import('./pages/LogsPage'))
-const ApmPage = lazy(() => import('./pages/ApmPage'))
-const InfrastructurePage = lazy(() => import('./pages/InfrastructurePage'))
-const KubernetesPage = lazy(() => import('./pages/KubernetesPage'))
-const AlertsPage = lazy(() => import('./pages/AlertsPage'))
-const SloPage = lazy(() => import('./pages/SloPage'))
-const ActionsPage = lazy(() => import('./pages/ActionsPage'))  // Phase 2
+// Pages export named symbols (except Skills/Governance) — wrap for React.lazy
+const named = (p: Promise<Record<string, unknown>>, key: string) =>
+  p.then((m) => ({ default: m[key] as ComponentType }))
+
+const OverviewPage = lazy(() => named(import('./pages/OverviewPage'), 'OverviewPage'))
+const LogsPage = lazy(() => named(import('./pages/LogsPage'), 'LogsPage'))
+const ApmPage = lazy(() => named(import('./pages/ApmPage'), 'ApmPage'))
+const InfrastructurePage = lazy(() => named(import('./pages/InfrastructurePage'), 'InfrastructurePage'))
+const KubernetesPage = lazy(() => named(import('./pages/KubernetesPage'), 'KubernetesPage'))
+const AlertsPage = lazy(() => named(import('./pages/AlertsPage'), 'AlertsPage'))
+const SloPage = lazy(() => named(import('./pages/SloPage'), 'SloPage'))
+const ActionsPage = lazy(() => named(import('./pages/ActionsPage'), 'ActionsPage'))  // Phase 2
 const SkillsPage = lazy(() => import('./pages/SkillsPage'))  // Phase 3
 const GovernanceDashboard = lazy(() => import('./pages/GovernanceDashboard'))  // Phase 3
 

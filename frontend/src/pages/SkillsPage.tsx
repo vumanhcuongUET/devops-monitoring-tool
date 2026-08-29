@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import api from "../api/client";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api/client";
 
 interface Skill {
   id: string;
@@ -31,42 +32,34 @@ interface SkillExecution {
 }
 
 export default function SkillsPage() {
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [executions, setExecutions] = useState<SkillExecution[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [project, setProject] = useState("meinvoice");
-  const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showParameters, setShowParameters] = useState(false);
   const [parameters, setParameters] = useState("{}");
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [selectedExecution, setSelectedExecution] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchSkills();
-    fetchExecutions();
-  }, []);
+  const { data: skills = [], isLoading: skillsLoading } = useQuery({
+    queryKey: ["skills"],
+    queryFn: async (): Promise<Skill[]> => {
+      const response = await api.get("/api/v1/skills/");
+      return response.data.skills || [];
+    },
+    retry: 1,
+  });
 
-  const fetchSkills = async () => {
-    setLoading(true);
-    try {
-      const response = await api.get("/api/v1/skills");
-      setSkills(response.data.skills || []);
-    } catch (error) {
-      console.error("Failed to fetch skills:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchExecutions = async () => {
-    try {
+  const {
+    data: executions = [],
+    refetch: refetchExecutions,
+  } = useQuery({
+    queryKey: ["skill-executions"],
+    queryFn: async (): Promise<SkillExecution[]> => {
       const response = await api.get("/api/v1/skills/executions?limit=20");
-      setExecutions(response.data.executions || []);
-    } catch (error) {
-      console.error("Failed to fetch executions:", error);
-    }
-  };
+      return response.data.executions || [];
+    },
+    retry: 1,
+  });
+
 
   const executeSkill = async (skillId: string) => {
     try {
@@ -83,7 +76,7 @@ export default function SkillsPage() {
         project: project,
         parameters: params,
       });
-      fetchExecutions();
+      refetchExecutions();
       return response.data.execution_id;
     } catch (error) {
       console.error("Failed to execute skill:", error);
@@ -368,7 +361,6 @@ export default function SkillsPage() {
                       <button
                         onClick={() => {
                           setSelectedSkill(execution.skill_id);
-                          setSelectedExecution(execution.id);
                           fetchRecommendations(execution.skill_id, execution.id);
                         }}
                         className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"

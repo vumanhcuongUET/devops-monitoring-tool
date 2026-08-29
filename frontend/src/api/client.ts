@@ -8,9 +8,11 @@
  * - Secure token management
  */
 
-import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import axios from 'axios';
+import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { API_URL } from '../utils/constants';
-import { getTokenManager, setupTokenRefresh, TokenInfo, TokenManagerConfig } from '../auth/tokenManager';
+import { getTokenManager, setupTokenRefresh } from '../auth/tokenManager';
+import type { TokenManagerConfig } from '../auth/tokenManager';
 
 // Token manager configuration (5-minute tokens by default)
 const tokenConfig: Partial<TokenManagerConfig> = {

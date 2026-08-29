@@ -274,7 +274,7 @@ export type TokenRefreshCallback = () => Promise<string | null>;
 /**
  * Set up automatic token refresh with callback
  */
-export function setupTokenRefresh(callback: TokenRefreshCallback): void {
+export function setupTokenRefresh(callback: TokenRefreshCallback): () => void {
   const tokenManager = getTokenManager();
 
   const handleRefresh = async () => {

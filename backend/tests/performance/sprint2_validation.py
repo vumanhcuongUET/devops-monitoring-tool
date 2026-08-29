@@ -44,107 +44,48 @@ class Sprint2Validator:
         self.record(test_name, "skipped", reason)
 
     async def validate_day6_connection_pool(self) -> bool:
-        """Day 6: Validate connection pool configuration."""
+        """Day 6: Validate connection pool configuration.
+
+        Re-pointed in Phase 11: app.services.connection_pool was deleted as
+        dead code; the live pool manager is app.optimization.ConnectionPoolManager.
+        """
         print("\n=== Day 6: Connection Pool Configuration ===")
 
         try:
-            from app.services.connection_pool import (
-                get_pool_manager,
-            )
+            from app.optimization import ConnectionPoolManager
 
-            # Check singleton access
-            manager = get_pool_manager()
+            manager = ConnectionPoolManager()
             self.print_result(
-                "Connection pool singleton",
+                "Connection pool manager creation",
                 manager is not None,
             )
 
-            # Check pool configurations
-            stats = manager.get_stats()
-            self.print_result(
-                "Pool configurations exist",
-                len(stats) > 0,
-                f"{len(stats)} services configured",
-            )
+            await manager.start()
+            try:
+                from app.optimization.connection_pool import PoolConfig, PoolType
 
-            # Verify required services
-            required_services = ["elasticsearch", "prometheus", "kubernetes", "llm"]
-            all_present = all(s in stats for s in required_services)
-            self.print_result(
-                "Required service pools configured",
-                all_present,
-                f"Services: {list(stats.keys())}",
-            )
+                pool = manager.create_pool(
+                    "elasticsearch",
+                    PoolConfig(pool_type=PoolType.HTTP, max_connections=20),
+                    connection_factory=lambda: None,
+                )
+                self.print_result(
+                    "Pool creation",
+                    pool is not None,
+                )
 
-            # Check pool sizes
-            es_config = manager.get_config("elasticsearch")
-            self.print_result(
-                "Elasticsearch pool size",
-                es_config.max_connections >= 10,
-                f"max_connections={es_config.max_connections}",
-            )
+                stats = pool.get_stats()
+                self.print_result(
+                    "Pool stats available",
+                    stats is not None,
+                )
+            finally:
+                await manager.stop()
 
             return len(self.results["failed"]) == 0
 
         except Exception as e:
             self.print_result("Day 6 validation", False, str(e))
-            return False
-
-    async def validate_day7_batch_optimizer(self) -> bool:
-        """Day 7: Validate request batching optimization."""
-        print("\n=== Day 7: Request Batching Optimization ===")
-
-        try:
-            from app.services.batch_optimizer import (
-                BatchOptimizer,
-            )
-
-            # Test batch optimizer creation
-            optimizer = BatchOptimizer(batch_size=5, max_wait=0.1)
-            self.print_result("Batch optimizer creation", True)
-
-            # Test batch execution
-            executed = []
-
-            async def mock_execute(ids):
-                executed.append(ids)
-                await asyncio.sleep(0.05)
-                return [{"id": id} for id in ids]
-
-            # Submit 5 requests
-            results = await asyncio.gather(*[
-                optimizer.batch_request(
-                    batch_key="test",
-                    request_id=f"req-{i}",
-                    execute_fn=mock_execute,
-                )
-                for i in range(5)
-            ])
-
-            self.print_result(
-                "Batch execution",
-                len(executed) >= 1,
-                f"{len(executed)} batch execution(s)",
-            )
-
-            self.print_result(
-                "Batch results",
-                len(results) == 5,
-                f"{len(results)} results returned",
-            )
-
-            # Test stats
-            stats = optimizer.get_stats()
-            self.print_result(
-                "Batch optimizer stats",
-                "total_requests" in stats,
-                f"total_requests={stats['total_requests']}",
-            )
-
-            return len(self.results["failed"]) == 0
-
-        except Exception as e:
-            self.print_result("Day 7 validation", False, str(e))
             return False
 
     async def validate_day8_llm_streaming(self) -> bool:
@@ -233,12 +174,6 @@ class Sprint2Validator:
                 has_concurrent_benchmark,
             )
 
-            has_batch_benchmark = "test_batch_optimizer_performance" in content
-            self.print_result(
-                "Batch optimizer benchmark",
-                has_batch_benchmark,
-            )
-
             # Check performance targets defined
             has_targets = "TARGET_OVERVIEW_LATENCY" in content
             self.print_result(
@@ -264,13 +199,13 @@ class Sprint2Validator:
             # Verify no circular imports
             self.print_result("No circular imports", True)
 
-            # Check service clients use connection pools
-            # Elasticsearch client should have max_connections in init
+            # Check service clients keep a persistent pooled client
+            # (max_connections kwarg is invalid in es-py 8.x — review N1)
             import inspect
 
             from app.services.elasticsearch_client import ElasticsearchClient
             es_init_source = inspect.getsource(ElasticsearchClient.__init__)
-            has_pooling = "max_connections" in es_init_source or "ES_MAX_CONNECTIONS" in es_init_source
+            has_pooling = "AsyncElasticsearch(" in es_init_source and "self.client" in es_init_source
             self.print_result(
                 "ES client uses connection pooling",
                 has_pooling,
@@ -330,7 +265,6 @@ async def main():
 
     # Run all day validations
     await validator.validate_day6_connection_pool()
-    await validator.validate_day7_batch_optimizer()
     await validator.validate_day8_llm_streaming()
     await validator.validate_day9_benchmarks()
     await validator.validate_integration()

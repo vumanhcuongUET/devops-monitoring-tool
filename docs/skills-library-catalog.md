@@ -1,5 +1,9 @@
 # Skills Library Catalog - Complete Skill List
 
+> **Status (2026-08-29): all 44 skills are stubs.** `execute()` refuses to run
+> (`STUB_SKILLS` in `backend/app/skills/registry.py`) so no fabricated data is
+> returned. This catalog is the design target; nothing here analyzes real data yet.
+
 ## Skill Categories
 
 ```

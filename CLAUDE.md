@@ -189,7 +189,11 @@ See `docs/agents/domain.md`.
 
 ### Skills Library
 
-The platform includes **32 skills** across 7 categories:
+44 skills are registered across 10 categories. **As of 2026-08-29 all of them are
+stubs** (`STUB_SKILLS` in `app/skills/registry.py`): `execute()` refuses to run so no
+fabricated data is ever returned, and the UI marks them "Coming soon". They are a
+roadmap, not working features. First candidates to implement with real data sources:
+deployment health, resource optimizer, SLO tracker.
 
 - **FinOps** (3): Cost analysis, idle resource detection, rightsizing
 - **Security** (6): Vulnerability scanning, secret detection, CIS benchmarks, misconfiguration detection, runtime monitoring, dependency confusion
@@ -200,7 +204,7 @@ The platform includes **32 skills** across 7 categories:
 - **Reliability** (3): SLO tracking, SLA compliance, dependency health monitoring
 - **Compliance** (2): GDPR auditing, SOC2 auditing
 
-See `docs/skills-library-catalog.md` for complete skill documentation.
+See `docs/skills-library-catalog.md` for the skill catalog (status noted there).
 
 ### RBAC System
 

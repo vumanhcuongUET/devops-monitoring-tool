@@ -9,6 +9,7 @@ interface Skill {
   category: string;
   priority: string;
   enabled: boolean;
+  implemented: boolean;
   version?: string;
 }
 
@@ -207,16 +208,23 @@ export default function SkillsPage() {
           >
             <div className="flex justify-between items-start mb-4">
               <h3 className="text-lg font-semibold">{skill.name}</h3>
-              <span className={`px-2 py-1 rounded text-xs ${getCategoryColor(skill.category)}`}>
-                {skill.category}
-              </span>
+              <div className="flex gap-1">
+                {!skill.implemented && (
+                  <span className="px-2 py-1 rounded text-xs bg-amber-100 text-amber-700">
+                    Coming soon
+                  </span>
+                )}
+                <span className={`px-2 py-1 rounded text-xs ${getCategoryColor(skill.category)}`}>
+                  {skill.category}
+                </span>
+              </div>
             </div>
             <p className="text-gray-600 text-sm mb-4">{skill.description}</p>
             <div className="flex justify-between items-center">
               <span className={`text-sm font-medium ${getPriorityColor(skill.priority)}`}>
                 {skill.priority}
               </span>
-              {skill.enabled ? (
+              {skill.enabled && skill.implemented ? (
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -235,7 +243,9 @@ export default function SkillsPage() {
                   </button>
                 </div>
               ) : (
-                <span className="text-gray-400 text-sm">Disabled</span>
+                <span className="text-gray-400 text-sm">
+                  {skill.implemented ? "Disabled" : "Not implemented"}
+                </span>
               )}
             </div>
           </div>

@@ -21,7 +21,7 @@ if str(backend_path) not in sys.path:
     sys.path.insert(0, str(backend_path))
 
 try:
-    from app.services.token_optimizer import TokenOptimizer
+    from app.services.token_optimizer import TokenOptimizer, OptimizationConfig
     from app.services.anomaly_detector import AnomalyDetector
     from app.services.log_sampler import LogSampler
     from app.services.time_series_compressor import TimeSeriesCompressor
@@ -67,13 +67,7 @@ class OptimizerAdapter:
 
         if BACKEND_AVAILABLE:
             try:
-                # Initialize with minimal required dependencies
-                self._optimizer = TokenOptimizer(
-                    es_client=None,  # Will be set if needed
-                    prom_client=None,
-                    k8s_client=None,
-                    l2_cache=None
-                )
+                self._optimizer = TokenOptimizer(OptimizationConfig())
             except Exception as e:
                 if not fallback_enabled:
                     raise RuntimeError(f"Failed to initialize TokenOptimizer: {e}")

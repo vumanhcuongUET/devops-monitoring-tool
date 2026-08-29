@@ -34,11 +34,12 @@ Sprint 2 removed the hash helpers. Re-reviewed the current implementation end to
 
 **Open items (no code change now, deployment-level):**
 
-- **HSTS behind TLS-terminating proxy** — HSTS is emitted only when `request.url.scheme == "https"`.
-  Behind an ingress that terminates TLS, uvicorn sees plain HTTP unless proxy-headers
-  (`--proxy-headers` + `--forwarded-allow-ips`) are configured. Until then the HSTS header
-  is not sent to browsers → flag: configure proxy headers in the k8s deployment, or set
-  HSTS at the ingress/CDN layer.
+- **HSTS behind TLS-terminating proxy** — RESOLVED in the debt-cleanup commit:
+  HSTS is now emitted at the edge via nginx ingress annotations (`hsts: "true"`,
+  `hsts-max-age: 31536000`, `hsts-include-subdomains`), and the backend Dockerfile
+  CMD gained `--proxy-headers` with `FORWARDED_ALLOW_IPS` set to the pod CIDR in
+  `k8s/backend/configmap.yaml`, so `request.url.scheme` reflects the ingress scheme
+  and application-level HSTS also works.
 - **`X-XSS-Protection: 1; mode=block`** is deprecated (modern browsers ignore it). Kept for
   legacy browsers; harmless. No action.
 

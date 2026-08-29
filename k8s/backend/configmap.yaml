@@ -5,6 +5,9 @@ metadata:
   namespace: devops-monitor
 data:
   ELASTICSEARCH_URL: "http://elasticsearch:9200"
+  # uvicorn --proxy-headers: trust forwarded headers from the nginx ingress
+  # pod network. Adjust to the cluster CNI/pod CIDR if it differs.
+  FORWARDED_ALLOW_IPS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
   ELASTICSEARCH_INDEX_PATTERN: "logs-*"
   APM_INDEX_PATTERN: "apm-*"
   PROMETHEUS_URL: "http://prometheus:9090"

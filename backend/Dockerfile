@@ -40,4 +40,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)" || exit 1
 
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: honor X-Forwarded-Proto from the ingress so the HSTS
+# header is emitted for TLS requests terminated at nginx. FORWARDED_ALLOW_IPS
+# is set in k8s/backend/deployment.yaml to the pod network.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

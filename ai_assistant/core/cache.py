@@ -7,6 +7,7 @@ Supports both SimpleCache (in-memory) and RedisCache (distributed).
 
 import hashlib
 import json
+import threading
 import time
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, TypeVar, Union
@@ -43,6 +44,9 @@ class SimpleCache:
         self._ttl = ttl
         self._max_size = max_size
         self._cache: Dict[str, tuple[Any, float]] = {}
+        # docstring promises thread safety; before 2026-08-29 no lock existed
+        # and concurrent set() corrupted iteration (_evict_expired) — review F3.
+        self._lock = threading.Lock()
 
     def _is_expired(self, timestamp: float) -> bool:
         """Check if cache entry is expired."""
@@ -73,16 +77,17 @@ class SimpleCache:
         Returns:
             Cached value or None if not found/expired
         """
-        if key in self._cache:
-            value, timestamp = self._cache[key]
-            if self._is_expired(timestamp):
-                del self._cache[key]
-                _get_metrics().increment("cache_miss_total", labels={"reason": "expired"})
-                _get_logger().debug("Cache miss (expired)", key=key[:32])
-                return None
-            _get_metrics().increment("cache_hit_total")
-            _get_logger().debug("Cache hit", key=key[:32])
-            return value
+        with self._lock:
+            if key in self._cache:
+                value, timestamp = self._cache[key]
+                if self._is_expired(timestamp):
+                    del self._cache[key]
+                    _get_metrics().increment("cache_miss_total", labels={"reason": "expired"})
+                    _get_logger().debug("Cache miss (expired)", key=key[:32])
+                    return None
+                _get_metrics().increment("cache_hit_total")
+                _get_logger().debug("Cache hit", key=key[:32])
+                return value
         _get_metrics().increment("cache_miss_total", labels={"reason": "not_found"})
         _get_logger().debug("Cache miss (not found)", key=key[:32])
         return None
@@ -95,15 +100,17 @@ class SimpleCache:
             key: Cache key
             value: Value to cache
         """
-        self._evict_expired()
-        self._evict_oldest()
-        self._cache[key] = (value, time.time())
+        with self._lock:
+            self._evict_expired()
+            self._evict_oldest()
+            self._cache[key] = (value, time.time())
         _get_metrics().increment("cache_set_total")
         _get_logger().debug("Cache set", key=key[:32])
 
     def clear(self):
         """Clear all cache entries."""
-        self._cache.clear()
+        with self._lock:
+            self._cache.clear()
 
     def stats(self) -> Dict[str, Any]:
         """
@@ -113,7 +120,9 @@ class SimpleCache:
             Dictionary with cache stats
         """
         expired_count = 0
-        for (_value, timestamp) in self._cache.values():
+        with self._lock:
+            entries = list(self._cache.values())
+        for (_value, timestamp) in entries:
             if self._is_expired(timestamp):
                 expired_count += 1
 

@@ -24,7 +24,7 @@ class TestKubernetesAdapter:
 
     def test_init_with_fallback_disabled(self):
         """Test initialization with fallback disabled."""
-        with patch("services.kubernetes_adapter.BACKEND_AVAILABLE", False):
+        with patch("services.k8s_adapter.BACKEND_AVAILABLE", False):
             with pytest.raises(RuntimeError):
                 KubernetesAdapter(fallback_enabled=False)
 

@@ -283,6 +283,11 @@ class InputValidator:
             (r'<\s*%\s*@?', 'JSP tags'),
             (r'\$\{', 'Variable expression'),
             (r'`[^`]*`', 'Command substitution'),
+            # HTML injection vectors the tag rules miss (review F3):
+            # inline event handlers and embeddable tags.
+            (r'\bon(error|load|click|mouseover|mouseout|focus|blur|submit|change|keydown|keyup|keypress|mouseenter|mouseleave|input)\s*=', 'HTML event handler'),
+            (r'<\s*(img|iframe|svg|object|embed|body|form|input|link|meta)\b', 'Executable/embeddable HTML tag'),
+            (r'javascript\s*:', 'javascript: URL'),
         ]
 
         for pattern, name in injection_patterns:

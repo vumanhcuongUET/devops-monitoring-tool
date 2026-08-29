@@ -60,6 +60,9 @@ class ElasticsearchAdapter:
         self._client = None
         self._fallback_enabled = fallback_enabled
 
+        if not BACKEND_AVAILABLE and not fallback_enabled:
+            raise RuntimeError(f"{type(self).__name__}: backend client unavailable and fallback disabled")
+
         if BACKEND_AVAILABLE:
             try:
                 self._client = ElasticsearchClient()

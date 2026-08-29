@@ -4,6 +4,7 @@ Performance regression tests.
 Tests to ensure performance doesn't degrade over time.
 """
 
+import threading
 import time
 import pytest
 
@@ -165,26 +166,44 @@ class TestSingleFlightPerformance:
     """Performance tests for single flight (query deduplication)."""
 
     def test_single_flight_cached_call_performance(self):
-        """Test that cached single-flight calls are fast (< 0.1ms overhead)."""
-        sf = SingleFlight()
+        """SingleFlight dedupes concurrent calls; uncontended overhead stays low.
 
-        # First call (no caching)
-        @sf.single_flight
-        def expensive_query(param):
+        The old version used a @sf.single_flight decorator that never existed
+        (SingleFlight only ever exposed execute(key, func)) — review F3.
+        """
+        sf = SingleFlight()
+        calls = []
+        release = threading.Event()
+
+        def slow_query(param):
+            calls.append(param)
+            release.wait(timeout=5)  # hold the flight open so callers overlap
             return f"result_{param}"
 
-        # Make first call to cache result
-        expensive_query("test")
+        # Concurrent callers with the same key collapse into one execution
+        import concurrent.futures
 
-        # Measure cached call performance
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(sf.execute, "test-key", slow_query, "test") for _ in range(10)]
+            # give the followers time to register as waiters before releasing
+            import time as _t
+            _t.sleep(0.2)
+            release.set()
+            results = [f.result() for f in futures]
+
+        assert len(calls) == 1, f"expected 1 execution, got {len(calls)}"
+        assert all(r == "result_test" for r in results)
+
+        # Uncontended repeated calls stay well under 1ms each
         start = time.perf_counter()
-        for _ in range(1000):
-            expensive_query("test")
-        elapsed = time.perf_counter() - start
+        def cheap_query(param):
+            return f"result_{param}"
 
+        for _ in range(1000):
+            sf.execute("uncontended-key", cheap_query, "x")
+        elapsed = time.perf_counter() - start
         avg_time_ms = (elapsed / 1000) * 1000
-        # Cached calls should be very fast
-        assert avg_time_ms < 0.1, f"Single-flight cached call too slow: {avg_time_ms:.3f}ms average"
+        assert avg_time_ms < 1.0, f"Single-flight call too slow: {avg_time_ms:.3f}ms average"
 
 
 @pytest.mark.performance
@@ -192,22 +211,21 @@ class TestMemoryUsage:
     """Tests for memory usage patterns."""
 
     def test_cache_memory_growth(self):
-        """Test that cache doesn't grow unbounded."""
-        cache = SimpleCache()
+        """Cache is bounded at max_size — oldest entries evicted, bound holds.
 
-        # Add many items
+        The old assertions expected unbounded retention from before SimpleCache
+        gained max_size eviction; key_0 is correctly evicted now (review F3).
+        """
+        cache = SimpleCache(max_size=1000)
+
         for i in range(10000):
             cache.set(f"key_{i}", {"data": f"value_{i}" * 100})
 
-        # Cache should handle this without excessive memory growth
-        # (SimpleCache has no size limit, so items accumulate)
-        # In production, Redis or size-limited cache should be used
-
-        # Verify cache is still functional
-        assert cache.get("key_0") is not None
+        # Oldest entries evicted, newest retained, size bounded
+        assert cache.get("key_0") is None
         assert cache.get("key_9999") is not None
+        assert len(cache._cache) <= 1000
 
-        # Cleanup
         cache.clear()
 
 

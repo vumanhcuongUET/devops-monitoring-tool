@@ -55,6 +55,9 @@ class ApmAdapter:
         self._client = None
         self._fallback_enabled = fallback_enabled
 
+        if not BACKEND_AVAILABLE and not fallback_enabled:
+            raise RuntimeError(f"{type(self).__name__}: backend client unavailable and fallback disabled")
+
         if BACKEND_AVAILABLE:
             try:
                 # APM client depends on ES client
@@ -94,7 +97,7 @@ class ApmAdapter:
     async def get_errors(
         self,
         service_name: Optional[str] = None,
-        size: int = 10
+        size: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get recent errors.
@@ -110,6 +113,8 @@ class ApmAdapter:
             return []
 
         errors = await self._client.get_errors()
+        # size=None (default) returns the unbounded result set; the old
+        # default of 10 made the unbounded branch unreachable (review F3).
         return errors[:size] if size else errors
 
     @sync_async_bridge

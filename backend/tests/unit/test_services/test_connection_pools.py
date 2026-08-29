@@ -30,8 +30,7 @@ class TestElasticsearchConnectionPooling:
             mock_es.assert_called_once()
             call_kwargs = mock_es.call_args[1]
 
-            assert "max_connections" in call_kwargs
-            assert call_kwargs["max_connections"] == getattr(settings, "ES_MAX_CONNECTIONS", 20)
+            assert "max_connections" not in call_kwargs  # invalid es-py 8.x kwarg (review N1)
             assert call_kwargs["max_retries"] == 3
             assert call_kwargs["retry_on_timeout"] is True
             assert call_kwargs["http_compress"] is True

@@ -10,30 +10,30 @@ python-telegram-bot==21.*
 anthropic==0.40.*
 
 # Phase 9: Redis for distributed state
-redis[hiredis]>=5.0.0
+redis[hiredis]==8.1.0  # was redis[hiredis]>=5.0.0
 
 # Phase 10: PostgreSQL Database
-sqlalchemy[asyncio]>=2.0.0
-asyncpg>=0.29.0
-alembic>=1.13.0
-aiosqlite>=0.19.0  # For testing with SQLite
+sqlalchemy[asyncio]==2.0.52  # was sqlalchemy[asyncio]>=2.0.0
+asyncpg==0.31.0  # was asyncpg>=0.29.0
+alembic==1.19.1  # was alembic>=1.13.0
+aiosqlite==0.22.1  # was aiosqlite>=0.19.0
 
 # Phase 5: Observability & Performance
-numpy>=1.24.0
-scipy>=1.11.0
+numpy==2.5.2  # was numpy>=1.24.0
+scipy==1.18.1  # was scipy>=1.11.0
 
 # Phase 9: OpenTelemetry Distributed Tracing
-opentelemetry-api>=1.22.0
-opentelemetry-sdk>=1.22.0
-opentelemetry-instrumentation-fastapi>=0.43b0
-opentelemetry-instrumentation-httpx>=0.43b0
-opentelemetry-instrumentation-asyncio>=0.43b0
-opentelemetry-exporter-otlp-proto-grpc>=1.22.0
+opentelemetry-api==1.44.0  # was opentelemetry-api>=1.22.0
+opentelemetry-sdk==1.44.0  # was opentelemetry-sdk>=1.22.0
+opentelemetry-instrumentation-fastapi==0.65b0  # was opentelemetry-instrumentation-fastapi>=0.43b0
+opentelemetry-instrumentation-httpx==0.65b0  # was opentelemetry-instrumentation-httpx>=0.43b0
+opentelemetry-instrumentation-asyncio==0.65b0  # was opentelemetry-instrumentation-asyncio>=0.43b0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0  # was opentelemetry-exporter-otlp-proto-grpc>=1.22.0
 opentelemetry-resource-detector-container>=0.43b0
 
 # Testing dependencies
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-pytest-mock>=3.14.0
-pytest-cov>=5.0.0
-prometheus-client>=0.20.0
+pytest==9.1.1  # was pytest>=8.0.0
+pytest-asyncio==1.4.0  # was pytest-asyncio>=0.23.0
+pytest-mock==3.15.1  # was pytest-mock>=3.14.0
+pytest-cov==7.1.0  # was pytest-cov>=5.0.0
+prometheus-client==0.26.0  # was prometheus-client>=0.20.0

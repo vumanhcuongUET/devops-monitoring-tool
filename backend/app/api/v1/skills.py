@@ -13,19 +13,25 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 async def list_skills(
     category: Optional[str] = None,
     enabled_only: bool = True,
+    implemented_only: bool = False,
 ) -> dict[str, Any]:
     """List all available skills.
 
     Args:
         category: Optional category filter
         enabled_only: If True, only return enabled skills
+        implemented_only: If True, drop skills whose data layer is mock/empty
 
     Returns:
         Dictionary with skills list
     """
     try:
         registry = get_skill_registry()
-        skills = registry.list_skills(category=category, enabled_only=enabled_only)
+        skills = registry.list_skills(
+            category=category,
+            enabled_only=enabled_only,
+            implemented_only=implemented_only,
+        )
 
         return {
             "skills": skills,

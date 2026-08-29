@@ -22,6 +22,66 @@ logger = logging.getLogger(__name__)
 # Singleton instance
 _skill_registry: Optional["SkillRegistry"] = None
 
+# Skills that have no real data-source integration yet: their fetch/scan layer
+# returns empty lists or generated sample data, so results are not actionable.
+# Kept registered as a public catalog but flagged and refused on execution.
+STUB_SKILLS: frozenset[str] = frozenset({
+    # finops — mock billing/cloud-provider clients
+    "finops_cost_analyzer",
+    "finops_idle_resources",
+    "finops_rightsizing",
+    # security — mock scanners / fabricated findings
+    "security_vulnerability_scanner",
+    "security_secret_scanner",
+    "security_kube_bench",
+    "security_misconfiguration_detector",
+    "security_dependency_confusion",
+    "security_runtime_monitor",
+    "security_csp_analyzer",
+    "security_header_validator",
+    "security_secret_exposure_scanner",
+    # devops — no repo/cluster I/O
+    "devops_deployment_health_check",
+    "devops_resource_optimizer",
+    "devops_config_drift_detector",
+    "cicd_pipeline_analyzer",
+    "dockerfile_best_practices",
+    "kubernetes_manifest_validator",
+    # code — no repo I/O
+    "code_dependency_audit",
+    "code_sast_scanner",
+    "code_complexity_analyzer",
+    "code_test_coverage_analyzer",
+    "code_duplication_detector",
+    "code_smell_detector",
+    # capacity — synthetic usage data
+    "capacity_planner",
+    "capacity_bottleneck_detector",
+    "capacity_growth_predictor",
+    # monitoring — synthetic metrics
+    "monitoring_alert_optimizer",
+    "monitoring_sli_calculator",
+    "monitoring_dashboard_auditor",
+    # observability — synthetic time series
+    "observability_metrics_analyzer",
+    "observability_tracing_analyzer",
+    "observability_dashboard_auditor",
+    "observability_anomaly_detector",
+    "observability_slo_tracker",
+    # reliability — synthetic metrics
+    "reliability_slo_tracker",
+    "reliability_sla_compliance",
+    "reliability_dependency_health",
+    "reliability_dlq_monitor",
+    "reliability_scaling_analyzer",
+    # compliance — synthetic audit evidence
+    "compliance_gdpr_auditor",
+    "compliance_soc2_auditor",
+    # performance — synthetic load-test/circuit data
+    "performance_load_test_analyzer",
+    "performance_circuit_breaker_health",
+})
+
 
 class SkillRegistry:
     """Registry for managing and executing skills.
@@ -65,6 +125,9 @@ class SkillRegistry:
         if skill_id in self._skills:
             raise ValueError(f"Skill {skill_id} already registered")
 
+        # Flag stubs (no real data source) so list/execute can be honest
+        temp_instance.implemented = skill_id not in STUB_SKILLS
+
         self._skills[skill_id] = skill_class
         self._configs[skill_id] = config or SkillConfig()
         self._instances[skill_id] = temp_instance
@@ -98,12 +161,14 @@ class SkillRegistry:
         self,
         category: Optional[SkillCategory] = None,
         enabled_only: bool = True,
+        implemented_only: bool = False,
     ) -> list[dict[str, Any]]:
-        """List all registered skills.
+        """List registered skills with the implemented flag in metadata.
 
         Args:
             category: Optional category filter
             enabled_only: If True, only return enabled skills
+            implemented_only: If True, drop skills whose data layer is mock/empty
 
         Returns:
             List of skill metadata dictionaries
@@ -111,6 +176,8 @@ class SkillRegistry:
         skills = []
         for skill_id, instance in self._instances.items():
             if enabled_only and not self._configs[skill_id].enabled:
+                continue
+            if implemented_only and not instance.implemented:
                 continue
             if category and instance.category != category:
                 continue
@@ -152,9 +219,11 @@ class SkillRegistry:
 
         self._configs[skill_id] = config
 
-        # Recreate instance with new config
+        # Recreate instance with new config (re-apply stub flag)
         skill_class = self._skills[skill_id]
-        self._instances[skill_id] = skill_class(config)
+        instance = skill_class(config)
+        instance.implemented = skill_id not in STUB_SKILLS
+        self._instances[skill_id] = instance
 
         logger.info(f"Updated config for skill: {skill_id}")
 
@@ -187,6 +256,13 @@ class SkillRegistry:
         config = self._configs.get(skill_id)
         if not config or not config.enabled:
             raise ValueError(f"Skill {skill_id} is disabled")
+
+        # Refuse stub skills — their output is mock data, not actionable analysis
+        if not skill.implemented:
+            raise ValueError(
+                f"Skill {skill_id} is not implemented yet: its data layer returns "
+                "mock/empty data. See SkillRegistry.STUB_SKILLS."
+            )
 
         # Validate parameters
         is_valid, errors = skill.validate_parameters(parameters)
@@ -561,7 +637,9 @@ def _initialize_registry():
 
         logger.info("Skill registry initialized with all built-in skills (44 total)")
 
-    except ImportError as e:
+    except Exception as e:
+        # One bad group must not abort registration of the rest, whatever the
+        # exception type (e.g. httpx missing-h2 ImportError surfaced here).
         logger.warning(f"Failed to initialize some skills: {e}")
 
 

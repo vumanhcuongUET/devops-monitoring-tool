@@ -1,266 +1,168 @@
-"""Tests for Capacity Planning skills."""
+"""Unit tests for the capacity skills (live implementations in planner.py /
+bottleneck_detector.py / growth_predictor.py) and the registry stub flag."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
-from app.skills.capacity.capacity_planner import CapacityPlannerSkill
-from app.skills.capacity.capacity_bottleneck_detector import CapacityBottleneckDetectorSkill
-from app.skills.capacity.capacity_growth_predictor import CapacityGrowthPredictorSkill
+from app.skills.base import SkillConfig
+from app.skills.capacity.planner import CapacityPlannerSkill
+from app.skills.capacity.bottleneck_detector import BottleneckDetectorSkill
+from app.skills.capacity.growth_predictor import GrowthPredictorSkill
+from app.skills.registry import SkillRegistry, STUB_SKILLS
 
 
+@pytest.mark.asyncio
 class TestCapacityPlannerSkill:
-    """Tests for CapacityPlannerSkill."""
+    """Tests for the registered CapacityPlannerSkill (capacity/planner.py)."""
 
-    @pytest.fixture
-    def skill(self):
-        """Create a CapacityPlannerSkill instance."""
-        return CapacityPlannerSkill()
-
-    def test_skill_initialization(self, skill):
-        """Test skill initialization."""
+    def test_initialization(self):
+        # implemented flag is applied by SkillRegistry, not on direct instantiation
+        skill = CapacityPlannerSkill()
         assert skill.skill_id == "capacity_planner"
         assert skill.name == "Capacity Planner"
         assert skill.category.value == "capacity"
-        assert skill.forecast_horizon_days == 90
 
     @pytest.mark.asyncio
-    async def test_analyze_success(self, skill):
-        """Test successful analysis."""
+    async def test_analyze_success(self):
+        skill = CapacityPlannerSkill()
         result = await skill.analyze(
             project="test-project",
-            parameters={
-                "forecast_horizon_days": 60,
-                "resource_types": ["cpu", "memory"],
-            },
+            parameters={"forecast_days": 30, "threshold_percent": 80},
         )
-
         assert result.success is True
         assert result.skill_id == "capacity_planner"
-        assert "current_capacity" in result.data
-        assert "forecast" in result.data
-        assert "capacity_gaps" in result.data
+        assert "cpu" in result.data
+        assert "memory" in result.data
+        assert "disk" in result.data
+        assert "capacity_needs" in result.data
+        assert result.data["forecast_days"] == 30
 
     @pytest.mark.asyncio
-    async def test_analyze_with_custom_growth_rate(self, skill):
-        """Test analysis with custom growth rate."""
-        result = await skill.analyze(
-            project="test-project",
-            parameters={"growth_rate": 15.0},
-        )
-
+    async def test_analyze_default_parameters(self):
+        skill = CapacityPlannerSkill()
+        result = await skill.analyze(project="test-project", parameters={})
         assert result.success is True
-        assert result.data["growth_rates"] == {"cpu": 15.0, "memory": 15.0}
+        assert result.data["forecast_days"] == 30
+        assert result.data["threshold_percent"] == 80
 
-    def test_validate_parameters_valid(self, skill):
-        """Test parameter validation with valid parameters."""
-        is_valid, errors = skill.validate_parameters({
-            "forecast_horizon_days": 90,
-            "resource_types": ["cpu", "memory", "storage"],
-        })
+    def test_validate_parameters_valid(self):
+        skill = CapacityPlannerSkill()
+        is_valid, errors = skill.validate_parameters(
+            {"forecast_days": 90, "threshold_percent": 85}
+        )
         assert is_valid is True
         assert errors == []
 
-    def test_validate_parameters_invalid_horizon(self, skill):
-        """Test parameter validation with invalid horizon."""
-        is_valid, errors = skill.validate_parameters({
-            "forecast_horizon_days": 400,  # > 365
-        })
+    def test_validate_parameters_invalid_forecast_days(self):
+        skill = CapacityPlannerSkill()
+        is_valid, errors = skill.validate_parameters({"forecast_days": 0})
         assert is_valid is False
-        assert len(errors) > 0
-        assert "forecast_horizon_days" in errors[0]
+        assert any("forecast_days" in e for e in errors)
 
-    def test_validate_parameters_invalid_resource_type(self, skill):
-        """Test parameter validation with invalid resource type."""
-        is_valid, errors = skill.validate_parameters({
-            "resource_types": ["invalid_type"],
-        })
+    def test_validate_parameters_invalid_threshold(self):
+        skill = CapacityPlannerSkill()
+        is_valid, errors = skill.validate_parameters({"threshold_percent": 101})
         assert is_valid is False
-        assert len(errors) > 0
-
-    def test_validate_parameters_invalid_growth_rate(self, skill):
-        """Test parameter validation with invalid growth rate."""
-        is_valid, errors = skill.validate_parameters({
-            "growth_rate": 150,  # > 100
-        })
-        assert is_valid is False
-        assert len(errors) > 0
+        assert any("threshold_percent" in e for e in errors)
 
 
-class TestCapacityBottleneckDetectorSkill:
-    """Tests for CapacityBottleneckDetectorSkill."""
+@pytest.mark.asyncio
+class TestBottleneckDetectorSkill:
+    """Tests for the registered BottleneckDetectorSkill."""
 
-    @pytest.fixture
-    def skill(self):
-        """Create a CapacityBottleneckDetectorSkill instance."""
-        return CapacityBottleneckDetectorSkill()
-
-    def test_skill_initialization(self, skill):
-        """Test skill initialization."""
+    def test_initialization(self):
+        skill = BottleneckDetectorSkill()
         assert skill.skill_id == "capacity_bottleneck_detector"
-        assert skill.name == "Capacity Bottleneck Detector"
-        assert skill.category.value == "capacity"
+        assert skill.name == "Bottleneck Detector"
 
     @pytest.mark.asyncio
-    async def test_analyze_success(self, skill):
-        """Test successful analysis."""
+    async def test_analyze_success(self):
+        skill = BottleneckDetectorSkill()
         result = await skill.analyze(
-            project="test-project",
-            parameters={},
+            project="test-project", parameters={"time_range_minutes": 60}
         )
-
         assert result.success is True
         assert result.skill_id == "capacity_bottleneck_detector"
         assert "bottlenecks" in result.data
-        assert "bottleneck_score" in result.data
+        assert result.data["summary"]["total"] == len(result.data["bottlenecks"])
 
-    @pytest.mark.asyncio
-    async def test_analyze_specific_components(self, skill):
-        """Test analysis of specific components."""
-        result = await skill.analyze(
-            project="test-project",
-            parameters={"components": ["cpu", "memory"]},
-        )
-
-        assert result.success is True
-        assert "cpu" in result.data["bottlenecks"]
-        assert "memory" in result.data["bottlenecks"]
-
-    def test_validate_parameters_valid(self, skill):
-        """Test parameter validation with valid parameters."""
-        is_valid, errors = skill.validate_parameters({
-            "analysis_period_hours": 24,
-            "components": ["cpu", "memory", "disk"],
-        })
+    def test_validate_parameters_accepts_anything(self):
+        skill = BottleneckDetectorSkill()
+        is_valid, errors = skill.validate_parameters({"anything": "goes"})
         assert is_valid is True
         assert errors == []
 
-    def test_validate_parameters_invalid_period(self, skill):
-        """Test parameter validation with invalid period."""
-        is_valid, errors = skill.validate_parameters({
-            "analysis_period_hours": -1,  # Negative
-        })
-        assert is_valid is False
-        assert len(errors) > 0
 
-    def test_validate_parameters_invalid_component(self, skill):
-        """Test parameter validation with invalid component."""
-        is_valid, errors = skill.validate_parameters({
-            "components": ["invalid_component"],
-        })
-        assert is_valid is False
-        assert len(errors) > 0
+@pytest.mark.asyncio
+class TestGrowthPredictorSkill:
+    """Tests for the registered GrowthPredictorSkill."""
 
-
-class TestCapacityGrowthPredictorSkill:
-    """Tests for CapacityGrowthPredictorSkill."""
-
-    @pytest.fixture
-    def skill(self):
-        """Create a CapacityGrowthPredictorSkill instance."""
-        return CapacityGrowthPredictorSkill()
-
-    def test_skill_initialization(self, skill):
-        """Test skill initialization."""
+    def test_initialization(self):
+        skill = GrowthPredictorSkill()
         assert skill.skill_id == "capacity_growth_predictor"
-        assert skill.name == "Capacity Growth Predictor"
-        assert skill.category.value == "capacity"
+        assert skill.name == "Growth Predictor"
 
     @pytest.mark.asyncio
-    async def test_analyze_success(self, skill):
-        """Test successful analysis."""
+    async def test_analyze_success(self):
+        skill = GrowthPredictorSkill()
         result = await skill.analyze(
             project="test-project",
-            parameters={
-                "prediction_horizon_days": 90,
-                "resource_type": "all",
-            },
+            parameters={"forecast_months": 6, "lookback_days": 90},
         )
-
         assert result.success is True
         assert result.skill_id == "capacity_growth_predictor"
-        assert "historical_growth" in result.data
         assert "predictions" in result.data
-        assert "peak_periods" in result.data
+        assert result.data["forecast_months"] == 6
 
-    @pytest.mark.asyncio
-    async def test_analyze_specific_resource_type(self, skill):
-        """Test analysis of specific resource type."""
-        result = await skill.analyze(
-            project="test-project",
-            parameters={"resource_type": "cpu"},
+    def test_validate_parameters_valid(self):
+        skill = GrowthPredictorSkill()
+        is_valid, errors = skill.validate_parameters(
+            {"forecast_months": 3, "lookback_days": 90}
         )
-
-        assert result.success is True
-
-    def test_validate_parameters_valid(self, skill):
-        """Test parameter validation with valid parameters."""
-        is_valid, errors = skill.validate_parameters({
-            "prediction_horizon_days": 180,
-            "resource_type": "cpu",
-        })
         assert is_valid is True
         assert errors == []
 
-    def test_validate_parameters_invalid_horizon(self, skill):
-        """Test parameter validation with invalid horizon."""
-        is_valid, errors = skill.validate_parameters({
-            "prediction_horizon_days": 10,  # < 30
-        })
+    def test_validate_parameters_invalid_forecast_months(self):
+        skill = GrowthPredictorSkill()
+        is_valid, errors = skill.validate_parameters({"forecast_months": 0})
         assert is_valid is False
-        assert len(errors) > 0
+        assert any("forecast_months" in e for e in errors)
 
-    def test_validate_parameters_invalid_resource_type(self, skill):
-        """Test parameter validation with invalid resource type."""
-        is_valid, errors = skill.validate_parameters({
-            "resource_type": "invalid_type",
-        })
+    def test_validate_parameters_invalid_lookback_days(self):
+        skill = GrowthPredictorSkill()
+        is_valid, errors = skill.validate_parameters({"lookback_days": 3})
         assert is_valid is False
-        assert len(errors) > 0
+        assert any("lookback_days" in e for e in errors)
 
 
-class TestCapacitySkillsIntegration:
-    """Integration tests for capacity skills."""
+class TestStubFlag:
+    """The registry must flag stub skills and refuse to execute them."""
+
+    def test_stub_set_contains_registered_skills(self):
+        assert "capacity_planner" in STUB_SKILLS
+        assert "finops_cost_analyzer" in STUB_SKILLS
+
+    def test_registry_marks_stubs(self):
+        registry = SkillRegistry()
+        registry.register(CapacityPlannerSkill)
+        assert registry.get_skill("capacity_planner").implemented is False
+        assert registry.get_skill("capacity_planner").get_metadata()["implemented"] is False
 
     @pytest.mark.asyncio
-    async def test_capacity_skills_workflow(self):
-        """Test complete capacity planning workflow."""
-        planner = CapacityPlannerSkill()
-        detector = CapacityBottleneckDetectorSkill()
-        predictor = CapacityGrowthPredictorSkill()
-
-        # Step 1: Detect current bottlenecks
-        bottleneck_result = await detector.analyze(
-            project="test-project",
-            parameters={},
-        )
-        assert bottleneck_result.success is True
-
-        # Step 2: Plan capacity based on trends
-        planner_result = await planner.analyze(
-            project="test-project",
-            parameters={"forecast_horizon_days": 90},
-        )
-        assert planner_result.success is True
-
-        # Step 3: Predict future growth
-        predictor_result = await predictor.analyze(
-            project="test-project",
-            parameters={"prediction_horizon_days": 180},
-        )
-        assert predictor_result.success is True
-
-    @pytest.mark.asyncio
-    async def test_capacity_skills_confidence_scores(self):
-        """Test that skills provide reasonable confidence scores."""
-        skills = [
-            CapacityPlannerSkill(),
-            CapacityBottleneckDetectorSkill(),
-            CapacityGrowthPredictorSkill(),
-        ]
-
-        for skill in skills:
-            result = await skill.analyze(
-                project="test-project",
+    async def test_registry_refuses_stub_execution(self):
+        registry = SkillRegistry()
+        registry.register(CapacityPlannerSkill)
+        with pytest.raises(ValueError, match="not implemented"):
+            await registry.execute(
+                skill_id="capacity_planner",
+                project="test",
                 parameters={},
             )
-            assert 0.0 <= result.confidence <= 1.0
+
+    def test_list_skills_implemented_only_filter(self):
+        registry = SkillRegistry()
+        registry.register(CapacityPlannerSkill)
+        all_skills = registry.list_skills()
+        assert len(all_skills) == 1
+        assert all_skills[0]["implemented"] is False
+        filtered = registry.list_skills(implemented_only=True)
+        assert filtered == []

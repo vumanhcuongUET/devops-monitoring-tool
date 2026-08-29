@@ -173,23 +173,30 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
             )
 
     def _get_metric(self, metrics: Dict, metric_name: str, metric_type: str) -> Any:
-        """Get a specific metric value."""
-        metric = metrics.get(metric_name, {})
+        """Get a specific metric value.
+
+        Accepts both structured entries ({"value": X}) and plain scalars.
+        """
+        metric = metrics.get(metric_name)
+        value = metric.get("value", 0) if isinstance(metric, dict) else metric
 
         if metric_type == "rate":
-            return metric.get("value", 0)
+            return value
         elif metric_type == "percent":
-            return metric.get("value", 0) * 100
+            try:
+                return value * 100
+            except TypeError:
+                return "N/A"
         else:
-            return metric.get("value", "N/A")
+            return value if value is not None else "N/A"
 
     def _detect_trends(self, metrics: Dict) -> List[Dict]:
         """Detect trends in metric data."""
         trends = []
 
         for metric_name, metric_data in metrics.items():
-            if "values" not in metric_data:
-                continue
+            if not isinstance(metric_data, dict) or "values" not in metric_data:
+                continue  # Scalar metrics have no time series to trend
 
             values = metric_data["values"]
             if len(values) < 2:
@@ -225,8 +232,8 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
         anomalies = []
 
         for metric_name, metric_data in metrics.items():
-            if "values" not in metric_data:
-                continue
+            if not isinstance(metric_data, dict) or "values" not in metric_data:
+                continue  # Scalar metrics have no time series to analyze
 
             values = metric_data["values"]
             if len(values) < 10:
@@ -251,12 +258,27 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 
         return anomalies
 
+    @staticmethod
+    def _usage_ratio(metrics: Dict, metric_name: str) -> float:
+        """Normalize a usage metric to a 0-1 ratio.
+
+        Structured entries ({"value": 0.85}) carry a ratio directly;
+        plain scalars are interpreted as percentage points (e.g. 85).
+        """
+        metric = metrics.get(metric_name)
+        value = metric.get("value", 0) if isinstance(metric, dict) else metric
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     def _assess_capacity(self, metrics: Dict) -> List[Dict]:
         """Assess capacity utilization."""
         capacity = []
 
-        # CPU capacity
-        cpu = metrics.get("container_cpu_usage", {}).get("value", 0)
+        # CPU capacity - scalars arrive as percentages, dicts as ratios
+        cpu_raw = self._usage_ratio(metrics, "container_cpu_usage")
+        cpu = cpu_raw / 100 if cpu_raw > 1 else cpu_raw
         if cpu > 0.9:
             capacity.append({"resource": "cpu", "usage": cpu * 100, "risk": "critical"})
         elif cpu > 0.7:
@@ -267,7 +289,8 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
             capacity.append({"resource": "cpu", "usage": cpu * 100, "risk": "low"})
 
         # Memory capacity
-        memory = metrics.get("container_memory_usage", {}).get("value", 0)
+        memory_raw = self._usage_ratio(metrics, "container_memory_usage")
+        memory = memory_raw / 100 if memory_raw > 1 else memory_raw
         if memory > 0.9:
             capacity.append({"resource": "memory", "usage": memory * 100, "risk": "critical"})
         elif memory > 0.7:

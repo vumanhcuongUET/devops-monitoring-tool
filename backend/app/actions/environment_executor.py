@@ -14,6 +14,7 @@ via the env parameter rather than shell string interpolation.
 import asyncio
 import atexit
 import logging
+from app.models.actions import ExecutionResult
 import os
 import shlex
 import subprocess
@@ -136,42 +137,6 @@ class ServiceAccountConfig:
             return False
 
 
-class ExecutionResult:
-    """Result of a command execution."""
-
-    def __init__(
-        self,
-        success: bool,
-        exit_code: int,
-        stdout: str,
-        stderr: str,
-        execution_time_ms: float,
-        environment: ExecutionEnvironment,
-        command: str,
-    ):
-        self.success = success
-        self.exit_code = exit_code
-        self.stdout = stdout
-        self.stderr = stderr
-        self.execution_time_ms = execution_time_ms
-        self.environment = environment
-        self.command = command
-        self.timestamp = datetime.now(timezone.utc)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "success": self.success,
-            "exit_code": self.exit_code,
-            "stdout": self.stdout,
-            "stderr": self.stderr,
-            "execution_time_ms": self.execution_time_ms,
-            "environment": self.environment.value,
-            "command": self.command,
-            "timestamp": self.timestamp.isoformat(),
-        }
-
-
 class EnvironmentAwareCommandExecutor:
     """Execute commands with environment-specific service accounts.
 
@@ -259,8 +224,8 @@ class EnvironmentAwareCommandExecutor:
                     exit_code=0,
                     stdout=f"DRY RUN: {command}",
                     stderr="",
-                    execution_time_ms=0,
-                    environment=env,
+                    duration_seconds=0,
+                    environment=env.value,
                     command=command,
                 )
             else:
@@ -327,10 +292,10 @@ class EnvironmentAwareCommandExecutor:
                     exit_code=process.returncode,
                     stdout=stdout.decode("utf-8", errors="replace"),
                     stderr=stderr.decode("utf-8", errors="replace"),
-                    execution_time_ms=(
+                    duration_seconds=(
                         datetime.now(timezone.utc) - start_time
-                    ).total_seconds() * 1000,
-                    environment=env,
+                        ).total_seconds(),
+                    environment=env.value,
                     command=command,
                 )
 
@@ -341,10 +306,10 @@ class EnvironmentAwareCommandExecutor:
                 exit_code=-1,
                 stdout="",
                 stderr=str(e),
-                execution_time_ms=(
+                duration_seconds=(
                     datetime.now(timezone.utc) - start_time
-                ).total_seconds() * 1000,
-                environment=env,
+                    ).total_seconds(),
+                environment=env.value,
                 command=command,
             )
 
@@ -403,35 +368,6 @@ class EnvironmentAwareCommandExecutor:
 
         return True
 
-    def _build_command(
-        self,
-        command: str,
-        environment: ExecutionEnvironment,
-        kubeconfig: str,
-    ) -> str:
-        """Build full command with environment context.
-
-        Args:
-            command: Base command
-            environment: Target environment
-            kubeconfig: Kubeconfig path
-
-        Returns:
-            Full command string
-        """
-        # Set KUBECONFIG environment variable
-        full_command = f"KUBECONFIG={kubeconfig} "
-
-        # Add context if specified
-        context = ServiceAccountConfig.CLUSTER_CONTEXTS.get(environment)
-        if context:
-            full_command += f"kubectl config use-context {context} && "
-
-        # Add the actual command
-        full_command += command
-
-        return full_command
-
     def _log_execution(self, result: ExecutionResult) -> None:
         """Log execution result.
 
@@ -441,9 +377,9 @@ class EnvironmentAwareCommandExecutor:
         log_level = logging.INFO if result.success else logging.WARNING
         logger.log(
             log_level,
-            f"Command executed in {result.environment.value}: "
+            f"Command executed in {result.environment}: "
             f"success={result.success}, exit_code={result.exit_code}, "
-            f"time_ms={result.execution_time_ms:.0f}"
+            f"time_ms={(result.duration_seconds or 0) * 1000:.0f}"
         )
 
     def get_execution_history(
@@ -459,7 +395,7 @@ class EnvironmentAwareCommandExecutor:
             List of execution results as dictionaries
         """
         history = self._execution_history[-limit:] if limit > 0 else self._execution_history
-        return [result.to_dict() for result in reversed(history)]
+        return [result.model_dump(mode="json") for result in reversed(history)]
 
     def get_environment_info(
         self,

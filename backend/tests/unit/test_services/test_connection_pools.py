@@ -107,7 +107,7 @@ class TestKubernetesConnectionPooling:
                     with patch("app.services.kubernetes_client.client.Configuration") as mock_configuration:
                         mock_config.load_kube_config = MagicMock()
                         mock_configuration_obj = MagicMock()
-                        mock_configuration.return_value = mock_configuration_obj
+                        mock_configuration.get_default_copy.return_value = mock_configuration_obj
 
                         client = KubernetesClient()
 

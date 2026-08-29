@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ class BaseAgent(ABC):
         self.name = name
         self.model = model
         self.timeout = timeout
-        self.client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         self._prompt_cache: Optional[str] = None
 
     @abstractmethod

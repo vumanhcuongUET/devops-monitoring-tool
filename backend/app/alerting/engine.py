@@ -63,7 +63,7 @@ class AlertEngine:
 
     async def start(self, app_state):
         self._running = True
-        app_state.alert_state = self.state_tracker.all_state()
+        app_state.alert_state = await self.state_tracker.get_all_state()
         while self._running:
             try:
                 await self._check_all(app_state)
@@ -97,11 +97,7 @@ class AlertEngine:
             breached = self._evaluate(rule.condition, value, rule.threshold)
 
             if breached:
-                # Handle both sync (file) and async (redis) state trackers
-                if asyncio.iscoroutinefunction(self.state_tracker.set_breached):
-                    state = await self.state_tracker.set_breached(rule.id)
-                else:
-                    state = self.state_tracker.set_breached(rule.id)
+                state = await self.state_tracker.set_breached(rule.id)
 
                 if state.get("status") != "firing":
                     from datetime import datetime as dt
@@ -110,22 +106,12 @@ class AlertEngine:
                     if elapsed >= rule.duration_seconds:
                         await self._fire(rule, value)
             else:
-                # Handle both sync (file) and async (redis) state trackers
-                if asyncio.iscoroutinefunction(self.state_tracker.get):
-                    state = await self.state_tracker.get(rule.id)
-                else:
-                    state = self.state_tracker.get(rule.id)
+                state = await self.state_tracker.get(rule.id)
 
                 if state and state.get("status") == "firing":
                     await self._resolve(rule, value)
 
-        # Handle both sync (file) and async (redis) all_state
-        if asyncio.iscoroutinefunction(self.state_tracker.all_state):
-            app_state.alert_state = await self.state_tracker.all_state()
-        elif asyncio.iscoroutinefunction(self.state_tracker.get_all_state):
-            app_state.alert_state = await self.state_tracker.get_all_state()
-        else:
-            app_state.alert_state = self.state_tracker.all_state()
+        app_state.alert_state = await self.state_tracker.get_all_state()
 
     def _evaluate(self, condition: str, value: float, threshold: float) -> bool:
         ops = {"gt": lambda v, t: v > t, "gte": lambda v, t: v >= t, "lt": lambda v, t: v < t, "lte": lambda v, t: v <= t, "eq": lambda v, t: v == t}
@@ -133,11 +119,7 @@ class AlertEngine:
         return op(value, threshold)
 
     async def _fire(self, rule, value: float):
-        # Handle both sync (file) and async (redis) set_firing
-        if asyncio.iscoroutinefunction(self.state_tracker.set_firing):
-            await self.state_tracker.set_firing(rule.id)
-        else:
-            self.state_tracker.set_firing(rule.id)
+        await self.state_tracker.set_firing(rule.id)
 
         event = {
             "id": str(uuid.uuid4()),
@@ -151,11 +133,7 @@ class AlertEngine:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Handle both sync (file) and async (redis) history.add
-        if asyncio.iscoroutinefunction(self.history.add):
-            await self.history.add(event)
-        else:
-            self.history.add(event)
+        await self.history.add(event)
 
         await self._notify(rule, event)
         if self._ws_manager:
@@ -237,11 +215,7 @@ class AlertEngine:
             logger.error(f"Failed to trigger autonomous remediation: {e}")
 
     async def _resolve(self, rule, value: float):
-        # Handle both sync (file) and async (redis) set_resolved
-        if asyncio.iscoroutinefunction(self.state_tracker.set_resolved):
-            await self.state_tracker.set_resolved(rule.id)
-        else:
-            self.state_tracker.set_resolved(rule.id)
+        await self.state_tracker.set_resolved(rule.id)
 
         event = {
             "id": str(uuid.uuid4()),
@@ -255,11 +229,7 @@ class AlertEngine:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Handle both sync (file) and async (redis) history.add
-        if asyncio.iscoroutinefunction(self.history.add):
-            await self.history.add(event)
-        else:
-            self.history.add(event)
+        await self.history.add(event)
 
         await self._notify(rule, event)
         if self._ws_manager:

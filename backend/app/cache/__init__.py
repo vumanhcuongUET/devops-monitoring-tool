@@ -13,11 +13,10 @@ Date: 2026-08-23
 from .l1_cache import L1Cache, cached, RequestCacheMiddleware
 from .l2_cache import (
     L2CacheManager,
-    RedisSentinelManager,
     SerializationFormat,
     create_l2_cache_from_env
 )
-from .single_flight import SingleFlight, single_flight, CacheWarmer
+from .single_flight import SingleFlight, single_flight
 from .config import CacheSettings, get_cache_settings, cache_settings
 
 __all__ = [
@@ -27,13 +26,11 @@ __all__ = [
     "RequestCacheMiddleware",
     # L2 Cache
     "L2CacheManager",
-    "RedisSentinelManager",
     "SerializationFormat",
     "create_l2_cache_from_env",
     # Single Flight
     "SingleFlight",
     "single_flight",
-    "CacheWarmer",
     # Config
     "CacheSettings",
     "get_cache_settings",

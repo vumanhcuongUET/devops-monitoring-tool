@@ -102,7 +102,7 @@ async def list_actions(
     """
     try:
         engine = get_action_engine()
-        return engine.list_actions(project=project, status=status, limit=limit)
+        return await engine.list_actions(project=project, status=status, limit=limit)
     except Exception as e:
         logger.error(f"Failed to list actions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -113,7 +113,7 @@ async def get_action(request: Request, action_id: str) -> ActionResponse:
     """Get details of a specific action."""
     try:
         engine = get_action_engine()
-        action_data = engine.get_action(action_id)
+        action_data = await engine.get_action(action_id)
 
         if not action_data:
             raise HTTPException(status_code=404, detail=f"Action {action_id} not found")
@@ -296,7 +296,7 @@ async def get_action_stats(request: Request) -> dict:
     """Get summary statistics about actions."""
     try:
         engine = get_action_engine()
-        list_result = engine.list_actions()
+        list_result = await engine.list_actions()
 
         return {
             "total": list_result.total,

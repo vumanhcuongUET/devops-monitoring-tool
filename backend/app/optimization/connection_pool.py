@@ -607,7 +607,7 @@ class RateLimiter:
 
             # Check if enough tokens
             if bucket >= tokens:
-                bucket -= tokens
+                self.buckets[endpoint] = bucket - tokens
                 self.stats["allowed_requests"] += 1
                 self._update_endpoint_stats(endpoint, True)
                 return True

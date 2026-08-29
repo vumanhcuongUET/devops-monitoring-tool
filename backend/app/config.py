@@ -121,6 +121,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_USE_REDIS: bool = False  # Use Redis for rate limiting (default: in-memory)
 
     # Phase 10: PostgreSQL Database Configuration
+    DATABASE_ENABLED: bool = False  # Enable PostgreSQL persistence layer (default: off)
     DATABASE_URL: str | None = None  # Full PostgreSQL URL (alternative to individual settings)
     DATABASE_HOST: str = "postgres"
     DATABASE_PORT: int = 5432

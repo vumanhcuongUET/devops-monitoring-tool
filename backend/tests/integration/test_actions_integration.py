@@ -77,7 +77,7 @@ def unique_action_id():
 class TestParserValidatorIntegration:
     """Test integration between parser and validator."""
 
-    def test_parse_then_validate_safe_command(self, test_registry):
+    async def test_parse_then_validate_safe_command(self, test_registry):
         """Test parsing and then validating a safe command."""
         parser = CommandParser()
         validator = CommandValidator()
@@ -91,7 +91,7 @@ class TestParserValidatorIntegration:
         params = parser.parse(command)
 
         assert params.command_type == CommandType.KUBECTL
-        assert params.resource_type == "pods"  # Parser returns plural form
+        assert params.resource_type == "pod"  # Parser normalizes to singular form
         assert params.action == "get"
 
         # Validate the parsed command
@@ -103,7 +103,7 @@ class TestParserValidatorIntegration:
         assert result.is_valid is True
         assert result.risk_level == RiskLevel.LOW  # Safe commands are LOW risk
 
-    def test_parse_then_validate_risky_command(self, test_registry):
+    async def test_parse_then_validate_risky_command(self, test_registry):
         """Test parsing and then validating a risky command."""
         parser = CommandParser()
         validator = CommandValidator()
@@ -134,48 +134,48 @@ class TestParserValidatorIntegration:
 class TestApprovalTrackerPersistence:
     """Test approval state persistence integration."""
 
-    def test_action_persisted_and_retrieved(self, unique_action_id):
+    async def test_action_persisted_and_retrieved(self, unique_action_id):
         """Test that action can be persisted and retrieved from tracker."""
         tracker = ApprovalStateTracker()
 
         # Track the action using set_status
-        tracker.set_status(
+        await tracker.set_status(
             action_id=unique_action_id,
             status=ActionStatus.PENDING,
         )
 
         # Retrieve it
-        retrieved = tracker.get(unique_action_id)
+        retrieved = await tracker.get(unique_action_id)
 
         assert retrieved is not None
         assert retrieved["status"] == ActionStatus.PENDING
 
         # Clean up
-        tracker.delete(unique_action_id)
+        await tracker.delete(unique_action_id)
 
-    def test_action_status_updates_persist(self, unique_action_id):
+    async def test_action_status_updates_persist(self, unique_action_id):
         """Test that status updates are persisted."""
         tracker = ApprovalStateTracker()
 
         # Track as pending
-        tracker.set_status(
+        await tracker.set_status(
             action_id=unique_action_id,
             status=ActionStatus.PENDING,
         )
 
         # Update to approved
-        tracker.set_status(
+        await tracker.set_status(
             action_id=unique_action_id,
             status=ActionStatus.APPROVED,
             user="admin",
         )
 
         # Retrieve and verify
-        retrieved = tracker.get(unique_action_id)
+        retrieved = await tracker.get(unique_action_id)
         assert retrieved["status"] == ActionStatus.APPROVED
 
         # Clean up
-        tracker.delete(unique_action_id)
+        await tracker.delete(unique_action_id)
 
 
 @pytest.mark.integration
@@ -246,7 +246,7 @@ class TestExecutorWithErrorHandling:
 class TestConcurrentOperations:
     """Test concurrent operation handling."""
 
-    def test_concurrent_action_status_updates(self):
+    async def test_concurrent_action_status_updates(self):
         """Test that multiple status updates work correctly."""
         tracker = ApprovalStateTracker()
 
@@ -255,24 +255,24 @@ class TestConcurrentOperations:
 
         # Set status for all (set_status is synchronous)
         for action_id in action_ids:
-            tracker.set_status(action_id, ActionStatus.PENDING)
+            await tracker.set_status(action_id, ActionStatus.PENDING)
 
         # Verify all are persisted
         for action_id in action_ids:
-            retrieved = tracker.get(action_id)
+            retrieved = await tracker.get(action_id)
             assert retrieved is not None
             assert retrieved["status"] == ActionStatus.PENDING
 
         # Clean up
         for action_id in action_ids:
-            tracker.delete(action_id)
+            await tracker.delete(action_id)
 
 
 @pytest.mark.integration
 class TestAuditLogging:
     """Test audit logging with unique action IDs."""
 
-    def test_audit_logging_basic_flow(self, unique_action_id):
+    async def test_audit_logging_basic_flow(self, unique_action_id):
         """Test basic audit logging flow with unique ID."""
         logger = AuditLogger()
 

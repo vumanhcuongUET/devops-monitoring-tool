@@ -36,3 +36,6 @@ secrets.yml
 *.credentials
 auth_tokens.json
 service_account.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

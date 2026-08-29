@@ -8,6 +8,7 @@ from app.api.v1.kubernetes import router as k8s_router
 from app.api.v1.alerts import router as alerts_router
 from app.api.v1.slo import router as slo_router
 from app.api.v1.analyze import router as analyze_router
+from app.api.v1.agents import router as agents_router  # Phase 10 Sprint 3
 from app.api.v1.actions import router as actions_router  # Phase 2
 from app.api.v1.skills import router as skills_router  # Phase 3
 from app.api.v1.governance import router as governance_router  # Phase 3
@@ -26,6 +27,7 @@ v1_router.include_router(k8s_router)
 v1_router.include_router(alerts_router)
 v1_router.include_router(slo_router)
 v1_router.include_router(analyze_router)
+v1_router.include_router(agents_router)  # Phase 10 Sprint 3
 v1_router.include_router(actions_router)  # Phase 2
 v1_router.include_router(skills_router)  # Phase 3
 v1_router.include_router(governance_router)  # Phase 3

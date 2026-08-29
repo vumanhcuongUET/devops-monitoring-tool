@@ -10,7 +10,7 @@ This skill monitors runtime security events:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.skills.base import (
@@ -726,7 +726,3 @@ class SecurityRuntimeMonitorSkill(BaseSkill):
             errors.append(f"severity_filter must be one of: all, {', '.join(self.SEVERITY_LEVELS.keys())}")
 
         return len(errors) == 0, errors
-
-
-# Create alias for compatibility
-SecurityRuntimeMonitorSkill = SecurityRuntimeMonitorSkill

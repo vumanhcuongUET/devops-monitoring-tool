@@ -12,6 +12,8 @@ Features:
 - Resource attributes for service identification
 """
 
+import asyncio
+import functools
 import logging
 from typing import Optional
 
@@ -160,54 +162,37 @@ class TracedOperation:
     def __enter__(self):
         """Start the span."""
         tracer = get_tracer(__name__)
-        self.span = tracer.start_as_current_span(
+        self._cm = tracer.start_as_current_span(
             self.name,
             attributes=self.attributes,
         )
+        self.span = self._cm.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """End the span."""
-        if self.span:
+        if self._cm:
             if exc_type is not None:
-                # Record exception
                 self.span.record_exception(exc_val)
-                self.span.set_status(status.StatusCode.ERROR, str(exc_val))
-            self.span.end()
+                self.span.set_status(StatusCode.ERROR, str(exc_val))
+            self._cm.__exit__(exc_type, exc_val, exc_tb)
 
 
 def trace_function(name: Optional[str] = None):
-    """
-    Decorator to trace function execution.
-
-    Example:
-        @trace_function("calculate_metrics")
-        async def calculate_metrics(project: str):
-            ...
-    """
+    """Decorator to trace sync and async function execution."""
     def decorator(func):
+        if asyncio.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                span_name = name or f"{func.__module__}.{func.__name__}"
+                with TracedOperation(span_name):
+                    return await func(*args, **kwargs)
+            return async_wrapper
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
             span_name = name or f"{func.__module__}.{func.__name__}"
             with TracedOperation(span_name):
                 return func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-
-async def trace_async_function(name: Optional[str] = None):
-    """
-    Decorator to trace async function execution.
-
-    Example:
-        @trace_async_function("fetch_logs")
-        async def fetch_logs(project: str):
-            ...
-    """
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            span_name = name or f"{func.__module__}.{func.__name__}"
-            with TracedOperation(span_name):
-                return await func(*args, **kwargs)
         return wrapper
     return decorator
 

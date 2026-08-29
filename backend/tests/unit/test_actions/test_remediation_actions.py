@@ -224,7 +224,7 @@ class TestRemediationActionFactory:
     def test_get_available_actions(self):
         """Test getting available action types."""
         actions = RemediationActionFactory.get_available_actions()
-        assert len(actions) == 7  # 4 original + 3 Phase 4A actions
+        assert len(actions) == 14  # 7 original + 7 added in Phase 4A
         # Original actions
         assert "delete_crashloop_pod" in actions
         assert "scale_deployment" in actions

@@ -1,12 +1,13 @@
 """Security headers middleware for HTTP response hardening with nonce-based CSP."""
 
 import secrets
-import hashlib
 from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.datastructures import Headers
+
+from app.config import settings
 
 
 class CSPNonceManager:
@@ -64,29 +65,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     - Permissions-Policy: Restrict browser features
     """
 
-    # Script hashes for known inline scripts (for hash-based CSP)
-    # These should be calculated from actual inline scripts in the application
-    SCRIPT_HASHES = [
-        # Add SHA-256 hashes of inline scripts here
-        # Example: "sha256-abc123..."
-    ]
-
-    # Style hashes for known inline styles
-    STYLE_HASHES = [
-        # Add SHA-256 hashes of inline styles here
-    ]
-
-    def __init__(self, app, use_nonce: bool = True, use_hashes: bool = False):
+    def __init__(self, app, use_nonce: bool = True):
         """Initialize the security middleware.
 
         Args:
             app: The ASGI application
             use_nonce: Enable nonce-based CSP (default: True)
-            use_hashes: Enable hash-based CSP (default: False)
         """
         super().__init__(app)
         self.use_nonce = use_nonce
-        self.use_hashes = use_hashes
         self.nonce_manager = CSPNonceManager() if use_nonce else None
 
     def _build_csp_policy(
@@ -117,9 +104,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if nonce:
             script_src.append(f"'nonce-{nonce}'")
 
-        if self.use_hashes and self.SCRIPT_HASHES:
-            script_src.extend(self.SCRIPT_HASHES)
-
         # In development, allow unsafe-inline for easier debugging
         if environment == "development" and not nonce:
             script_src.append("'unsafe-inline'")
@@ -132,9 +116,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if nonce:
             # Nonce can also be used for inline styles
             style_src.append(f"'nonce-{nonce}'")
-
-        if self.use_hashes and self.STYLE_HASHES:
-            style_src.extend(self.STYLE_HASHES)
 
         # In development, allow unsafe-inline for styles
         if environment == "development":
@@ -167,11 +148,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if self.use_nonce and self.nonce_manager:
             nonce = self.nonce_manager.get_request_nonce(request)
 
-        # Determine environment from request state or headers
-        # State uses attribute access, not dict-like access
-        environment = getattr(request.state, "environment", "production")
-        if "x-environment" in request.headers:
-            environment = request.headers["x-environment"]
+        # Environment comes from server config, never from client-controlled headers.
+        environment = getattr(request.state, "environment", settings.ENVIRONMENT)
 
         # Process the request
         response: Response = await call_next(request)
@@ -219,77 +197,3 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def calculate_script_hash(script_content: str) -> str:
-    """Calculate SHA-256 hash of a script for CSP hash-based whitelisting.
-
-    Args:
-        script_content: The JavaScript content to hash
-
-    Returns:
-        The SHA-256 hash in CSP format (sha256-...)
-    """
-    import base64
-
-    # Remove leading/trailing whitespace and normalize
-    normalized = script_content.strip()
-
-    # Calculate SHA-256 hash
-    hash_digest = hashlib.sha256(normalized.encode()).digest()
-
-    # Encode to base64
-    hash_b64 = base64.b64encode(hash_digest).decode()
-
-    return f"sha256-{hash_b64}"
-
-
-def calculate_style_hash(style_content: str) -> str:
-    """Calculate SHA-256 hash of a style for CSP hash-based whitelisting.
-
-    Args:
-        style_content: The CSS content to hash
-
-    Returns:
-        The SHA-256 hash in CSP format (sha256-...)
-    """
-    import base64
-
-    # Remove leading/trailing whitespace and normalize
-    normalized = style_content.strip()
-
-    # Calculate SHA-256 hash
-    hash_digest = hashlib.sha256(normalized.encode()).digest()
-
-    # Encode to base64
-    hash_b64 = base64.b64encode(hash_digest).decode()
-
-    return f"sha256-{hash_b64}"
-
-
-# Helper function to add script hash to middleware configuration
-def add_known_script_hash(script_content: str) -> str:
-    """Add a known script hash to the CSP middleware configuration.
-
-    Args:
-        script_content: The JavaScript content to hash and add
-
-    Returns:
-        The hash that was added
-    """
-    hash_value = calculate_script_hash(script_content)
-    SecurityHeadersMiddleware.SCRIPT_HASHES.append(hash_value)
-    return hash_value
-
-
-# Helper function to add style hash to middleware configuration
-def add_known_style_hash(style_content: str) -> str:
-    """Add a known style hash to the CSP middleware configuration.
-
-    Args:
-        style_content: The CSS content to hash and add
-
-    Returns:
-        The hash that was added
-    """
-    hash_value = calculate_style_hash(style_content)
-    SecurityHeadersMiddleware.STYLE_HASHES.append(hash_value)
-    return hash_value

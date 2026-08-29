@@ -184,6 +184,51 @@ async def lifespan(app: FastAPI):
 
     logger.info("Phase 7 Sprint 4: Configuration Management initialized")
 
+    # Phase 10 Sprint 1: Optional PostgreSQL persistence layer
+    app.state.db_enabled = False
+    if settings.DATABASE_ENABLED:
+        try:
+            from app.database.session import (
+                check_connection,
+                close_engine,
+                init_engine,
+            )
+
+            init_engine(
+                pool_size=settings.DATABASE_POOL_SIZE,
+                max_overflow=settings.DATABASE_MAX_OVERFLOW,
+                pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+                pool_recycle=settings.DATABASE_POOL_RECYCLE,
+            )
+            if await check_connection():
+                app.state.db_enabled = True
+                logger.info("Phase 10: PostgreSQL persistence layer connected")
+            else:
+                await close_engine()
+                logger.warning("Phase 10: PostgreSQL unreachable - running without database")
+        except Exception as e:
+            logger.warning(f"Phase 10: Database initialization failed: {e}")
+    else:
+        logger.info("Phase 10: Database disabled (set DATABASE_ENABLED=true to enable)")
+
+    # Phase 10 Sprint 3: Multi-agent AI architecture
+    from app.api.v1 import agents as agents_api
+
+    try:
+        from app.agents.model_selector import ModelSelector
+        from app.agents.orchestrator import AgentOrchestrator
+
+        agent_orchestrator = AgentOrchestrator(model_selector=ModelSelector())
+        agents_api.set_agent_instances(agent_orchestrator)
+        app.state.agent_orchestrator = agent_orchestrator
+        logger.info(
+            "Phase 10 Sprint 3: Multi-agent orchestrator initialized "
+            f"({'API key set' if settings.ANTHROPIC_API_KEY else 'WARNING: ANTHROPIC_API_KEY missing'})"
+        )
+    except Exception as e:
+        agents_api.set_agent_instances(None)
+        logger.warning(f"Phase 10 Sprint 3: Agent orchestrator initialization failed: {e}")
+
     if settings.AUTH_ENABLED and not settings.AUTH_SECRET:
         logger.warning("AUTH_ENABLED=true but AUTH_SECRET is empty — generate one!")
     if settings.AUTH_ENABLED and not settings.API_KEYS:
@@ -204,6 +249,11 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, 'pool_manager'):
         await app.state.pool_manager.stop()
 
+    # Close database engine if it was initialized
+    if getattr(app.state, 'db_enabled', False):
+        from app.database.session import close_engine
+        await close_engine()
+
     # Close service clients
     await app.state.es_client.close()
     await app.state.prometheus_client.close()
@@ -222,7 +272,7 @@ app = FastAPI(
 
 # Phase 8: Enable nonce-based CSP for enhanced security
 # use_nonce=True enables per-request nonce generation for inline scripts
-app.add_middleware(SecurityHeadersMiddleware, use_nonce=True, use_hashes=False)
+app.add_middleware(SecurityHeadersMiddleware, use_nonce=True)
 # Phase 9: Support Redis-based rate limiting
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20, use_redis=settings.RATE_LIMIT_USE_REDIS)
 app.add_middleware(AuthMiddleware)
@@ -241,7 +291,17 @@ app.include_router(ws_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from app.api.v1.agents import _orchestrator as agent_orchestrator
+
+    return {
+        "status": "ok",
+        "database": "enabled" if getattr(app.state, "db_enabled", False) else "disabled",
+        "ai_agents": (
+            f"{len(agent_orchestrator.agents)} available"
+            if agent_orchestrator is not None
+            else "unavailable"
+        ),
+    }
 
 
 @app.post("/auth/token", include_in_schema=True)

@@ -9,7 +9,8 @@ Specializes in:
 """
 
 import re
-from typing import Dict, Any, List
+from datetime import datetime
+from typing import Dict, Any, List, Optional
 from collections import Counter
 import logging
 
@@ -247,6 +248,17 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         return anomalies
 
+    @staticmethod
+    def _timestamp_to_epoch(timestamp: Any) -> Optional[float]:
+        """Convert a log timestamp (ISO string or numeric epoch) to seconds."""
+        if isinstance(timestamp, (int, float)):
+            return float(timestamp)
+        try:
+            parsed = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+            return parsed.timestamp()
+        except ValueError:
+            return None
+
     def _find_error_bursts(self, logs: List[Dict]) -> List[Dict]:
         """Find periods of high error frequency."""
         # Group logs by time window (1 minute)
@@ -255,8 +267,10 @@ Provide analysis focusing on root causes and actionable recommendations.
 
         for log in logs:
             if str(log.get("level", "")).lower() in ["error", "fatal"]:
-                timestamp = log.get("timestamp", 0)
-                window = timestamp // window_size
+                epoch = self._timestamp_to_epoch(log.get("timestamp", 0))
+                if epoch is None:
+                    continue
+                window = int(epoch // window_size)
                 error_counts[window] += 1
 
         # Find windows with abnormally high errors

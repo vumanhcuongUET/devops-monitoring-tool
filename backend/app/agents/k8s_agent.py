@@ -180,29 +180,31 @@ Provide analysis with focus on health, resources, and best practices.
 
         # Pod health
         for pod in pods:
-            if pod.get("status", {}).get("phase") == "Running":
-                # Check if all containers are ready
-                if pod.get("status", {}).get("containerStatuses"):
+            phase = self._pod_phase(pod)
+            if phase == "Running":
+                # Check if all containers are ready (full K8s API shape only)
+                container_statuses = self._status_get(pod, "containerStatuses")
+                if container_statuses:
                     all_ready = all(
                         cs.get("ready", False)
-                        for cs in pod["status"]["containerStatuses"]
+                        for cs in container_statuses
                     )
                     if all_ready:
                         health["pods"]["healthy"] += 1
                     else:
                         health["pods"]["issues"].append(
-                            f"Pod {pod['metadata']['name']}: Not all containers ready"
+                            f"Pod {self._pod_name(pod)}: Not all containers ready"
                         )
                 else:
                     health["pods"]["healthy"] += 1
             else:
                 health["pods"]["issues"].append(
-                    f"Pod {pod['metadata'].get('name', 'unknown')}: {pod.get('status', {}).get('phase', 'Unknown')}"
+                    f"Pod {self._pod_name(pod)}: {phase}"
                 )
 
         # Node health
         for node in nodes:
-            for condition in node.get("status", {}).get("conditions", []):
+            for condition in self._status_get(node, "conditions", []):
                 if condition.get("type") == "Ready":
                     if condition.get("status") == "True":
                         health["nodes"]["ready"] += 1
@@ -243,7 +245,7 @@ Provide analysis with focus on health, resources, and best practices.
                     total_limits["memory"] += mem_lim
 
         for node in nodes:
-            capacity = node.get("status", {}).get("capacity", {})
+            capacity = self._status_get(node, "capacity", {})
             if "cpu" in capacity:
                 total_capacity["cpu"] += self._parse_cpu(capacity["cpu"])
             if "memory" in capacity:
@@ -283,21 +285,48 @@ Provide analysis with focus on health, resources, and best practices.
                 return int(float(mem_str[: -len(unit)]) * multiplier)
         return int(mem_str)
 
+    @staticmethod
+    def _pod_name(pod: Dict) -> str:
+        """Extract a pod name from either simplified or K8s API shapes."""
+        metadata = pod.get("metadata") or {}
+        return pod.get("name", metadata.get("name", "unknown"))
+
+    @staticmethod
+    def _pod_phase(pod: Dict, default: str = "Unknown") -> str:
+        """Pod phase from either simplified (scalar status) or K8s API shapes."""
+        status = pod.get("status")
+        if isinstance(status, dict):
+            return str(status.get("phase", default))
+        if isinstance(status, str) and status:
+            return status
+        return default
+
+    @staticmethod
+    def _status_get(obj: Dict, key: str, default: Any = None) -> Any:
+        """Read a field from the K8s API `status` sub-object (simplified shapes pass through)."""
+        if not isinstance(obj, dict):
+            return default
+        status = obj.get("status", {})
+        if not isinstance(status, dict):
+            return default
+        return status.get(key, default)
+
     def _analyze_scheduling(self, pods: List) -> List[Dict]:
         """Analyze scheduling issues."""
         issues = []
 
         for pod in pods:
+            phase = self._pod_phase(pod, "")
             # Check for pending pods
-            if pod.get("status", {}).get("phase") == "Pending":
-                conditions = pod.get("status", {}).get("conditions", [])
+            if phase == "Pending":
+                conditions = self._status_get(pod, "conditions", [])
                 for condition in conditions:
                     if condition.get("type") == "PodScheduled" and condition.get(
                         "status"
                     ) == "False":
                         issues.append(
                             {
-                                "pod": pod["metadata"]["name"],
+                                "pod": self._pod_name(pod),
                                 "issue": "Unschedulable",
                                 "reason": condition.get("reason", "Unknown"),
                                 "message": condition.get("message", ""),
@@ -305,7 +334,7 @@ Provide analysis with focus on health, resources, and best practices.
                         )
 
             # Check pod anti-affinity
-            affinity = pod.get("spec", {}).get("affinity", {})
+            affinity = (pod.get("spec") or {}).get("affinity") or {}
             if affinity.get("podAntiAffinity"):
                 rules = affinity["podAntiAffinity"].get(
                     "requiredDuringSchedulingIgnoredDuringExecution", []
@@ -313,7 +342,7 @@ Provide analysis with focus on health, resources, and best practices.
                 if rules:
                     issues.append(
                         {
-                            "pod": pod["metadata"]["name"],
+                            "pod": self._pod_name(pod),
                             "issue": "PodAntiAffinity",
                             "rules": len(rules),
                         }

@@ -15,6 +15,7 @@ from app.actions.executor import get_command_executor
 from app.actions.environment_executor import get_executor
 from app.approvals.store import get_approval_tracker, get_approval_history
 from app.audit.logger import get_audit_logger
+from app.config import settings
 from app.governance.permission_checker import get_permission_checker
 from app.governance.ai_rbac import get_ai_permission_matrix, AIPermission
 from app.models.actions import (
@@ -35,6 +36,22 @@ from app.registry.loader import get_registry
 
 logger = logging.getLogger(__name__)
 
+# Fields copied from stored state into a reconstructed Action (when present).
+_ACTION_STATE_FIELDS = (
+    "command_type", "command", "parsed_params", "project", "title",
+    "description", "triage_card_id", "recommendation_id", "risk_level",
+    "estimated_impact", "created_at", "context",
+)
+
+
+def _action_kwargs_from_state(state: dict, base_kwargs: dict) -> dict:
+    """Build Action kwargs: base status-change fields + stored optional fields."""
+    kwargs = dict(base_kwargs)
+    for f in _ACTION_STATE_FIELDS:
+        if state.get(f) is not None:
+            kwargs[f] = state[f]
+    return kwargs
+
 
 class ActionEngine:
     """Engine for managing action lifecycle: create, validate, approve, execute."""
@@ -43,8 +60,8 @@ class ActionEngine:
         self.parser = get_command_parser()
         self.validator = get_command_validator()
         self.executor = get_command_executor()
-        self.approval_tracker = get_approval_tracker()
-        self.approval_history = get_approval_history()
+        self.approval_tracker = get_approval_tracker(use_redis=settings.APPROVAL_STATE_USE_REDIS)
+        self.approval_history = get_approval_history(use_redis=settings.APPROVAL_STATE_USE_REDIS)
         self.audit_logger = get_audit_logger()
         self.registry = get_registry()
         self.permission_checker = get_permission_checker()
@@ -93,14 +110,7 @@ class ActionEngine:
             permission_result.requires_approval
         )
 
-        # High and Critical impact actions require approval (Phase 8 Day 7)
-        if impact_estimate.impact_level in (ImpactLevel.HIGH, ImpactLevel.CRITICAL):
-            requires_approval = True
-
-        # Critical impact actions may require executive approval
-        requires_executive_approval = impact_estimate.impact_level == ImpactLevel.CRITICAL
-
-        # Estimate impact (Phase 8 Day 7)
+        # Estimate impact (Phase 8 Day 7) — must precede the approval check below
         impact_estimator = get_impact_estimator()
         # Try to get k8s client for real impact estimation
         k8s_client = None
@@ -117,6 +127,13 @@ class ActionEngine:
             k8s_client=k8s_client,
             dry_run=True,  # Use heuristics for now, can be configurable
         )
+
+        # High and Critical impact actions require approval (Phase 8 Day 7)
+        if impact_estimate.impact_level in (ImpactLevel.HIGH, ImpactLevel.CRITICAL):
+            requires_approval = True
+
+        # Critical impact actions may require executive approval
+        requires_executive_approval = impact_estimate.impact_level == ImpactLevel.CRITICAL
 
         # Create the action
         action = Action(
@@ -165,13 +182,13 @@ class ActionEngine:
         )
 
         # Add to approval tracker
-        self.approval_tracker.set_status(
+        await self.approval_tracker.set_status(
             action_id=action_id,
             status=action.status,
         )
 
         # Add to history
-        self.approval_history.add({
+        await self.approval_history.add({
             "id": str(uuid.uuid4()),
             "action_id": action_id,
             "event": "created",
@@ -193,7 +210,7 @@ class ActionEngine:
     async def approve_action(self, action_id: str, request: ApproveActionRequest) -> Action:
         """Approve an action for execution."""
         # Get current state
-        state = self.approval_tracker.get(action_id)
+        state = await self.approval_tracker.get(action_id)
         if not state:
             raise ValueError(f"Action {action_id} not found")
 
@@ -201,7 +218,7 @@ class ActionEngine:
             raise ValueError(f"Action {action_id} is not pending (current: {state.get('status')})")
 
         # Update status
-        self.approval_tracker.set_status(
+        await self.approval_tracker.set_status(
             action_id=action_id,
             status=ActionStatus.APPROVED,
             user=request.approved_by,
@@ -215,7 +232,7 @@ class ActionEngine:
         )
 
         # Add to history
-        self.approval_history.add({
+        await self.approval_history.add({
             "id": str(uuid.uuid4()),
             "action_id": action_id,
             "event": "approved",
@@ -226,45 +243,18 @@ class ActionEngine:
 
         logger.info(f"Action {action_id} approved by {request.approved_by}")
         # Build action kwargs from state, filtering None values
-        action_kwargs = {
+        action_kwargs = _action_kwargs_from_state(state, {
             "id": action_id,
             "status": ActionStatus.APPROVED,
             "approved_by": request.approved_by,
             "approved_at": datetime.now(timezone.utc),
-        }
-
-        # Add optional fields from state if present
-        if "command_type" in state:
-            action_kwargs["command_type"] = state["command_type"]
-        if "command" in state:
-            action_kwargs["command"] = state["command"]
-        if "parsed_params" in state and state["parsed_params"]:
-            action_kwargs["parsed_params"] = state["parsed_params"]
-        if "project" in state:
-            action_kwargs["project"] = state["project"]
-        if "title" in state:
-            action_kwargs["title"] = state["title"]
-        if "description" in state:
-            action_kwargs["description"] = state["description"]
-        if "triage_card_id" in state:
-            action_kwargs["triage_card_id"] = state["triage_card_id"]
-        if "recommendation_id" in state:
-            action_kwargs["recommendation_id"] = state["recommendation_id"]
-        if "risk_level" in state:
-            action_kwargs["risk_level"] = state["risk_level"]
-        if "estimated_impact" in state:
-            action_kwargs["estimated_impact"] = state["estimated_impact"]
-        if "created_at" in state:
-            action_kwargs["created_at"] = state["created_at"]
-        if "context" in state:
-            action_kwargs["context"] = state["context"]
-
+        })
         return Action(**action_kwargs)
 
     async def reject_action(self, action_id: str, request: RejectActionRequest) -> Action:
         """Reject an action."""
         # Get current state
-        state = self.approval_tracker.get(action_id)
+        state = await self.approval_tracker.get(action_id)
         if not state:
             raise ValueError(f"Action {action_id} not found")
 
@@ -272,7 +262,7 @@ class ActionEngine:
             raise ValueError(f"Action {action_id} is not pending (current: {state.get('status')})")
 
         # Update status
-        self.approval_tracker.set_status(
+        await self.approval_tracker.set_status(
             action_id=action_id,
             status=ActionStatus.REJECTED,
             user=request.rejected_by,
@@ -287,7 +277,7 @@ class ActionEngine:
         )
 
         # Add to history
-        self.approval_history.add({
+        await self.approval_history.add({
             "id": str(uuid.uuid4()),
             "action_id": action_id,
             "event": "rejected",
@@ -298,46 +288,19 @@ class ActionEngine:
 
         logger.info(f"Action {action_id} rejected by {request.rejected_by}: {request.reason}")
         # Build action kwargs from state, filtering None values
-        action_kwargs = {
+        action_kwargs = _action_kwargs_from_state(state, {
             "id": action_id,
             "status": ActionStatus.REJECTED,
             "rejected_by": request.rejected_by,
             "rejected_at": datetime.now(timezone.utc),
             "rejection_reason": request.reason,
-        }
-
-        # Add optional fields from state if present
-        if "command_type" in state:
-            action_kwargs["command_type"] = state["command_type"]
-        if "command" in state:
-            action_kwargs["command"] = state["command"]
-        if "parsed_params" in state and state["parsed_params"]:
-            action_kwargs["parsed_params"] = state["parsed_params"]
-        if "project" in state:
-            action_kwargs["project"] = state["project"]
-        if "title" in state:
-            action_kwargs["title"] = state["title"]
-        if "description" in state:
-            action_kwargs["description"] = state["description"]
-        if "triage_card_id" in state:
-            action_kwargs["triage_card_id"] = state["triage_card_id"]
-        if "recommendation_id" in state:
-            action_kwargs["recommendation_id"] = state["recommendation_id"]
-        if "risk_level" in state:
-            action_kwargs["risk_level"] = state["risk_level"]
-        if "estimated_impact" in state:
-            action_kwargs["estimated_impact"] = state["estimated_impact"]
-        if "created_at" in state:
-            action_kwargs["created_at"] = state["created_at"]
-        if "context" in state:
-            action_kwargs["context"] = state["context"]
-
+        })
         return Action(**action_kwargs)
 
     async def execute_action(self, action_id: str, request: ExecuteActionRequest) -> Action:
         """Execute an approved action with RBAC permission checking."""
         # Get current state
-        state = self.approval_tracker.get(action_id)
+        state = await self.approval_tracker.get(action_id)
         if not state:
             raise ValueError(f"Action {action_id} not found")
 
@@ -435,7 +398,7 @@ class ActionEngine:
 
             # Update status based on result
             new_status = ActionStatus.EXECUTED if success else ActionStatus.FAILED
-            self.approval_tracker.set_status(
+            await self.approval_tracker.set_status(
                 action_id=action_id,
                 status=new_status,
                 user=request.executed_by,
@@ -451,7 +414,7 @@ class ActionEngine:
             )
 
             # Add to history
-            self.approval_history.add({
+            await self.approval_history.add({
                 "id": str(uuid.uuid4()),
                 "action_id": action_id,
                 "event": "executed" if success else "failed",
@@ -539,46 +502,19 @@ class ActionEngine:
                 )
 
             # Build action kwargs from state, filtering None values
-            action_kwargs = {
+            action_kwargs = _action_kwargs_from_state(state, {
                 "id": action_id,
                 "status": new_status,
                 "executed_by": request.executed_by,
                 "executed_at": datetime.now(timezone.utc),
                 "execution_result": exec_result,
-            }
-
-            # Add optional fields from state if present
-            if "command_type" in state:
-                action_kwargs["command_type"] = state["command_type"]
-            if "command" in state:
-                action_kwargs["command"] = state["command"]
-            if "parsed_params" in state and state["parsed_params"]:
-                action_kwargs["parsed_params"] = state["parsed_params"]
-            if "project" in state:
-                action_kwargs["project"] = state["project"]
-            if "title" in state:
-                action_kwargs["title"] = state["title"]
-            if "description" in state:
-                action_kwargs["description"] = state["description"]
-            if "triage_card_id" in state:
-                action_kwargs["triage_card_id"] = state["triage_card_id"]
-            if "recommendation_id" in state:
-                action_kwargs["recommendation_id"] = state["recommendation_id"]
-            if "risk_level" in state:
-                action_kwargs["risk_level"] = state["risk_level"]
-            if "estimated_impact" in state:
-                action_kwargs["estimated_impact"] = state["estimated_impact"]
-            if "created_at" in state:
-                action_kwargs["created_at"] = state["created_at"]
-            if "context" in state:
-                action_kwargs["context"] = state["context"]
-
+            })
             return Action(**action_kwargs)
 
         except Exception as e:
             # Execution failed with exception
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-            self.approval_tracker.set_status(
+            await self.approval_tracker.set_status(
                 action_id=action_id,
                 status=ActionStatus.FAILED,
                 user=request.executed_by,
@@ -596,21 +532,21 @@ class ActionEngine:
             logger.error(f"Action {action_id} execution failed: {e}")
             raise
 
-    def get_action(self, action_id: str) -> Optional[dict]:
+    async def get_action(self, action_id: str) -> Optional[dict]:
         """Get action details."""
-        state = self.approval_tracker.get(action_id)
+        state = await self.approval_tracker.get(action_id)
         if not state:
             return None
         return state
 
-    def list_actions(
+    async def list_actions(
         self,
         project: Optional[str] = None,
         status: Optional[ActionStatus] = None,
         limit: int = 100,
     ) -> ActionListResponse:
         """List actions with optional filters."""
-        all_state = self.approval_tracker.get_all()
+        all_state = await self.approval_tracker.get_all()
 
         # Count by status (use original all_state for accurate counts)
         counts = {s: 0 for s in ActionStatus}

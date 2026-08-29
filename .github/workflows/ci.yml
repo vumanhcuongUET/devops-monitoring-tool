@@ -91,6 +91,11 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-test.txt 2>/dev/null || pip install pytest pytest-cov pytest-asyncio
 
+      # Phase 11 Day 1: syntax regression gate — k8s_agent.py corruption must
+      # never reach master again (kills the whole agents package at import).
+      - name: Compile gate (compileall)
+        run: cd backend && python -m compileall -q app
+
       - name: Run unit tests
         run: |
           cd backend

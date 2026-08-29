@@ -203,7 +203,7 @@ class ApprovalHistory:
         self._entries: list[dict] = []
         self._load()
 
-    def add(self, event: dict):
+    async def add(self, event: dict):
         """Add an event to history."""
         self._entries.insert(0, event)
         self._entries = self._entries[: self._max_entries]

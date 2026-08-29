@@ -347,7 +347,7 @@ class TestCommandValidator:
 
     def test_check_rate_limit_default(self, validator):
         """Test rate limit checking returns default allowed."""
-        allowed, message = validator.check_rate_limit("meinvoice", "restart")
+        allowed, message, _metadata = validator.check_rate_limit("meinvoice", "restart")
 
         # Default implementation returns allowed
         assert allowed is True
@@ -389,10 +389,10 @@ class TestCommandValidator:
         """Test rate limit checking with unknown project."""
         # The validator will return True with "Project not found" message
         # when project is not in registry
-        allowed, message = validator.check_rate_limit("unknown-project", "restart")
+        allowed, message, _metadata = validator.check_rate_limit("unknown-project", "restart")
 
-        # Returns True (allowed) with not found message
-        assert allowed is True
+        # Unknown projects are denied
+        assert allowed is False
         assert "not found" in message.lower()
 
     def test_assess_risk_unknown_action_default_medium(self, validator):

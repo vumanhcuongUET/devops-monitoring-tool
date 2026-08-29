@@ -34,7 +34,7 @@ class TestLLMClient:
         assert "severity" in result
         assert "findings" in result
         assert "recommendations" in result
-        assert result["project"] == "test-project"
+        assert result["project"] == "test"
 
     @pytest.mark.asyncio
     async def test_health_check_returns_healthy_status(self, mock_llm_client):
@@ -84,7 +84,7 @@ class TestLLMClient:
     async def test_health_check_with_api_error(self, mock_llm_client):
         """Test that health_check handles API errors."""
         mock_llm_client.health_check = AsyncMock(
-            side_effect=APIError("API request failed")
+            side_effect=APIError(MagicMock(), "API request failed", body=None)
         )
 
         with pytest.raises(APIError):

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from app.actions.engine import ActionEngine, get_action_engine
 from app.actions.parser import get_command_parser
+from app.actions.rate_limiter import get_rate_limiter
 from app.actions.validator import get_command_validator, ValidationResult, RiskLevel
 from app.actions.executor import get_command_executor, ExecutionResult
 from app.approvals.store import get_approval_tracker
@@ -68,8 +69,8 @@ def mock_executor():
 
 @pytest.fixture
 def mock_approval_tracker():
-    """Mock approval tracker."""
-    tracker = MagicMock()
+    """Mock approval tracker (all-async API)."""
+    tracker = AsyncMock()
     tracker.get.return_value = None
     tracker.get_all.return_value = {}
     return tracker
@@ -121,6 +122,7 @@ def action_engine(
     )
 
     engine = ActionEngine()
+    get_rate_limiter().reset()
     engine.parser = mock_parser
     engine.validator = mock_validator
     engine.executor = mock_executor
@@ -128,7 +130,7 @@ def action_engine(
     engine.audit_logger = mock_audit_logger
     engine.registry = mock_registry
     engine.approval_history = MagicMock()
-    engine.approval_history.add = MagicMock()
+    engine.approval_history.add = AsyncMock()
     engine.permission_checker = mock_permission_checker
     engine.env_aware_executor = mock_env_executor
     return engine
@@ -586,7 +588,8 @@ class TestActionEngine:
         with pytest.raises(ValueError, match="no command"):
             await action_engine.execute_action("act-123", request)
 
-    def test_get_action(self, action_engine, mock_approval_tracker):
+    @pytest.mark.asyncio
+    async def test_get_action(self, action_engine, mock_approval_tracker):
         """Test getting action details."""
         # Setup tracker
         mock_approval_tracker.get.return_value = {
@@ -596,25 +599,27 @@ class TestActionEngine:
         }
 
         # Execute
-        result = action_engine.get_action("act-123")
+        result = await action_engine.get_action("act-123")
 
         # Verify
         assert result is not None
         assert result["id"] == "act-123"
         mock_approval_tracker.get.assert_called_once_with("act-123")
 
-    def test_get_action_not_found(self, action_engine, mock_approval_tracker):
+    @pytest.mark.asyncio
+    async def test_get_action_not_found(self, action_engine, mock_approval_tracker):
         """Test getting non-existent action."""
         # Setup tracker to return None
         mock_approval_tracker.get.return_value = None
 
         # Execute
-        result = action_engine.get_action("act-123")
+        result = await action_engine.get_action("act-123")
 
         # Verify
         assert result is None
 
-    def test_list_actions(self, action_engine, mock_approval_tracker):
+    @pytest.mark.asyncio
+    async def test_list_actions(self, action_engine, mock_approval_tracker):
         """Test listing actions."""
         # Setup tracker with complete Action objects
         mock_approval_tracker.get_all.return_value = {
@@ -651,29 +656,31 @@ class TestActionEngine:
         }
 
         # Execute
-        result = action_engine.list_actions(project="proj1", limit=100)
+        result = await action_engine.list_actions(project="proj1", limit=100)
 
         # Verify
         assert result.total >= 0
         assert hasattr(result, "actions")
         mock_approval_tracker.get_all.assert_called_once()
 
-    def test_list_actions_with_status_filter(
+    @pytest.mark.asyncio
+    async def test_list_actions_with_status_filter(
         self, action_engine, mock_approval_tracker
     ):
         """Test listing actions with status filter."""
         # Execute with status filter
-        result = action_engine.list_actions(status=ActionStatus.PENDING)
+        result = await action_engine.list_actions(status=ActionStatus.PENDING)
 
         # Verify filter applied (implementation detail)
         assert hasattr(result, "actions")
 
-    def test_list_actions_with_project_filter(
+    @pytest.mark.asyncio
+    async def test_list_actions_with_project_filter(
         self, action_engine, mock_approval_tracker
     ):
         """Test listing actions with project filter."""
         # Execute with project filter
-        result = action_engine.list_actions(project="test-project")
+        result = await action_engine.list_actions(project="test-project")
 
         # Verify
         assert hasattr(result, "actions")

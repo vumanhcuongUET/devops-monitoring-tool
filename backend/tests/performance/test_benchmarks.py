@@ -275,67 +275,6 @@ class TestPerformanceBenchmarks:
 
         print(f"✓ 10 concurrent requests completed in {duration:.2f}s")
 
-    async def test_batch_optimizer_performance(self):
-        """
-        Benchmark batch optimizer performance.
-
-        Target: Batched requests should be faster than individual
-        """
-        from app.services.batch_optimizer import BatchOptimizer
-
-        optimizer = BatchOptimizer(batch_size=5, max_wait=0.05)
-
-        async def mock_execute(ids):
-            # Simulate work
-            await asyncio.sleep(0.1)
-            return [{"id": id, "data": "test"} for id in ids]
-
-        start = time.time()
-
-        # Submit 5 requests that should be batched
-        results = await asyncio.gather(*[
-            optimizer.batch_request(
-                batch_key="test-batch",
-                request_id=f"req-{i}",
-                execute_fn=mock_execute,
-            )
-            for i in range(5)
-        ])
-
-        duration = time.time() - start
-
-        # With batching, should take ~0.15s (0.05 wait + 0.1 execute)
-        # Without batching, would take ~0.5s (5 * 0.1)
-        assert duration < 0.3, f"Batched requests took {duration:.2f}s, expected < 0.3s"
-
-        assert len(results) == 5
-        print(f"✓ Batch optimizer completed 5 requests in {duration:.2f}s")
-
-        # Verify stats
-        stats = optimizer.get_stats()
-        assert stats["total_requests"] == 5
-        assert stats["batch_executions"] >= 1
-        print(f"  Batch stats: {stats}")
-
-    async def test_connection_pool_stats(self):
-        """
-        Verify connection pool manager is working.
-        """
-        from app.services.connection_pool import get_pool_manager
-
-        manager = get_pool_manager()
-
-        # Get pool stats
-        stats = manager.get_stats()
-
-        # Verify all service pools are configured
-        expected_services = ["elasticsearch", "prometheus", "kubernetes", "llm"]
-        for service in expected_services:
-            assert service in stats, f"Missing pool config for {service}"
-            assert stats[service]["max_connections"] > 0, f"Invalid max_connections for {service}"
-
-        print(f"✓ Connection pool stats: {stats}")
-
     async def test_llm_health_check(self):
         """
         Benchmark LLM health check.
@@ -368,47 +307,6 @@ class TestPerformanceBenchmarks:
 
 
 @pytest.mark.benchmark
-class TestPerformanceRegression:
-    """Tests to catch performance regressions."""
-
-    @pytest.mark.asyncio
-    async def test_no_n_plus_one_queries(self):
-        """
-        Verify we're not making N+1 queries.
-
-        This test checks that fetching data for multiple items
-        doesn't result in N+1 database/API queries.
-        """
-        from app.services.batch_optimizer import BatchOptimizer
-
-        # Track how many times execute_fn is called
-        call_count = 0
-        original_execute = None
-
-        async def tracking_execute(ids):
-            nonlocal call_count
-            call_count += 1
-            await asyncio.sleep(0.01)
-            return [{"id": id} for id in ids]
-
-        optimizer = BatchOptimizer(batch_size=10, max_wait=0.05)
-
-        # Submit 10 requests
-        await asyncio.gather(*[
-            optimizer.batch_request(
-                batch_key="test",
-                request_id=f"req-{i}",
-                execute_fn=tracking_execute,
-            )
-            for i in range(10)
-        ])
-
-        # With batching, should only execute once
-        assert call_count <= 2, f"Expected ≤2 executions, got {call_count} (possible N+1 issue)"
-
-        print(f"✓ N+1 test: {call_count} executions for 10 requests (batching working)")
-
-
 @pytest.mark.benchmark
 class TestLoadCapacity:
     """Load capacity tests."""

@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.actions.chain_monitor import get_chain_monitor, ChainMonitorConfig
 
@@ -370,3 +370,66 @@ def get_rate_limiter(config: Optional[RateLimitConfig] = None) -> RateLimiter:
     elif config:
         _rate_limiter.update_config(config)
     return _rate_limiter
+
+
+class AutonomousRateLimiter:
+    """Rate limiter for autonomous actions.
+
+    Prevents runaway autonomous execution by limiting actions per time window.
+    """
+
+    def __init__(self, max_per_hour: int = 3):
+        """Initialize rate limiter.
+
+        Args:
+            max_per_hour: Maximum actions per hour per action type
+        """
+        self.max_per_hour = max_per_hour
+        self._execution_times: Dict[str, list[datetime]] = defaultdict(list)
+
+    def can_execute(self, action_type: str) -> tuple[bool, Optional[str]]:
+        """Check if action can be executed based on rate limit.
+
+        Args:
+            action_type: Type of remediation action
+
+        Returns:
+            Tuple of (allowed, reason_if_not_allowed)
+        """
+        now = datetime.now(timezone.utc)
+        hour_ago = now - timedelta(hours=1)
+
+        # Clean old entries
+        self._execution_times[action_type] = [
+            t for t in self._execution_times[action_type] if t > hour_ago
+        ]
+
+        # Check limit
+        if len(self._execution_times[action_type]) >= self.max_per_hour:
+            return False, f"Rate limit exceeded: {len(self._execution_times[action_type])} executions in last hour"
+
+        return True, None
+
+    def record_execution(self, action_type: str):
+        """Record an action execution for rate limiting.
+
+        Args:
+            action_type: Type of remediation action
+        """
+        self._execution_times[action_type].append(datetime.now(timezone.utc))
+
+    def get_remaining_quota(self, action_type: str) -> int:
+        """Get remaining execution quota for an action type.
+
+        Args:
+            action_type: Type of remediation action
+
+        Returns:
+            Number of remaining executions allowed this hour
+        """
+        now = datetime.now(timezone.utc)
+        hour_ago = now - timedelta(hours=1)
+        self._execution_times[action_type] = [
+            t for t in self._execution_times[action_type] if t > hour_ago
+        ]
+        return max(0, self.max_per_hour - len(self._execution_times[action_type]))

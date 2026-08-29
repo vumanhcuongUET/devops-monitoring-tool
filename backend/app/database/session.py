@@ -14,6 +14,7 @@ Features:
 import logging
 from typing import AsyncGenerator, Optional
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -160,7 +161,7 @@ async def check_connection() -> bool:
             return False
 
         async with _engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
             return True
     except Exception as e:
         logger.error(f"Database connection check failed: {e}")

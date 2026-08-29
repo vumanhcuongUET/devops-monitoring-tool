@@ -92,6 +92,9 @@ class BaseSkill(ABC):
     category: SkillCategory
     priority: SkillPriority
     version: str = "1.0.0"
+    # False = no real data-source integration yet (mock/empty output).
+    # Set via SkillRegistry.STUB_SKILLS; subclasses may also declare it directly.
+    implemented: bool = True
 
     def __init__(self, config: Optional[SkillConfig] = None):
         """Initialize the skill with optional configuration.
@@ -152,6 +155,7 @@ class BaseSkill(ABC):
             "priority": self.priority,
             "version": self.version,
             "enabled": self.config.enabled,
+            "implemented": self.implemented,
         }
 
     def validate_parameters(self, parameters: dict[str, Any]) -> tuple[bool, list[str]]:

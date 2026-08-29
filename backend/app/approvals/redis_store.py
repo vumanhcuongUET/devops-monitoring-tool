@@ -140,9 +140,11 @@ class RedisApprovalStore:
             result = {}
             for key, value in zip(keys, values):
                 if value:
+                    key_s = key.decode() if isinstance(key, bytes) else key
+                    val_s = value.decode() if isinstance(value, bytes) else value
                     # Extract action_id from key
-                    action_id = key.replace("approval:state:", "")
-                    result[action_id] = json.loads(value)
+                    action_id = key_s.replace("approval:state:", "")
+                    result[action_id] = json.loads(val_s)
 
             return result
 
@@ -322,7 +324,7 @@ class RedisApprovalStore:
             await self.redis.setex(
                 key,
                 self.ttl_seconds,
-                json.dumps(state),
+                json.dumps(state, default=str),
             )
 
             return state

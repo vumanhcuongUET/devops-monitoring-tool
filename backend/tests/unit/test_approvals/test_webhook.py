@@ -494,20 +494,23 @@ class TestTeamsApprovalWebhook:
         request = MagicMock()
         request.client = MagicMock(host="127.0.0.1")
         request.body = AsyncMock()
+        request.json = AsyncMock(return_value={"type": "taskUpdate", "attachments": []})
         return request
 
     @pytest.mark.asyncio
-    async def test_teams_webhook_not_implemented(self, mock_request):
-        """Test Teams webhook returns not implemented."""
+    async def test_teams_webhook_invalid_action_id_returns_400(self, mock_request):
+        """Test Teams webhook rejects payload without actionId."""
         mock_request.body.return_value = b'{"test": "data"}'
 
         with patch("app.approvals.webhook.settings") as mock_settings_class:
             mock_settings_class.ENVIRONMENT = "development"
             mock_settings_class.TEAMS_WEBHOOK_URL = None
 
-            result = await teams_approval_webhook(mock_request, authorization=None)
+            with pytest.raises(HTTPException) as exc_info:
+                await teams_approval_webhook(mock_request, authorization=None)
 
-        assert result["status"] == "not_implemented"
+        assert exc_info.value.status_code == 400
+        assert "Invalid action ID" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     async def test_teams_webhook_production_requires_url(self, mock_request):
@@ -559,16 +562,18 @@ class TestTeamsApprovalWebhook:
 
     @pytest.mark.asyncio
     async def test_teams_webhook_dev_optional_signature(self, mock_request):
-        """Test development mode signature is optional."""
+        """Test development mode allows processing without signature (reaches payload parse)."""
         mock_request.body.return_value = b'{"test": "data"}'
 
         with patch("app.approvals.webhook.settings") as mock_settings_class:
             mock_settings_class.ENVIRONMENT = "development"
             mock_settings_class.TEAMS_WEBHOOK_URL = None
 
-            result = await teams_approval_webhook(mock_request, authorization=None)
+            with pytest.raises(HTTPException) as exc_info:
+                await teams_approval_webhook(mock_request, authorization=None)
 
-        assert result["status"] == "not_implemented"
+        # Unsigned dev request passes signature gate and fails on missing actionId
+        assert exc_info.value.status_code == 400
 
 
 class TestApprovalWebhookHealth:
@@ -597,8 +602,8 @@ class TestApprovalWebhookHealth:
             assert result["webhooks"]["slack"] == "enabled"
 
     @pytest.mark.asyncio
-    async def test_health_check_teams_not_implemented(self):
-        """Test health check shows Teams as not implemented."""
+    async def test_health_check_teams_disabled_by_default(self):
+        """Test health check shows Teams as disabled when no webhook URL configured."""
         result = await approval_webhook_health()
 
-        assert result["webhooks"]["teams"] == "not_implemented"
+        assert result["webhooks"]["teams"] == "disabled"

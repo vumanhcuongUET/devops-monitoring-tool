@@ -15,8 +15,11 @@ class KubernetesClient:
             else:
                 k8s_config.load_incluster_config()
 
-            # Phase 9: Configure connection pool settings
-            configuration = client.Configuration()
+            # Phase 9: Configure connection pool settings.
+            # get_default_copy() preserves the auth loaded above; a bare
+            # Configuration() has no credentials and every call would 401.
+            configuration = client.Configuration.get_default_copy()
+            configuration.connection_pool_size = getattr(settings, "K8S_MAX_CONNECTIONS", 10)
             configuration.connection_pool_size = getattr(settings, "K8S_MAX_CONNECTIONS", 10)
 
             self.core = client.CoreV1Api(configuration)

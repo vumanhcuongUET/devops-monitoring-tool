@@ -558,7 +558,7 @@ async def get_git_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/security/scan")
+@router.post("/security/scan")
 async def scan_config_for_secrets(config: Dict[str, Any]):
     """Scan configuration for potential secrets.
 

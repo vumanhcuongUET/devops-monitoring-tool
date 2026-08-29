@@ -8,6 +8,7 @@ Based on strategic roadmap: docs/chien_luoc_tong_the.md (Giai đoạn 1)
 """
 
 import asyncio
+import json
 import re
 from datetime import datetime, timedelta
 from typing import Any

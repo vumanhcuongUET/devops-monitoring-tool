@@ -16,73 +16,14 @@ from app.actions.remediation_actions import (
 )
 from app.models.alerts import AlertEvent, AlertRule
 from app.models.actions import ExecutionResult
+from app.actions.rate_limiter import AutonomousRateLimiter
+
+# Backwards-compat alias (class now lives in app.actions.rate_limiter)
+RateLimiter = AutonomousRateLimiter
 from app.audit.logger import AuditLogger, AuditEventType
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-class RateLimiter:
-    """Rate limiter for autonomous actions.
-
-    Prevents runaway autonomous execution by limiting actions per time window.
-    """
-
-    def __init__(self, max_per_hour: int = 3):
-        """Initialize rate limiter.
-
-        Args:
-            max_per_hour: Maximum actions per hour per action type
-        """
-        self.max_per_hour = max_per_hour
-        self._execution_times: Dict[str, list[datetime]] = defaultdict(list)
-
-    def can_execute(self, action_type: str) -> tuple[bool, Optional[str]]:
-        """Check if action can be executed based on rate limit.
-
-        Args:
-            action_type: Type of remediation action
-
-        Returns:
-            Tuple of (allowed, reason_if_not_allowed)
-        """
-        now = datetime.now(timezone.utc)
-        hour_ago = now - timedelta(hours=1)
-
-        # Clean old entries
-        self._execution_times[action_type] = [
-            t for t in self._execution_times[action_type] if t > hour_ago
-        ]
-
-        # Check limit
-        if len(self._execution_times[action_type]) >= self.max_per_hour:
-            return False, f"Rate limit exceeded: {len(self._execution_times[action_type])} executions in last hour"
-
-        return True, None
-
-    def record_execution(self, action_type: str):
-        """Record an action execution for rate limiting.
-
-        Args:
-            action_type: Type of remediation action
-        """
-        self._execution_times[action_type].append(datetime.now(timezone.utc))
-
-    def get_remaining_quota(self, action_type: str) -> int:
-        """Get remaining execution quota for an action type.
-
-        Args:
-            action_type: Type of remediation action
-
-        Returns:
-            Number of remaining executions allowed this hour
-        """
-        now = datetime.now(timezone.utc)
-        hour_ago = now - timedelta(hours=1)
-        self._execution_times[action_type] = [
-            t for t in self._execution_times[action_type] if t > hour_ago
-        ]
-        return max(0, self.max_per_hour - len(self._execution_times[action_type]))
 
 
 class SafetyChecker:
@@ -155,7 +96,7 @@ class AutonomousExecutor:
 
     def __init__(self):
         """Initialize autonomous executor."""
-        self.rate_limiter = RateLimiter(max_per_hour=3)
+        self.rate_limiter = AutonomousRateLimiter(max_per_hour=3)
         self.audit_logger = AuditLogger()
         self._last_executions: Dict[str, datetime] = {}
 

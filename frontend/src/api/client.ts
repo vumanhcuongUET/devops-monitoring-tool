@@ -16,7 +16,7 @@ import type { TokenManagerConfig } from '../auth/tokenManager';
 
 // Token manager configuration (5-minute tokens by default)
 const tokenConfig: Partial<TokenManagerConfig> = {
-  tokenLifetime: 5, // 5 minutes
+  tokenLifetime: 15, // matches backend AUTH_TOKEN_TTL_SECONDS (15 min)
   refreshBuffer: 30, // Refresh 30 seconds before expiry
   maxRefreshAttempts: 3,
 };
@@ -109,7 +109,7 @@ api.interceptors.response.use(
           // Store in token manager
           tokenManager.setToken({
             accessToken: access_token,
-            expiresAt: Date.now() + (expires_in || 300) * 1000,
+            expiresAt: Date.now() + (expires_in || 900) * 1000,
             tokenType: 'Bearer',
           });
 
@@ -155,7 +155,7 @@ async function refreshAccessToken(): Promise<string | null> {
     // Update token manager
     tokenManager.setToken({
       accessToken: access_token,
-      expiresAt: Date.now() + (expires_in || 300) * 1000,
+      expiresAt: Date.now() + (expires_in || 900) * 1000,
       tokenType: 'Bearer',
     });
 
@@ -228,7 +228,7 @@ export async function initializeAuth(): Promise<void> {
 
       tokenManager.setToken({
         accessToken: access_token,
-        expiresAt: Date.now() + (expires_in || 300) * 1000,
+        expiresAt: Date.now() + (expires_in || 900) * 1000,
         tokenType: 'Bearer',
       });
     } catch (error) {

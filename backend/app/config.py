@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     AUTH_ENABLED: bool = True
     AUTH_SECRET: str = ""  # HMAC signing key — MUST be set in production
     API_KEYS: list[str] = []  # Valid API keys for X-API-Key header
-    AUTH_TOKEN_TTL_SECONDS: int = 86400  # 24h token lifetime
+    AUTH_TOKEN_TTL_SECONDS: int = 900  # 15 min — frontend tokenManager refreshes at 30s before expiry
     ALLOWED_WEBHOOK_HOSTS: list[str] = []  # If empty, allow all (legacy); set to restrict
     ENVIRONMENT: str = "development"  # Environment name (development/staging/production)
 

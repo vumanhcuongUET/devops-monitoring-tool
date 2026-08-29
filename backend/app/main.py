@@ -4,7 +4,7 @@ import logging.config
 from contextlib import asynccontextmanager
 
 import fastapi.responses
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -308,4 +308,24 @@ async def health():
 async def create_auth_token():
     """Generate a new bearer token. Requires API key in header (enforced by middleware)."""
     from app.auth import create_token
-    return {"access_token": create_token(), "token_type": "bearer"}
+    return {
+        "access_token": create_token(),
+        "token_type": "bearer",
+        "expires_in": settings.AUTH_TOKEN_TTL_SECONDS,
+    }
+
+
+@app.post("/auth/refresh", include_in_schema=True)
+async def refresh_auth_token(request: Request):
+    """Exchange a still-valid bearer token for a fresh one (sliding session)."""
+    from app.auth import _is_valid_token, create_token
+
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:] if auth_header.lower().startswith("bearer ") else ""
+    if settings.AUTH_ENABLED and not _is_valid_token(token):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return {
+        "access_token": create_token(),
+        "token_type": "bearer",
+        "expires_in": settings.AUTH_TOKEN_TTL_SECONDS,
+    }

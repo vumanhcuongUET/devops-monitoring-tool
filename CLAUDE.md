@@ -14,7 +14,7 @@ This project combines:
 
 **Strategic Vision**: Building a centralized agentic platform (config-driven, guardrails, production-ready) following the 4-phase roadmap outlined in `docs/chien_luoc_tong_the.md`.
 
-**Current Status**: Phase 3 (Governance & Advanced Skills) ✅ COMPLETE — Platform production-ready with comprehensive security review approval (Aug 2026).
+**Current Status**: Phase 11 (Code Health & Deletion) in progress — Sprint 4 (validation) as of Aug 2026. Platform production-ready with comprehensive security review approval (Aug 2026). See `docs/phase-11-code-health.md`.
 
 **Stack**: Backend Python (FastAPI) + Frontend Node.js (React + TypeScript + Vite + Tailwind) + AI Assistant (Python + Claude CLI)
 
@@ -28,9 +28,16 @@ devops_ai_agentics_2026/
 │   ├── tools/             # Python query runner
 │   └── projects/          # Per-project configs
 ├── backend/               # FastAPI monitoring backend
+│   ├── alembic/           # DB migrations (PostgreSQL/TimescaleDB)
+│   ├── app/actions/       # Action engine, approvals, remediation, guardrails
+│   ├── app/agents/        # Multi-agent AI architecture (Phase 10)
+│   ├── app/governance/    # RBAC, OPA policy enforcement
+│   ├── app/skills/        # 32-skill analysis library
+│   └── tests/             # unit/ integration/ security/ performance/
 ├── frontend/              # React dashboard UI
 ├── k8s/                   # Kubernetes manifests
 ├── docs/                  # Strategy & documentation
+├── .github/workflows/     # CI (compileall/ruff/bandit blocking on master)
 └── docker-compose.yml
 ```
 
@@ -51,14 +58,21 @@ Disk usage trên các server meinvoice
 ```
 
 ### Backend
-
-### Backend
 ```bash
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 FastAPI serves interactive Swagger docs at `http://localhost:8000/docs`.
+
+### CI gates (blocking, run on master PRs/pushes)
+```bash
+cd backend
+python -m compileall -q app   # syntax gate
+ruff check .                  # lint gate (rules pinned in backend/ruff.toml)
+bandit -r app -q -ll          # security gate (MEDIUM+ severity)
+pytest tests/unit/            # unit suite (~90s)
+```
 
 ### Frontend
 ```bash
@@ -87,14 +101,25 @@ kubectl apply -f k8s/ingress.yaml
 
 ```
 Frontend (React)  ──REST/WebSocket──>  Backend (FastAPI)
-                                           ├── ElasticsearchClient  → Elasticsearch REST API
-                                           ├── ApmClient            → ES on apm-* indices
-                                           ├── SloClient            → ES on apm-* indices (SLO calculations)
-                                           ├── PrometheusClient     → Prometheus HTTP API
-                                           ├── KubernetesClient     → K8s Python client
-                                           ├── LLMClient            → Claude API for Triage Cards
-                                           ├── AlertEngine          → Background asyncio task
-                                           └── SloReporter          → Daily Slack SLO report
+    │                                      ├── ElasticsearchClient  → Elasticsearch REST API
+    │                                      ├── ApmClient            → ES on apm-* indices
+    │                                      ├── SloClient            → ES on apm-* indices (SLO)
+    │                                      ├── PrometheusClient     → Prometheus HTTP API
+    │                                      ├── KubernetesClient     → K8s Python client
+    │                                      ├── LLMClient            → Claude API for Triage Cards
+    │                                      ├── AlertEngine          → Background asyncio task
+    │                                      ├── SloReporter          → Daily Slack SLO report
+    │                                      │
+    │                                      ├── ActionEngine         → create/approve/execute actions
+    │                                      │   └── approvals + Slack/Teams signed webhooks
+    │                                      ├── AI Agents (orchestrator + 5 agents) → Phase 10
+    │                                      ├── Governance           → RBAC + OPA policies
+    │                                      ├── Skills (32)          → FinOps/Security/DevOps/...
+    │                                      │
+    │                                      ├── Redis                → alert state, approvals,
+    │                                      │                          rate limits, L2 cache
+    │                                      └── PostgreSQL + TimescaleDB → metrics history (alembic)
+    └── TanStack Query + WebSocket hook (single refcounted /ws/live connection)
 ```
 
 - **APM data is stored in Elasticsearch** — `ApmClient` queries `apm-*-transaction*` and `apm-*-error*` indices directly via the ES client, not through a separate API.

@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ class ConnectionPool:
         self,
         name: str,
         config: PoolConfig,
-        connection_factory: callable | None = None
+        connection_factory: Callable | None = None
     ):
         """
         Initialize connection pool.
@@ -431,7 +431,7 @@ class ConnectionPoolManager:
         self,
         name: str,
         config: PoolConfig,
-        connection_factory: callable | None = None
+        connection_factory: Callable | None = None
     ) -> ConnectionPool:
         """
         Create a new connection pool.

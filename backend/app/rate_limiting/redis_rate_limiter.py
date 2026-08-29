@@ -13,6 +13,7 @@ Features:
 
 import logging
 import time
+from typing import Callable
 
 try:
     import redis.asyncio as redis
@@ -258,7 +259,7 @@ class RedisRateLimiterMiddleware:
         limiter: RedisRateLimiter,
         default_requests: int = 100,
         default_window: int = 60,
-        key_generator: callable | None = None,
+        key_generator: Callable | None = None,
     ):
         """
         Initialize rate limit middleware.

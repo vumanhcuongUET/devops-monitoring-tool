@@ -336,14 +336,12 @@ class TestDistributedStateUnitTests:
         assert hasattr(settings, "REDIS_DB_ALERTS")
         assert hasattr(settings, "REDIS_DB_APPROVALS")
         assert hasattr(settings, "REDIS_DB_RATE_LIMIT")
-        assert hasattr(settings, "REDIS_DB_CACHE")
 
         # Verify they use different DB numbers
         dbs = [
             settings.REDIS_DB_ALERTS,
             settings.REDIS_DB_APPROVALS,
             settings.REDIS_DB_RATE_LIMIT,
-            settings.REDIS_DB_CACHE,
         ]
         assert len(dbs) == len(set(dbs)), "All Redis DBs should be different"
 

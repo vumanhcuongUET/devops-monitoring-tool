@@ -117,7 +117,6 @@ class TokenOptimizer:
         self._anomaly_detector = None
         self._log_sampler = None
         self._ts_compressor = None
-        self._relevance_scorer = None
 
     async def optimize(
         self,

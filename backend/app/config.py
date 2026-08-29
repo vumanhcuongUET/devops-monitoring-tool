@@ -49,7 +49,6 @@ class Settings(BaseSettings):
 
     # App
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
-    POLL_INTERVAL_SECONDS: int = 10
     REQUEST_TIMEOUT_SECONDS: int = 5
 
     # Auth
@@ -66,18 +65,6 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 4096  # Max tokens for LLM response
 
     # Phase 6: AI Input Optimization
-    OPTIMIZATION_ENABLED: bool = True  # Enable token optimization
-    OPTIMIZATION_DEFAULT_BUDGET: int = 2000  # Default token budget
-    OPTIMIZATION_FALLBACK_ON_ERROR: bool = True  # Fallback to baseline on error
-    OPTIMIZATION_ANOMALY_CPU_HIGH: float = 80.0  # CPU threshold for anomaly
-    OPTIMIZATION_ANOMALY_CPU_LOW: float = 20.0
-    OPTIMIZATION_ANOMALY_MEMORY_HIGH: float = 85.0
-    OPTIMIZATION_ANOMALY_DISK_HIGH: float = 90.0
-    OPTIMIZATION_LOG_SAMPLING_CRITICAL: int = 5  # Critical log quota
-    OPTIMIZATION_LOG_SAMPLING_ERROR: int = 10  # Error log quota
-    OPTIMIZATION_LOG_SAMPLING_WARNING: int = 10  # Warning log quota
-    OPTIMIZATION_LOG_SAMPLING_INFO: int = 5  # Info log quota
-    OPTIMIZATION_MAX_RESULTS_PER_SOURCE: int = 20  # Max results per data source
 
     # SLO Reporting
     SLO_REPORT_ENABLED: bool = True
@@ -85,19 +72,12 @@ class Settings(BaseSettings):
     SLO_REPORT_TIMEZONE: str = "Asia/Ho_Chi_Minh"
 
     # Phase 2: Action Engine & Approval Workflow
-    ACTION_EXECUTION_ENABLED: bool = True
-    ACTION_MAX_EXECUTION_TIME_SECONDS: int = 300
 
     # Approval
-    APPROVAL_REQUIRED_FOR_ACTIONS: list[str] = ["kubectl_delete", "helm_upgrade"]
-    AUTO_APPROVE_LOW_RISK: bool = False
 
     # Context Registry
-    PROJECTS_CONFIG_PATH: str = "projects"
 
     # Audit
-    AUDIT_LOG_ENABLED: bool = True
-    AUDIT_LOG_MAX_ENTRIES: int = 1000
 
     # Slack Approval
     SLACK_APPROVAL_WEBHOOK_URL: str = ""  # Incoming webhook for button actions
@@ -106,7 +86,6 @@ class Settings(BaseSettings):
 
     # Teams Approval
     TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for signature verification
-    TEAMS_SIGNING_SECRET: str = ""  # Teams signing secret for HMAC verification
 
     # Phase 9: Redis Configuration for Distributed State
     REDIS_HOST: str = "localhost"
@@ -115,7 +94,6 @@ class Settings(BaseSettings):
     REDIS_DB_ALERTS: int = 0
     REDIS_DB_APPROVALS: int = 1
     REDIS_DB_RATE_LIMIT: int = 2
-    REDIS_DB_CACHE: int = 3
     REDIS_URL: str | None = None  # Alternative: full Redis URL
     ALERT_STATE_USE_REDIS: bool = False  # Use Redis for alert state (default: file-based)
     APPROVAL_STATE_USE_REDIS: bool = False  # Use Redis for approval state (default: file-based)

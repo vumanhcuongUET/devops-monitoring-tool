@@ -94,7 +94,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "connect-src 'self'",
             "img-src 'self' data: https:",
             "font-src 'self' data:",
-            "frame-ancestors 'none'",
         ]
 
         # Script source with nonce or hashes
@@ -150,8 +149,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Environment comes from server config, never from client-controlled headers.
         environment = getattr(request.state, "environment", settings.ENVIRONMENT)
 
-        # Process the request
-        response: Response = await call_next(request)
+        # Process the request. Cleanup must run even when the downstream app
+        # raises, or the id(request)-keyed nonce map grows without bound.
+        try:
+            response: Response = await call_next(request)
+        finally:
+            if self.use_nonce and self.nonce_manager:
+                self.nonce_manager.cleanup_request(request)
 
         # Build CSP policy with nonce
         csp_policy = self._build_csp_policy(nonce=nonce, environment=environment)

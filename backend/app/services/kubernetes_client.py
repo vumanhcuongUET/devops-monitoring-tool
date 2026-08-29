@@ -20,7 +20,6 @@ class KubernetesClient:
             # Configuration() has no credentials and every call would 401.
             configuration = client.Configuration.get_default_copy()
             configuration.connection_pool_size = getattr(settings, "K8S_MAX_CONNECTIONS", 10)
-            configuration.connection_pool_size = getattr(settings, "K8S_MAX_CONNECTIONS", 10)
 
             self.core = client.CoreV1Api(configuration)
             self.apps = client.AppsV1Api(configuration)

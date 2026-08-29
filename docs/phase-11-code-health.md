@@ -1,7 +1,8 @@
 # Phase 11: Code Health & Deletion Sprint
 
-**Status**: IN PROGRESS (2026-08-29 — Sprint 1 COMPLETE + Sprint 2 ~80%: dead subsystems deleted (~7k lines), ExecutionResult deduped, RateLimiter merged, engine kwargs helper extracted. NEXT: parser.py flag-loop extraction (in progress), then Sprint 3 frontend. 743 unit + 11 integration green.)
+**Status**: COMPLETE (2026-08-29 — all 4 sprints done. Net ~-7k lines dead code; blocking CI gates (compileall/ruff/bandit) now trigger on master; import smoke + E2E approval flow added; 3+4 real prod bugs fixed; security re-review APPROVED. 760 tests green.)
 **Progress log**:
+- 2026-08-29 (Sprint 4 complete, all 5 items): CI blocking on master (never triggered before — triggers were main/develop/staging only): backend/ruff.toml pins E4/E7/E9/F/B minus documented backlog (B008 FastAPI DI, B904, B007, F841, F811), bandit -ll blocking, black/mypy advisory steps dropped (black would reformat 213 files post-deletion). Real bugs fixed: /config/security/* endpoints UnboundLocalError (missing global _security), analyze.py error-stream NameError (closure over except-var after implicit del), single_flight TypeError on positional args (key=key, func=func, *args), l1_cache ContextVar shared mutable default, ai_rbac dup dict keys, F402 loop-var shadow. Import smoke test (subprocess, dead-host env). E2E approval flow (alert → autonomous dry-run → PENDING action → signed Slack webhook → EXECUTED + tampered-signature 401 guard) caught: autonomous_executor called nonexistent AuditLogger kwargs + nonexistent log_action_failed → EVERY autonomous remediation died at audit step (swallowed by broad except); Slack webhook request.form() needs python-multipart (absent) → every real button click 500'd — replaced with stdlib urlencoded parse; execute_action read parsed_params.action on a JSON dict → AttributeError. Chain-monitor test leak fixed (from-import singleton reset was a local alias; enabled=False leaked across files). CLAUDE.md architecture refreshed to real stack. Security re-review APPROVED (nonce cleanup → finally, dup directives/pool lines); HSTS-behind-ingress documented. 760 tests green.
 - 2026-08-29 (Sprint 3 complete, all 6 items): GovernanceDashboard+SkillsPage fixed (named `{ api }` import, TanStack Query, /governance/audit + environments matrix, /skills/ trailing slash); App.tsx lazy-import fixed (8 pages exported named but React.lazy expected default — all crashed); useActions.test.tsx + useApiFallback.tsx renamed (JSX in .ts broke tsc), vite.config uses vitest/config, setupTokenRefresh returns cleanup fn. WebSocket unified: one module-level refcounted socket in useWebSocket.ts (was 2 connections; useAlertNotifications.ts deleted, hook re-exported); hook tests fixed (constructible WS mock, fake-timer leaks) — 21/21. Token lifetime synced 15 min backend+frontend, POST /auth/refresh added (+4 tests). FeedbackCollector wired into approve/reject/execute. optimizer_adapter constructs TokenOptimizer(OptimizationConfig()) (was TypeError → permanent silent fallback). registry/loader anchored to backend/ (was CWD-relative → empty registry). Real bugs found unmasking these: RegistryConfig.get_project missing (create_action 500), tracker stored no snapshot (get/list broken), WS broadcast crashed on datetimes. vite build green. Known debt: ~340 tsc errors (CI `|| true`), test_api_actions 10/16 mock/DI debt, useActions/tokenManager/health/formatters test files import non-existent symbols.
 - 2026-08-29 (Sprint 2): DELETED (git rm, zero callers proven via graft/grep): `app/degradation/` + `api/v1/degradation.py` (2 584), `api/v1/webhooks.py` + `cache/invalidation.py` (1 089), `services/cached_overview_service.py` (515), `quality/` (540), `services/baseline_measurement.py` (440), `services/batch_optimizer.py` + `services/connection_pool.py` (651), classes `CacheWarmer`/`RedisSentinelManager`/`SemanticCacheIndex`/`SecretReference` (430), CSP hash helpers + `use_hashes` machinery + `_build_command` (96+55), `api/v1/__init__.py` duplicate router (29), query_optimizer mock fetch layer — 4 public fetchers + 5 mock executors, kept QueryProfiler (378). Perf tests excised (batch optimizer, pool stats, N+1 benchmarks). DEDUPE: `ExecutionResult` → single `models/actions.py` model (env_executor now imports it; `duration_seconds`, `environment` as str, `model_dump` for history). `AutonomousRateLimiter` moved verbatim to `actions/rate_limiter.py` (+ `timezone` import fix; `RateLimiter` alias kept in autonomous_executor). ENGINE: `_action_kwargs_from_state()` module helper replaces 3 copy-paste Action-reconstruction blocks (~90 lines saved; helper is module-level, called unqualified). Hash-test classes removed from test_security.py; `use_hashes` stripped from fixtures.
 - 2026-08-29 (Sprint 1 complete).
@@ -124,14 +125,23 @@ non-zero metrics after one manual approval cycle.
 
 ---
 
-## Sprint 4 — Validation (Days 11-12)
+## Sprint 4 — Validation (Days 11-12) ✅ COMPLETE (2026-08-29)
 
-- [ ] `compileall` + `ruff` + `bandit` in CI, blocking.
-- [ ] Import-time smoke test: `import app.main` must succeed with and without Redis/Postgres.
-- [ ] E2E: alert fires → autonomous remediation dry-run → action created → Slack approval
-      webhook (signed) → execute.
-- [ ] Update `CLAUDE.md` architecture section (remove deleted modules), regenerate graft index.
-- [ ] Security note re-review of the CSP header change and the K8s client auth fix.
+- [x] `compileall` + `ruff` + `bandit` in CI, blocking (backend/ruff.toml pins the gate;
+      bandit gates MEDIUM+; CI also now triggers on master — it never had before).
+- [x] Import-time smoke test: `import app.main` must succeed with and without Redis/Postgres
+      (tests/unit/test_import_smoke.py — subprocess-based, dead-host service env).
+- [x] E2E: alert fires → autonomous remediation dry-run → action created → Slack approval
+      webhook (signed) → execute (tests/integration/test_approval_flow_e2e.py). Caught 3
+      real prod-path bugs (audit API mismatch killed every autonomous remediation; Slack
+      webhook form() 500'd without python-multipart; execute_action dict access).
+- [x] Update `CLAUDE.md` architecture section (remove deleted modules), regenerate graft index.
+- [x] Security note re-review of the CSP header change and the K8s client auth fix
+      (docs/security-recheck-phase11-2026-08-29.md — APPROVED; fixed CSP nonce-map leak,
+      dup frame-ancestors, dup k8s pool line; HSTS-behind-ingress documented as open item).
+
+**Exit criteria**: CI gates green locally (compileall/ruff/bandit), 760 tests green incl.
+E2E, CLAUDE.md matches reality, security re-review approved.
 
 ---
 

@@ -4,10 +4,6 @@ The agent-metrics.yaml alerts query agent_* series; if the endpoint or
 series disappear, alerts go silently dead again. One test fails before and
 passes after — the smallest guard for the instrumentation.
 """
-import os
-
-os.environ.setdefault("AUTH_ENABLED", "false")
-
 from fastapi.testclient import TestClient
 
 from app.metrics import AGENT_INVOCATIONS, ORCHESTRATOR_UP

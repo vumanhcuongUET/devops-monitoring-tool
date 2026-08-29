@@ -52,7 +52,27 @@
       "Bash(chmod +x *)",
       "Bash(grep -rn \"raise NotImplementedError\\\\|pass #.*$\\\\|TODO:\" /home/vmcuong/Downloads/devops-monitoring-tool/backend/app/ --include=\"*.py\")",
       "Bash(grep *)",
-      "Bash(awk -F'::' '{print $1}')"
+      "Bash(awk -F'::' '{print $1}')",
+      "Bash(mkdir -p backend/tests/unit/test_agents)",
+      "Bash(touch backend/tests/unit/test_agents/__init__.py)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(graft --version)",
+      "Bash(graft init *)",
+      "Bash(graft build *)",
+      "Bash(npx -y claude-mem install)",
+      "Bash(npx claude-mem *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(curl -s -m 5 http://127.0.0.1:37700/health)",
+      "Bash(claude --version)",
+      "Bash(claude plugin *)",
+      "Bash(env -i HOME=/home/vmcuong sh -c 'command -v node')",
+      "mcp__graft__graft_file_api",
+      "Bash(caveman opportunities *)",
+      "Bash(awk 'NR>=280 && NR<=330' backend/app/agents/k8s_agent.py)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "graft"
+  ]
 }

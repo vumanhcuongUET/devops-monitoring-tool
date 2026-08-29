@@ -12,6 +12,11 @@ Usage:
     python tools/run_query.py --project meinvoice --section errors --output pretty
 """
 
+# Lazy annotations: AdapterManager's class-body annotations reference names
+# imported inside a try/except below; Python <= 3.13 evaluates annotations
+# eagerly at import, so a missing adapter must not raise there.
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -61,7 +66,7 @@ try:
     from services.elasticsearch_adapter import ElasticsearchAdapter
     from services.prometheus_adapter import PrometheusAdapter
     from services.apm_adapter import ApmAdapter
-    from services.kubernetes_adapter import KubernetesAdapter
+    from services.k8s_adapter import KubernetesAdapter
     _ADAPTORS_AVAILABLE = True
 except ImportError:
     pass
@@ -102,7 +107,9 @@ class AdapterManager:
     def elasticsearch(self) -> Optional[ElasticsearchAdapter]:
         """Get Elasticsearch adapter (lazy initialization)."""
         if self._elasticsearch is None and _ADAPTORS_AVAILABLE:
-            if is_feature_enabled("backend_integration.services.elasticsearch"):
+            if self.is_backend_enabled() and is_feature_enabled(
+                "backend_integration.services.elasticsearch"
+            ):
                 self._elasticsearch = ElasticsearchAdapter(
                     fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
                 )
@@ -112,7 +119,9 @@ class AdapterManager:
     def prometheus(self) -> Optional[PrometheusAdapter]:
         """Get Prometheus adapter (lazy initialization)."""
         if self._prometheus is None and _ADAPTORS_AVAILABLE:
-            if is_feature_enabled("backend_integration.services.prometheus"):
+            if self.is_backend_enabled() and is_feature_enabled(
+                "backend_integration.services.prometheus"
+            ):
                 self._prometheus = PrometheusAdapter(
                     fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
                 )
@@ -122,7 +131,9 @@ class AdapterManager:
     def apm(self) -> Optional[ApmAdapter]:
         """Get APM adapter (lazy initialization)."""
         if self._apm is None and _ADAPTORS_AVAILABLE:
-            if is_feature_enabled("backend_integration.services.apm"):
+            if self.is_backend_enabled() and is_feature_enabled(
+                "backend_integration.services.apm"
+            ):
                 self._apm = ApmAdapter(
                     fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
                 )
@@ -132,7 +143,9 @@ class AdapterManager:
     def kubernetes(self) -> Optional[KubernetesAdapter]:
         """Get Kubernetes adapter (lazy initialization)."""
         if self._kubernetes is None and _ADAPTORS_AVAILABLE:
-            if is_feature_enabled("backend_integration.services.kubernetes"):
+            if self.is_backend_enabled() and is_feature_enabled(
+                "backend_integration.services.kubernetes"
+            ):
                 self._kubernetes = KubernetesAdapter(
                     fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
                 )

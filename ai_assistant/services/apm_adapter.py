@@ -10,7 +10,7 @@ See docs/adr/001-backend-integration-via-sys-path.md for rationale.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Add backend to Python path
 # NOTE: This is an intentional integration pattern for the monorepo.

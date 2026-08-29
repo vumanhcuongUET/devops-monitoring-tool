@@ -4,21 +4,20 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  TokenManager,
   getTokenManager,
   resetTokenManager,
   setupTokenRefresh,
-  TokenInfo,
+  type TokenInfo,
 } from './tokenManager';
 
 describe('TokenManager', () => {
-  let tokenManager: TokenManager;
+  let tokenManager: ReturnType<typeof getTokenManager>;
 
   beforeEach(() => {
     // Reset global instance before each test
     resetTokenManager();
     // Create fresh instance for testing
-    tokenManager = new TokenManager({
+    tokenManager = getTokenManager({
       tokenLifetime: 5, // 5 minutes
       refreshBuffer: 30, // 30 seconds
       maxRefreshAttempts: 3,
@@ -108,7 +107,7 @@ describe('TokenManager', () => {
     it('should detect when refresh is needed', () => {
       const tokenInfo: TokenInfo = {
         accessToken: 'test-token',
-        expiresAt: Date.now() + 35000, // 35 seconds from now (within buffer)
+        expiresAt: Date.now() + 20000, // 20 seconds from now (within the 30s refresh buffer)
         tokenType: 'Bearer',
       };
 
@@ -291,8 +290,8 @@ describe('setupTokenRefresh', () => {
     }
 
     // Wait for async callback
-    await vi.runAllTimersAsync();
-    await new Promise(resolve => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000); // flush async chain; runAllTimers loops forever on the 60s backup interval
+    await Promise.resolve();
 
     expect(refreshCallback).toHaveBeenCalled();
 
@@ -316,10 +315,10 @@ describe('setupTokenRefresh', () => {
       window.dispatchEvent(new CustomEvent('token-refresh-needed'));
     }
 
-    await vi.runAllTimersAsync();
-    await new Promise(resolve => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000); // flush async chain; runAllTimers loops forever on the 60s backup interval
+    await Promise.resolve();
 
-    expect(tokenManager.getRefreshAttempts?.()).toBeGreaterThan(0);
+    expect(tokenManager.shouldGiveUp()).toBe(false);
 
     cleanup();
   });

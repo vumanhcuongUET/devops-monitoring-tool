@@ -2,7 +2,7 @@
  * Unit tests for Sidebar component.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Sidebar } from './Sidebar'
 import { BrowserRouter } from 'react-router-dom'
@@ -46,7 +46,7 @@ describe('Sidebar', () => {
 
   it('highlights active navigation item', () => {
     // Test with window.location set to root path
-    const { container } = renderWithRouter(<Sidebar />)
+    renderWithRouter(<Sidebar />)
 
     // Check if overview link has active class (it should when at root)
     const overviewLink = screen.getByText('Overview').closest('a')
@@ -56,9 +56,11 @@ describe('Sidebar', () => {
   it('applies hover styles to navigation items', () => {
     const { container } = renderWithRouter(<Sidebar />)
 
-    const navItems = container.querySelectorAll('nav a')
-    navItems.forEach(item => {
-      expect(item).toHaveClass('hover:bg-white/5')
+    const navItems = [...container.querySelectorAll('nav a')]
+    const inactive = navItems.filter((item) => !item.className.includes('var(--color-accent)'))
+    expect(inactive.length).toBeGreaterThan(0)
+    inactive.forEach(item => {
+      expect(item.className).toContain('hover:bg-white/5')
     })
   })
 

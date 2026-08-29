@@ -139,14 +139,18 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
+      # Phase 11 debt cleanup: all three gates blocking (0 eslint errors,
+      # 0 tsc errors, 128/128 tests green as of 2026-08-29)
       - name: Run linter
-        run: cd frontend && npm run lint || true
+        run: cd frontend && npm run lint
+        env:
+          CI: true
 
       - name: Run type check
-        run: cd frontend && npx tsc -b || true
+        run: cd frontend && npx tsc -b
 
       - name: Run tests
-        run: cd frontend && npm run test -- --run || true
+        run: cd frontend && npm run test -- --run
         env:
           CI: true
 

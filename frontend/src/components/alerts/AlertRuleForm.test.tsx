@@ -5,9 +5,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { toast } from 'react-hot-toast'
+import toast from 'react-hot-toast'
 import { AlertRuleForm } from './AlertRuleForm'
 import * as alertsApi from '../../api/alerts'
+import type { AlertRule } from '../../types'
 
 // Mock the API
 vi.mock('../../api/alerts', () => ({
@@ -20,10 +21,31 @@ vi.mock('react-hot-toast', () => ({
   default: {
     success: vi.fn(),
     error: vi.fn()
+  },
+  toast: {
+    success: vi.fn(),
+    error: vi.fn()
   }
 }))
 
 describe('AlertRuleForm', () => {
+const fullAlertRule: AlertRule = {
+  id: 'rule-001',
+  name: 'Test Rule',
+  source: 'prometheus',
+  metric: 'cpu_usage',
+  condition: 'gt',
+  threshold: 80,
+  duration_seconds: 60,
+  severity: 'warning',
+  enabled: true,
+  notify_slack: true,
+  notify_email: false,
+  notify_webhook: false,
+  labels: {}
+}
+
+
   const mockOnClose = vi.fn()
   const mockOnSaved = vi.fn()
 
@@ -150,7 +172,7 @@ describe('AlertRuleForm', () => {
 
   it('submits new rule and shows success toast', async () => {
     const user = userEvent.setup()
-    vi.mocked(alertsApi.createAlertRule).mockResolvedValueOnce({ id: 'new-001' })
+    vi.mocked(alertsApi.createAlertRule).mockResolvedValueOnce({ ...fullAlertRule, id: 'new-001' })
 
     render(<AlertRuleForm rule={null} onClose={mockOnClose} onSaved={mockOnSaved} />)
 
@@ -184,7 +206,7 @@ describe('AlertRuleForm', () => {
       labels: {}
     }
 
-    vi.mocked(alertsApi.updateAlertRule).mockResolvedValueOnce({})
+    vi.mocked(alertsApi.updateAlertRule).mockResolvedValueOnce(fullAlertRule)
 
     render(<AlertRuleForm rule={existingRule} onClose={mockOnClose} onSaved={mockOnSaved} />)
 

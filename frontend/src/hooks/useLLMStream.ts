@@ -11,7 +11,7 @@
  * - Auto-retry on connection failure
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export interface LLMStreamOptions {
   /** Maximum time to wait for first token (ms) */
@@ -86,6 +86,14 @@ export function useLLMStream(): LLMStreamResult {
       error: 'Request aborted by user',
     }));
   }, []);
+
+  // Retry recursion goes through a ref: calling streamQuery directly from its own
+  // initializer is a TDZ ReferenceError the moment a retry actually runs.
+  const streamQueryRef = useRef<(
+    project: string,
+    question: string,
+    options?: LLMStreamOptions,
+  ) => Promise<void>>(null);
 
   const streamQuery = useCallback(async (
     project: string,
@@ -224,7 +232,7 @@ export function useLLMStream(): LLMStreamResult {
         // Exponential backoff
         await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retryCountRef.current) * 1000));
 
-        return streamQuery(project, question, options);
+        return streamQueryRef.current?.(project, question, options);
       }
 
       setState((prev) => ({
@@ -234,6 +242,10 @@ export function useLLMStream(): LLMStreamResult {
       }));
     }
   }, []);
+
+  useEffect(() => {
+    streamQueryRef.current = streamQuery;
+  }, [streamQuery]);
 
   return {
     ...state,
@@ -248,7 +260,7 @@ export function useLLMStream(): LLMStreamResult {
  */
 export function useTriageStream() {
   const [state, setState] = useState<{
-    triageCard: any;
+    triageCard: unknown;
     isStreaming: boolean;
     error: string | null;
   }>({
@@ -345,7 +357,7 @@ export function useTriageStream() {
             } else if (data.type === 'error') {
               throw new Error(data.error || 'Unknown error');
             }
-          } catch (parseError) {
+          } catch {
             console.error('Failed to parse stream chunk:', line);
           }
         }

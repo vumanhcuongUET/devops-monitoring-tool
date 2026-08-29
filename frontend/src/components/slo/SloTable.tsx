@@ -20,7 +20,7 @@ export function SloTable({ results, slowApisMap }: Props) {
           onClick={() => setExpandedService(expandedService === row.service_name ? null : row.service_name)}
           className="text-left hover:text-[var(--color-accent)]"
         >
-          {row.service_name} {slowApisMap[row.service_name]?.length ? `(${slowApisMap[row.service_name].length} slow)` : ''}
+          {row.service_name} {(() => { const n = slowApisMap[row.service_name]?.filter((a) => !a.slo_met).length ?? 0; return n ? `(${n} slow)` : ''; })()}
         </button>
       ),
     },

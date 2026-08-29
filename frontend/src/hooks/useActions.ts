@@ -14,7 +14,6 @@ import {
   type ApproveActionRequest,
   type RejectActionRequest,
   type ExecuteActionRequest,
-  type Action,
   type ActionStatus,
 } from '../api/actions';
 
@@ -151,4 +150,4 @@ export function useActionManagement(actionId: string) {
 }
 
 // Re-export types for convenience
-export type { Action } from '../api/actions';
+export type { Action, ActionStatus } from '../api/actions';

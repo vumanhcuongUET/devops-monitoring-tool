@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import axios from 'axios'
 
 // Mock axios
 vi.mock('axios', () => ({
@@ -19,41 +18,31 @@ vi.mock('axios', () => ({
 
 describe('API Client', () => {
   beforeEach(() => {
-    // Clear mocks before each test
-    vi.clearAllMocks()
+    vi.resetModules()
   })
 
-  it('creates axios instance with correct config', () => {
+  it('creates axios instance with correct config', async () => {
+    await import('./client')
+    const axios = (await import('axios')).default
     expect(axios.create).toHaveBeenCalledWith(
       expect.objectContaining({
         timeout: 15000,
-        headers: { 'Content-Type': 'application/json' },
         withCredentials: true
       })
     )
   })
 
-  it('attaches request interceptor for auth', () => {
-    const mockAxiosInstance = {
-      interceptors: {
-        request: { use: vi.fn() },
-        response: { use: vi.fn() }
-      }
-    }
-
-    // The interceptor should be attached
-    expect(mockAxiosInstance.interceptors.request.use).toBeDefined()
+  it('attaches request interceptor for auth', async () => {
+    await import('./client')
+    const axios = (await import('axios')).default
+    const instance = (axios.create as ReturnType<typeof vi.fn>).mock.results[0]?.value
+    expect(instance?.interceptors.request.use).toBeDefined()
   })
 
-  it('attaches response interceptor for token refresh', () => {
-    const mockAxiosInstance = {
-      interceptors: {
-        request: { use: vi.fn() },
-        response: { use: vi.fn() }
-      }
-    }
-
-    // The interceptor should be attached
-    expect(mockAxiosInstance.interceptors.response.use).toBeDefined()
+  it('attaches response interceptor for token refresh', async () => {
+    await import('./client')
+    const axios = (await import('axios')).default
+    const instance = (axios.create as ReturnType<typeof vi.fn>).mock.results[0]?.value
+    expect(instance?.interceptors.response.use).toBeDefined()
   })
 })

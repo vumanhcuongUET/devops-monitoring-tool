@@ -1,4 +1,4 @@
-export type HealthStatus = 'healthy' | 'degraded' | 'down';
+export type HealthStatus = 'healthy' | 'degraded' | 'down' | 'unknown';
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 
 export interface KubernetesHealth {

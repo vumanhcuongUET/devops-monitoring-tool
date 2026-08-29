@@ -2,7 +2,7 @@
  * ActionList component - List and filter actions
  */
 
-import { useActions, useActionStats } from '../../hooks/useActions';
+import { useActions, useActionStats, type ActionStatus } from '../../hooks/useActions';
 import { ActionCard } from './ActionCard';
 import { useState } from 'react';
 
@@ -12,8 +12,11 @@ interface ActionListProps {
 }
 
 export function ActionList({ project, currentUser = 'user' }: ActionListProps) {
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const { data: actions, isLoading, error } = useActions(project, statusFilter !== 'all' ? statusFilter : undefined);
+  const [statusFilter, setStatusFilter] = useState<ActionStatus | 'all'>('all');
+  const { data: actions, isLoading, error } = useActions(
+    project,
+    statusFilter === 'all' ? undefined : statusFilter,
+  );
   const { data: stats } = useActionStats();
 
   if (isLoading) {

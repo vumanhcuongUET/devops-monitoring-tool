@@ -24,6 +24,7 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture live mock instance
     currentWs = this
     setTimeout(() => {
       this.readyState = 1
@@ -248,8 +249,8 @@ describe('useAlertNotifications', () => {
     const handler1 = vi.fn()
     const handler2 = vi.fn()
 
-    const { result: hook1 } = renderHook(() => useAlertNotifications(handler1))
-    const { result: hook2 } = renderHook(() => useAlertNotifications(handler2))
+    renderHook(() => useAlertNotifications(handler1))
+    renderHook(() => useAlertNotifications(handler2))
 
     await waitFor(() => {
       expect(currentWs).toBeDefined()

@@ -28,7 +28,7 @@ import {
   NoDataEmptyState,
   NoPermissionsEmptyState,
   SearchEmptyState,
-} from "@/components/common";
+} from "../components/common";
 
 interface UseApiFallbackOptions {
   /** Error object from query/mutation */
@@ -103,7 +103,7 @@ function isPermissionError(error: unknown): boolean {
     errorObj.status === 403 ||
     errorObj.code === "PERMISSION_DENIED" ||
     errorObj.code === "UNAUTHORIZED" ||
-    errorObj.message?.toLowerCase().includes("permission")
+    (errorObj.message?.toLowerCase().includes("permission") ?? false)
   );
 }
 

@@ -5,6 +5,7 @@
  */
 
 import { expect, afterEach } from 'vitest'
+import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import * as matchers from '@testing-library/jest-dom/matchers'
 
@@ -32,20 +33,18 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 // Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  constructor() {}
-  disconnect() {}
+globalThis.IntersectionObserver = class {
   observe() {}
+  disconnect() {}
+  unobserve() {}
   takeRecords() {
     return []
   }
-  unobserve() {}
-} as any
+} as unknown as typeof IntersectionObserver
 
 // Mock ResizeObserver
-global.ResizeObserver = class ResizeObserver {
-  constructor() {}
-  disconnect() {}
+globalThis.ResizeObserver = class {
   observe() {}
+  disconnect() {}
   unobserve() {}
-} as any
+} as unknown as typeof ResizeObserver

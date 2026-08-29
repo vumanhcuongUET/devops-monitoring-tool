@@ -2,6 +2,7 @@
  * Unit tests for usePolling hook.
  */
 
+import type { UseQueryResult } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { usePolling } from './usePolling'
@@ -25,7 +26,7 @@ describe('usePolling', () => {
       isLoading: true,
       error: null,
       refetch: vi.fn()
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     renderHook(() =>
       usePolling(['test-key'], mockFetcher, true)
@@ -47,7 +48,7 @@ describe('usePolling', () => {
       isLoading: true,
       error: null,
       refetch: vi.fn()
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     renderHook(() =>
       usePolling(['test-key'], mockFetcher)
@@ -67,7 +68,7 @@ describe('usePolling', () => {
       isLoading: false,
       error: null,
       refetch: vi.fn()
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     renderHook(() =>
       usePolling(['test-key'], mockFetcher, false)
@@ -88,7 +89,7 @@ describe('usePolling', () => {
       isLoading: false,
       error: null,
       refetch: vi.fn()
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     const { result } = renderHook(() =>
       usePolling(['test-key'], mockFetcher)
@@ -109,7 +110,7 @@ describe('usePolling', () => {
       isLoading: true,
       error: null,
       refetch: vi.fn()
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     const { result } = renderHook(() =>
       usePolling(['test-key'], mockFetcher)
@@ -126,7 +127,7 @@ describe('usePolling', () => {
       isLoading: false,
       error: mockError,
       refetch: vi.fn()
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     const { result } = renderHook(() =>
       usePolling(['test-key'], mockFetcher)
@@ -143,7 +144,7 @@ describe('usePolling', () => {
       isLoading: false,
       error: null,
       refetch: mockRefetch
-    })
+    } as unknown as UseQueryResult<unknown, unknown>)
 
     const { result } = renderHook(() =>
       usePolling(['test-key'], mockFetcher)

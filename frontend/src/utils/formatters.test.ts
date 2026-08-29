@@ -47,7 +47,7 @@ describe('formatBytes', () => {
   })
 
   it('handles undefined input', () => {
-    expect(formatBytes(undefined as any)).toBe('NaN B')
+    expect(formatBytes(undefined)).toBe('NaN B')
   })
 })
 
@@ -64,7 +64,7 @@ describe('formatDuration', () => {
   })
 
   it('handles undefined input', () => {
-    expect(formatDuration(undefined as any)).toBe('NaNms')
+    expect(formatDuration(undefined)).toBe('NaNms')
   })
 })
 
@@ -80,7 +80,7 @@ describe('formatPercent', () => {
   })
 
   it('handles undefined input', () => {
-    expect(formatPercent(undefined as any)).toBe('NaN%')
+    expect(formatPercent(undefined)).toBe('NaN%')
   })
 
   it('handles values above 100%', () => {

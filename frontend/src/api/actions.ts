@@ -51,6 +51,8 @@ export interface Action {
   context: Record<string, unknown>;
 }
 
+export type ActionStatus = Action['status'];
+
 export interface CreateActionRequest {
   triage_card_id: string;
   recommendation_id: string;

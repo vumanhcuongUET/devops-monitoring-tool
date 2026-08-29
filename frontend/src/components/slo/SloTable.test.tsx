@@ -2,7 +2,7 @@
  * Unit tests for SloTable component.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SloTable } from './SloTable'
@@ -11,27 +11,33 @@ import type { SloResult, SloApiDetail } from '../../types'
 describe('SloTable', () => {
   const mockResults: SloResult[] = [
     {
+      config_id: 'api-availability',
       service_name: 'api-service',
-      slo_name: 'availability-slo',
       slo_type: 'availability',
       target: 99.9,
       current_value: 99.95,
       window_days: 7,
+      good_requests: 9995,
       bad_requests: 5,
       total_requests: 10000,
       error_budget_remaining_percent: 50.0,
+      error_budget_total: 43200,
+      error_budget_consumed: 21600,
       status: 'healthy'
     },
     {
+      config_id: 'user-latency',
       service_name: 'user-service',
-      slo_name: 'latency-slo',
       slo_type: 'latency',
       target: 95.0,
       current_value: 92.5,
       window_days: 30,
+      good_requests: 850,
       bad_requests: 150,
       total_requests: 1000,
       error_budget_remaining_percent: 15.0,
+      error_budget_total: 432000,
+      error_budget_consumed: 367200,
       status: 'warning'
     }
   ]
@@ -42,7 +48,9 @@ describe('SloTable', () => {
         transaction_name: 'GET /api/products',
         total_requests: 1000,
         error_count: 5,
+        latency_p50: 120,
         latency_p95: 250,
+        latency_p99: 400,
         availability_percent: 99.5,
         slo_met: true,
         target: 500,
@@ -52,7 +60,9 @@ describe('SloTable', () => {
         transaction_name: 'POST /api/orders',
         total_requests: 500,
         error_count: 25,
+        latency_p50: 300,
         latency_p95: 850,
+        latency_p99: 1200,
         availability_percent: 95.0,
         slo_met: false,
         target: 500,
@@ -76,8 +86,8 @@ describe('SloTable', () => {
   it('renders SLO results', () => {
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    expect(screen.getByText('api-service')).toBeInTheDocument()
-    expect(screen.getByText('user-service')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /api-service/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /user-service/ })).toBeInTheDocument()
   })
 
   it('displays SLO type badges correctly', () => {
@@ -91,7 +101,7 @@ describe('SloTable', () => {
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
     // api-service: 99.95% >= 99.9% target → should be green/healthy
-    const apiServiceRow = screen.getAllByText('api-service')
+    const apiServiceRow = screen.getAllByRole('button', { name: /api-service/ })
     expect(apiServiceRow).toHaveLength(1)
   })
 
@@ -106,7 +116,7 @@ describe('SloTable', () => {
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
     // api-service has 2 slow APIs (1 not meeting SLO)
-    expect(screen.getByText(/\(1 slow\)/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /1 slow/ })).toBeInTheDocument()
   })
 
   it('does not show slow API count when service has no slow APIs', () => {
@@ -120,7 +130,7 @@ describe('SloTable', () => {
     const user = userEvent.setup()
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    const serviceButton = screen.getByText('api-service')
+    const serviceButton = screen.getByRole('button', { name: /api-service/ })
     await user.click(serviceButton)
 
     expect(screen.getByText('Slow APIs — api-service')).toBeInTheDocument()
@@ -131,7 +141,7 @@ describe('SloTable', () => {
     const user = userEvent.setup()
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    const serviceButton = screen.getByText('api-service')
+    const serviceButton = screen.getByRole('button', { name: /api-service/ })
 
     // First click expands
     await user.click(serviceButton)
@@ -146,7 +156,7 @@ describe('SloTable', () => {
     const user = userEvent.setup()
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    await user.click(screen.getByText('api-service'))
+    await user.click(screen.getByRole('button', { name: /api-service/ }))
 
     expect(screen.getByText('API')).toBeInTheDocument()
     expect(screen.getByText('Requests')).toBeInTheDocument()
@@ -160,10 +170,11 @@ describe('SloTable', () => {
     const user = userEvent.setup()
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    await user.click(screen.getByText('api-service'))
+    await user.click(screen.getByRole('button', { name: /api-service/ }))
 
-    expect(screen.getByText('GET /api/products')).toBeInTheDocument()
+    // only APIs not meeting SLO are listed
     expect(screen.getByText('POST /api/orders')).toBeInTheDocument()
+    expect(screen.queryByText('GET /api/products')).not.toBeInTheDocument()
   })
 
   it('handles empty results', () => {
@@ -182,16 +193,16 @@ describe('SloTable', () => {
   it('formats bad/total requests correctly', () => {
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    // api-service: 5 / 10000
-    expect(screen.getByText('5')).toBeInTheDocument()
-    expect(screen.getByText('10000')).toBeInTheDocument()
+    // api-service: 5 / 10000 (bad requests out of total)
+    const cell = screen.getAllByText((_, el) => el?.textContent === '5 / 10000')
+    expect(cell.length).toBeGreaterThan(0)
   })
 
   it('only shows slow APIs that are not meeting SLO', async () => {
     const user = userEvent.setup()
     render(<SloTable results={mockResults} slowApisMap={mockSlowApis} />)
 
-    await user.click(screen.getByText('api-service'))
+    await user.click(screen.getByRole('button', { name: /api-service/ }))
 
     // Should only show POST /api/orders (not meeting SLO)
     // GET /api/products should not be in the expanded table

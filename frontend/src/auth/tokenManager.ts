@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: TokenManagerConfig = {
 
 class TokenManager {
   private currentToken: TokenInfo | null = null;
-  private refreshTimer: NodeJS.Timeout | null = null;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshAttempts = 0;
   private config: TokenManagerConfig;
 

@@ -18,6 +18,7 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture live mock instance
     currentWs = this
     // Simulate connection opening
     setTimeout(() => {
@@ -28,7 +29,7 @@ class MockWebSocket {
     }, 0)
   }
 
-  send(data: string) {
+  send() {
     if (this.readyState !== 1) {
       throw new Error('WebSocket is not open')
     }

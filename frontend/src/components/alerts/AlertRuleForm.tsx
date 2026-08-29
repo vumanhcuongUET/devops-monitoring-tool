@@ -51,8 +51,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
     <form onSubmit={handleSubmit} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Name</label>
+          <label htmlFor="rule-name" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Name</label>
           <input
+            id="rule-name"
+          
             value={form.name || ''}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm"
@@ -60,8 +62,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Source</label>
+          <label htmlFor="rule-source" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Source</label>
           <select
+            id="rule-source"
+          
             value={form.source}
             onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm"
@@ -70,8 +74,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Metric</label>
+          <label htmlFor="rule-metric" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Metric</label>
           <input
+            id="rule-metric"
+          
             value={form.metric || ''}
             onChange={(e) => setForm((f) => ({ ...f, metric: e.target.value }))}
             placeholder="e.g. cpu_percent"
@@ -81,8 +87,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
         </div>
         <div className="flex gap-2">
           <div className="flex-1">
-            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Condition</label>
+            <label htmlFor="rule-condition" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Condition</label>
             <select
+              id="rule-condition"
+            
               value={form.condition}
               onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))}
               className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm"
@@ -91,8 +99,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
             </select>
           </div>
           <div className="flex-1">
-            <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Threshold</label>
+            <label htmlFor="rule-threshold" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Threshold</label>
             <input
+              id="rule-threshold"
+            
               type="number"
               value={form.threshold || 0}
               onChange={(e) => setForm((f) => ({ ...f, threshold: Number(e.target.value) }))}
@@ -102,8 +112,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Duration (seconds)</label>
+          <label htmlFor="rule-duration" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Duration (seconds)</label>
           <input
+            id="rule-duration"
+          
             type="number"
             value={form.duration_seconds || 60}
             onChange={(e) => setForm((f) => ({ ...f, duration_seconds: Number(e.target.value) }))}
@@ -111,8 +123,10 @@ export function AlertRuleForm({ rule, onClose, onSaved }: Props) {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-[var(--color-text-secondary)]">Severity</label>
+          <label htmlFor="rule-severity" className="mb-1 block text-xs text-[var(--color-text-secondary)]">Severity</label>
           <select
+            id="rule-severity"
+          
             value={form.severity}
             onChange={(e) => setForm((f) => ({ ...f, severity: e.target.value as AlertRule['severity'] }))}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm"

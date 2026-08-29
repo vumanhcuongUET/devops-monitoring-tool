@@ -21,7 +21,7 @@
  * ```
  */
 
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
 export type EmptyStateType =
   | "api-down"           // API unreachable
@@ -31,7 +31,7 @@ export type EmptyStateType =
   | "search-empty"       // Search returned no results
   | "generic";           // Generic empty state
 
-interface EmptyStateProps {
+export interface EmptyStateProps {
   /** Type of empty state - determines icon and default messaging */
   type?: EmptyStateType;
   /** Main heading text */

@@ -36,7 +36,7 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
       });
       setComment('');
       if (onRefresh) onRefresh();
-    } catch (error) {
+    } catch {
       toast.error('Failed to approve action');
     }
   };
@@ -54,7 +54,7 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
       setRejectReason('');
       setShowRejectForm(false);
       if (onRefresh) onRefresh();
-    } catch (error) {
+    } catch {
       toast.error('Failed to reject action');
     }
   };
@@ -66,7 +66,7 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
         dry_run: false,
       });
       if (onRefresh) onRefresh();
-    } catch (error) {
+    } catch {
       toast.error('Failed to execute action');
     }
   };

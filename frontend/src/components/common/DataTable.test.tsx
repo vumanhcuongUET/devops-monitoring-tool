@@ -2,7 +2,7 @@
  * Unit tests for DataTable component.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { DataTable } from './DataTable'
 
@@ -17,7 +17,7 @@ describe('DataTable', () => {
     { key: 'id', header: 'ID' },
     { key: 'name', header: 'Name' },
     { key: 'status', header: 'Status' }
-  ] as const
+  ]
 
   const mockData: TestRow[] = [
     { id: 1, name: 'Test 1', status: 'active' },
@@ -63,7 +63,7 @@ describe('DataTable', () => {
           <span data-testid={`status-${row.id}`}>{row.status.toUpperCase()}</span>
         )
       }
-    ] as const
+    ]
 
     render(<DataTable columns={columnsWithRender} data={mockData} />)
 
@@ -84,7 +84,7 @@ describe('DataTable', () => {
   it('handles empty data with custom render', () => {
     const columnsWithRender = [
       { key: 'id', header: 'ID', render: () => <span>Custom ID</span> }
-    ] as const
+    ]
 
     render(<DataTable columns={columnsWithRender} data={[]} />)
 

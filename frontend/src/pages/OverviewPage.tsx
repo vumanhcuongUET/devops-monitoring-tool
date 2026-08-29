@@ -1,5 +1,4 @@
 import { useWebSocket } from '../hooks/useWebSocket';
-import { usePolling } from '../hooks/usePolling';
 import { useQuery } from '@tanstack/react-query';
 import { fetchOverview } from '../api/overview';
 import { fetchAlertHistory } from '../api/alerts';
@@ -7,7 +6,6 @@ import { SystemGrid } from '../components/overview/SystemGrid';
 import { RecentAlerts } from '../components/overview/RecentAlerts';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
 import { ApiDownEmptyState } from '../components/common';
-import type { OverviewResponse, AlertEvent } from '../types';
 
 export function OverviewPage() {
   const { data: wsData, connected } = useWebSocket();
@@ -26,20 +24,12 @@ export function OverviewPage() {
     retryDelay: 1000,
   });
 
-  const {
-    data: alertHistory,
-    error: alertHistoryError,
-    isError: alertHistoryIsError,
-  } = useQuery({
+  const { data: alertHistory } = useQuery({
     queryKey: ['alert-history'],
     queryFn: fetchAlertHistory,
     enabled: !!pollingData || !!wsData,
     // Don't fail entire page if alert history fails
     retry: 1,
-    onError: (err) => {
-      // Log error but don't crash the page
-      console.error('Failed to fetch alert history:', err);
-    },
   });
 
   const data = wsData || pollingData;

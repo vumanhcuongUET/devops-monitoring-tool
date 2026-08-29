@@ -107,8 +107,9 @@ class TestApprovalFlowE2E:
         mock_result = MagicMock(success=True, exit_code=0, stdout="[DRY-RUN] would restart deployment api")
         with (
             patch("app.actions.autonomous_executor.RemediationActionFactory") as mock_factory,
-            patch.object(engine.audit_logger, "log_action_created"),
-            patch.object(engine.audit_logger, "log_action_executed"),
+            # The executor builds its own AuditLogger() and calls log_event() —
+            # patch the class or every run writes real entries to data/audit/ (review A2).
+            patch("app.actions.autonomous_executor.AuditLogger"),
         ):
             mock_action = MagicMock()
             mock_action.execute = AsyncMock(return_value=mock_result)

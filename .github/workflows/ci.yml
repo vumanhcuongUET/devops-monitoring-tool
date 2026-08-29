@@ -101,20 +101,16 @@ jobs:
       - name: Run unit tests
         run: |
           cd backend
-          pytest tests/unit/ -v --cov=app --cov-report=xml --cov-report=term
+          pytest tests/unit/ -v --cov=app --cov-report=term
 
       - name: Run integration tests
         run: |
           cd backend
           pytest tests/integration/ -v -m "not security"
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        with:
-          file: ./backend/coverage.xml
-          flags: backend
-          name: backend-coverage
-        continue-on-error: true
+      # Codecov upload removed 2026-08-29: uploads have always failed
+      # (tokenless uploads discontinued) and no dashboard was in use.
+      # Coverage still prints in the pytest step above.
 
 
   # =============================================================================

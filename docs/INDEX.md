@@ -9,6 +9,9 @@
 
 ## 📚 Quick Navigation
 
+### Deployment
+- [Deployment Guide — Kubernetes & Docker Swarm](deployment-guide-k8s-swarm.md) — 🆕 Deploy to K8s (existing `k8s/` manifests) or Docker Swarm (`docker-stack.yml`), secrets, migrations, ops checklist
+
 ### Getting Started
 - [README.md](../README.md) - Project overview and quick start guide
 - [CLAUDE.md](../CLAUDE.md) - Project instructions for Claude Code

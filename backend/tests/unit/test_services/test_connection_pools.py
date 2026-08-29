@@ -16,7 +16,6 @@ class TestElasticsearchConnectionPooling:
     @pytest.mark.asyncio
     async def test_elasticsearch_client_uses_connection_pool(self):
         """Test that Elasticsearch client is initialized with connection pooling."""
-        from app.config import settings
         from app.services.elasticsearch_client import ElasticsearchClient
 
         with patch("app.services.elasticsearch_client.AsyncElasticsearch") as mock_es:

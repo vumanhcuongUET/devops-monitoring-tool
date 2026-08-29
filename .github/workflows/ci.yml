@@ -114,6 +114,32 @@ jobs:
 
 
   # =============================================================================
+  # AI Assistant (review F3: subsystem had no CI and rotted silently)
+  # =============================================================================
+  ai-assistant-test:
+    name: AI Assistant Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd ai_assistant
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run tests
+        run: |
+          cd ai_assistant
+          pytest tests/ -v
+
+  # =============================================================================
   # Frontend Linting & Testing
   # =============================================================================
   frontend-test:

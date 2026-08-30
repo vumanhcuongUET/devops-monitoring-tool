@@ -65,13 +65,14 @@ class KubernetesManifestValidatorSkill(BaseSkill):
         """
         try:
             manifest_path = parameters.get("manifest_path")
+            self._inline_manifest = parameters.get("manifest")
             namespace = parameters.get("namespace")
 
-            if not manifest_path:
+            if not manifest_path and self._inline_manifest is None:
                 return AnalysisResult(
                     success=False,
                     skill_id=self.skill_id,
-                    errors=["Missing required parameter: manifest_path"],
+                    errors=["Missing required parameter: manifest_path or manifest"],
                 )
 
             # Validate manifests
@@ -200,47 +201,105 @@ class KubernetesManifestValidatorSkill(BaseSkill):
         manifest_path: str,
         namespace: str | None,
     ) -> list[dict[str, Any]]:
-        """Validate Kubernetes manifests.
-
-        Args:
-            manifest_path: Path to manifests
-            namespace: Namespace to check
+        """Static manifest lint (Phase 13). Accepts inline YAML via
+        parameters["manifest"] or a server-side file path. Checks the
+        highest-signal gaps only — real policy engines (OPA/Kyverno) live
+        elsewhere in this platform.
 
         Returns:
-            List of issues
+            List of issues with {type, category, severity, location, description}
         """
-        # Mock implementation
-        # Would use kube-score, kube-linter in production
-        issues = [
-            {
-                "type": "missing_resource_limits",
-                "category": "resources",
-                "severity": "high",
-                "resource": "deployment/api",
-                "description": "Deployment has no resource limits defined",
-            },
-            {
-                "type": "missing_probes",
-                "category": "reliability",
-                "severity": "high",
-                "resource": "deployment/web",
-                "description": "Deployment has no liveness or readiness probes",
-            },
-            {
-                "type": "root_container",
-                "category": "security",
-                "severity": "critical",
-                "resource": "deployment/app",
-                "description": "Container runs as root user",
-            },
-            {
-                "type": "no_image_tag",
-                "category": "reliability",
-                "severity": "medium",
-                "resource": "deployment/api",
-                "description": "Image uses 'latest' tag - pin specific version",
-            },
-        ]
+        import io
+        from pathlib import Path
+
+        import yaml
+
+        if self._inline_manifest is not None:
+            raw_docs = list(yaml.safe_load_all(io.StringIO(self._inline_manifest)))
+        else:
+            path = Path(manifest_path)
+            if not path.exists():
+                raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+            raw_docs = list(yaml.safe_load_all(path.read_text()))
+
+        issues: list[dict[str, Any]] = []
+
+        def _walk(spec: dict, where: str) -> None:
+            containers = spec.get("containers") or []
+            if isinstance(containers, dict):
+                containers = [containers]
+            for idx, c in enumerate(containers):
+                cname = c.get("name", f"container-{idx}")
+                base = f"{where}/{cname}"
+                if not c.get("resources", {}).get("requests"):
+                    issues.append({
+                        "type": "no_resource_requests", "category": "resources",
+                        "severity": "medium", "location": base,
+                        "description": "No resource requests — scheduler cannot make placement decisions",
+                    })
+                if not c.get("resources", {}).get("limits"):
+                    issues.append({
+                        "type": "no_resource_limits", "category": "resources",
+                        "severity": "medium", "location": base,
+                        "description": "No resource limits — the container can starve its node",
+                    })
+                if c.get("securityContext", {}).get("allowPrivilegeEscalation", True):
+                    issues.append({
+                        "type": "privilege_escalation", "category": "security",
+                        "severity": "high", "location": base,
+                        "description": "allowPrivilegeEscalation not set to false",
+                    })
+                if c.get("securityContext", {}).get("runAsRoot", True) and \
+                        c.get("securityContext", {}).get("runAsNonRoot") is not True:
+                    issues.append({
+                        "type": "run_as_root", "category": "security",
+                        "severity": "high", "location": base,
+                        "description": "Container may run as root (runAsNonRoot not set)",
+                    })
+                image = c.get("image", "")
+                if ":" not in image or image.endswith(":latest"):
+                    issues.append({
+                        "type": "unpinned_image", "category": "security",
+                        "severity": "high", "location": base,
+                        "description": f"Image {image!r} is unpinned or :latest",
+                    })
+            if spec.get("livenessProbe") is None:
+                issues.append({
+                    "type": "no_liveness_probe", "category": "reliability",
+                    "severity": "medium", "location": where,
+                    "description": "No livenessProbe — a wedged container is never restarted",
+                })
+            if spec.get("readinessProbe") is None:
+                issues.append({
+                    "type": "no_readiness_probe", "category": "reliability",
+                    "severity": "medium", "location": where,
+                    "description": "No readinessProbe — traffic can hit a non-ready pod",
+                })
+
+        for doc_i, doc in enumerate(d for d in raw_docs if isinstance(d, dict)):
+            kind = doc.get("kind", "?")
+            name = doc.get("metadata", {}).get("name", f"doc-{doc_i}")
+            where = f"{kind}/{name}"
+            if kind in ("Pod",) or "template" in (doc.get("spec") or {}):
+                spec = doc.get("spec", {})
+                pod_spec = spec.get("template", {}).get("spec", spec)
+                if kind not in ("Pod",) and doc.get("spec", {}).get("template") is None:
+                    pod_spec = {}
+                if pod_spec:
+                    _walk(pod_spec, where)
+                if kind in ("Deployment", "StatefulSet") and namespace is None:
+                    if doc.get("metadata", {}).get("namespace") is None:
+                        issues.append({
+                            "type": "no_namespace", "category": "reliability",
+                            "severity": "low", "location": where,
+                            "description": "No namespace set — lands in default",
+                        })
+                if (doc.get("spec") or {}).get("hostNetwork") or (doc.get("spec") or {}).get("hostPID"):
+                    issues.append({
+                        "type": "host_namespaces", "category": "security",
+                        "severity": "high", "location": where,
+                        "description": "hostNetwork/hostPID exposes the host to the container",
+                    })
 
         return issues
 

@@ -132,13 +132,24 @@ class GrowthPredictorSkill(BaseSkill):
         days: int,
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Fetch historical metrics."""
-        # Implementation would query Prometheus
+        """Fetch real historical metrics from Prometheus (Phase 13)."""
+        prom = ((context or {}).get("clients") or {}).get("prometheus")
+        if prom is None:
+            raise RuntimeError(
+                "No Prometheus in context['clients']['prometheus'] — skill requires Prometheus"
+            )
+        from app.skills.capacity.prom_history import fetch_metric_series
+
+        series = await fetch_metric_series(
+            prom, ["cpu", "memory", "disk"], days=max(days, 7)
+        )
+        # map to the predictor's key names; request_count has no cluster-wide
+        # expression — stays empty (insufficient data, honestly reported)
         return {
-            "cpu_usage": [],
-            "memory_usage": [],
+            "cpu_usage": series["cpu"],
+            "memory_usage": series["memory"],
             "request_count": [],
-            "storage_usage": [],
+            "storage_usage": series["disk"],
         }
 
     def _generate_predictions(

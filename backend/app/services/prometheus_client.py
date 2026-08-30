@@ -48,6 +48,12 @@ class PrometheusClient:
         """Public instant PromQL query (Phase 13 skills)."""
         return await self._query(expr)
 
+    async def query_range(
+        self, expr: str, start: str, end: str, step: str = "60s"
+    ) -> list[dict[str, Any]]:
+        """Public range PromQL query (Phase 13 skills)."""
+        return await self._query_range(expr, start, end, step)
+
     async def get_node_metrics(self, minutes: int = 60) -> list[dict[str, Any]]:
         end_ts = datetime.now(timezone.utc).timestamp()
         start_ts = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).timestamp()

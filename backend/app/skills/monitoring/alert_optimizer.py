@@ -131,38 +131,19 @@ class AlertOptimizerSkill(BaseSkill):
         Returns:
             List of alert events
         """
-        # Mock implementation - query alerting system
-        # Real implementation would query AlertEngine or Prometheus Alertmanager
-        return [
-            {
-                "alert_id": "high_cpu_1",
-                "name": "HighCPUUsage",
-                "severity": "warning",
-                "fired_at": "2026-08-18T10:00:00Z",
-                "resolved_at": "2026-08-18T10:05:00Z",
-                "duration_minutes": 5,
-                "rule_id": "cpu_high",
-            },
-            {
-                "alert_id": "high_cpu_2",
-                "name": "HighCPUUsage",
-                "severity": "warning",
-                "fired_at": "2026-08-18T11:00:00Z",
-                "resolved_at": "2026-08-18T11:03:00Z",
-                "duration_minutes": 3,
-                "rule_id": "cpu_high",
-            },
-            # Add more mock alerts...
-            {
-                "alert_id": "disk_space_1",
-                "name": "LowDiskSpace",
-                "severity": "critical",
-                "fired_at": "2026-08-18T12:00:00Z",
-                "resolved_at": "2026-08-18T14:00:00Z",
-                "duration_minutes": 120,
-                "rule_id": "disk_low",
-            },
-        ]
+        # Phase 13: real history from the running AlertEngine (file- or
+        # Redis-backed — both reachable through one duck-typed interface).
+        history = ((context or {}).get("clients") or {}).get("alert_history")
+        if history is None:
+            raise RuntimeError(
+                "No alert history in context['clients']['alert_history'] — "
+                "skill requires the running alert engine"
+            )
+        if hasattr(history, "get_entries"):
+            entries = await history.get_entries()
+        else:
+            entries = list(getattr(history, "entries", []))
+        return entries
 
     async def _get_alert_rules(
         self,
@@ -174,22 +155,17 @@ class AlertOptimizerSkill(BaseSkill):
         Returns:
             List of alert rule configurations
         """
-        # Mock implementation - query alert rules
+        from app.alerting.rules import load_rules
+
         return [
             {
-                "rule_id": "cpu_high",
-                "name": "HighCPUUsage",
-                "condition": "cpu_usage_percent > 80",
-                "severity": "warning",
-                "enabled": True,
-            },
-            {
-                "rule_id": "disk_low",
-                "name": "LowDiskSpace",
-                "condition": "disk_space_percent < 20",
-                "severity": "critical",
-                "enabled": True,
-            },
+                "rule_id": r.id,
+                "name": r.name,
+                "condition": f"{r.metric} {r.condition} {r.threshold}",
+                "severity": r.severity,
+                "enabled": r.enabled,
+            }
+            for r in load_rules()
         ]
 
     def _identify_noise_alerts(self, alert_history: list[dict[str, Any]]) -> dict[str, Any]:

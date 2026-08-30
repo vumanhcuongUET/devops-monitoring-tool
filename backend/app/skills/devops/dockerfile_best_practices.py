@@ -64,10 +64,12 @@ class DockerfileBestPracticesSkill(BaseSkill):
         """
         try:
             dockerfile = parameters.get("dockerfile", "Dockerfile")
-            context_path = parameters.get("context", ".")
+            content = parameters.get("dockerfile_content")
 
-            # Analyze Dockerfile
-            issues = await self._analyze_dockerfile(dockerfile, context_path)
+            # Analyze Dockerfile (inline content or server-side path)
+            issues = await self._analyze_dockerfile(
+                dockerfile, parameters.get("context", "."), content=content
+            )
 
             # Calculate score
             score = self._calculate_score(issues)
@@ -202,44 +204,79 @@ class DockerfileBestPracticesSkill(BaseSkill):
         self,
         dockerfile: str,
         context: str,
+        content: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Analyze Dockerfile for best practices.
+        """Static best-practice lint (Phase 13). `content` wins over the
+        server-side path so the API can analyze uploaded Dockerfiles.
 
         Args:
-            dockerfile: Path to Dockerfile
+            dockerfile: Path to Dockerfile (server-side)
             context: Build context
+            content: Inline Dockerfile content (preferred)
 
         Returns:
             List of issues
         """
-        # Mock implementation
-        # Would use hadolint in production
-        issues = [
-            {
-                "type": "no_multi_stage",
-                "severity": "high",
-                "line": 1,
-                "description": "Single-stage build - consider using multi-stage",
-            },
-            {
-                "type": "root_user",
-                "severity": "critical",
-                "line": 10,
-                "description": "Container runs as root user - security risk",
-            },
-            {
-                "type": "large_image",
-                "severity": "medium",
-                "line": None,
-                "description": "Image size estimated > 500MB",
-            },
-            {
-                "type": "no_security_scan",
-                "severity": "high",
-                "line": None,
-                "description": "No vulnerability scanning in Dockerfile",
-            },
+        from pathlib import Path
+
+        if content is None:
+            path = Path(dockerfile)
+            if not path.exists():
+                raise FileNotFoundError(f"Dockerfile not found: {dockerfile}")
+            content = path.read_text()
+
+        lines = content.splitlines()
+        issues: list[dict[str, Any]] = []
+
+        from_lines = [
+            (n, ln) for n, ln in enumerate(lines, 1)
+            if ln.strip().upper().startswith("FROM ")
         ]
+        if not from_lines:
+            issues.append({
+                "type": "no_from", "severity": "critical", "line": 1,
+                "description": "No FROM instruction found",
+            })
+
+        for n, ln in from_lines:
+            parts = ln.split()
+            tag = parts[1] if len(parts) > 1 else ""
+            if ":" not in tag or tag.endswith(":latest"):
+                issues.append({
+                    "type": "unpinned_base", "severity": "high", "line": n,
+                    "description": f"Base image {tag or '<missing>'!r} is unpinned or :latest",
+                })
+
+        if len(from_lines) < 2:
+            issues.append({
+                "type": "no_multi_stage", "severity": "medium", "line": from_lines[0][0] if from_lines else 1,
+                "description": "Single-stage build — multi-stage keeps runtime images small",
+            })
+
+        if not any(ln.strip().upper().startswith("USER ") for ln in lines):
+            issues.append({
+                "type": "root_user", "severity": "critical", "line": len(lines),
+                "description": "No USER directive — container runs as root",
+            })
+
+        for n, ln in enumerate(lines, 1):
+            low = ln.lower()
+            if ("curl" in low or "wget" in low) and ("| sh" in low or "|sh" in low or "| bash" in low):
+                issues.append({
+                    "type": "piped_shell_install", "severity": "critical", "line": n,
+                    "description": "Piping downloads straight into a shell — pin and verify instead",
+                })
+            if ln.strip().upper().startswith("ADD ") and any(s in low for s in ("http://", "https://")):
+                issues.append({
+                    "type": "add_remote_url", "severity": "medium", "line": n,
+                    "description": "ADD with a remote URL — use COPY + explicit download",
+                })
+
+        if not any(ln.strip().upper().startswith("HEALTHCHECK") for ln in lines):
+            issues.append({
+                "type": "no_healthcheck", "severity": "low", "line": None,
+                "description": "No HEALTHCHECK — orchestrators cannot detect a wedged container",
+            })
 
         return issues
 

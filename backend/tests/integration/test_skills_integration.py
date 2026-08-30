@@ -56,6 +56,12 @@ class TestSkillCatalog:
             "devops_deployment_health_check",
             "devops_resource_optimizer",
             "reliability_slo_tracker",
+            "reliability_dependency_health",
+            "monitoring_alert_optimizer",
+            "capacity_planner",
+            "capacity_growth_predictor",
+            "dockerfile_best_practices",
+            "kubernetes_manifest_validator",
         }
 
 

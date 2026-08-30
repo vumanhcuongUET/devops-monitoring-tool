@@ -201,32 +201,47 @@ class DependencyHealthSkill(BaseSkill):
 
         return dependencies
 
+    async def _probe(self, endpoint: str) -> dict[str, Any]:
+        """Real HTTP health probe (Phase 13): GET the endpoint, report
+        reachability + latency. Any error degrades to unhealthy with the
+        reason — never a fabricated healthy state."""
+        import time as time_module
+
+        import httpx
+
+        start = time_module.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+                resp = await client.get(endpoint)
+            latency_ms = int((time_module.monotonic() - start) * 1000)
+            healthy = resp.status_code < 500
+            return {
+                "healthy": healthy,
+                "latency_ms": latency_ms,
+                "detail": f"HTTP {resp.status_code}",
+            }
+        except Exception as e:
+            latency_ms = int((time_module.monotonic() - start) * 1000)
+            return {"healthy": False, "latency_ms": latency_ms, "detail": str(e)[:120]}
+
     async def _check_upstream_health(
         self,
         upstream_services: list[dict[str, Any]],
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Check health of upstream services.
-
-        Returns:
-            Dict with upstream health data
-        """
+        """Probe upstream services' health endpoints."""
         health_results = []
-
         for service in upstream_services:
-            # Mock health check - real implementation would call health endpoint
-            is_healthy = service["service_id"] != "auth-service"  # Mock issue
-            latency_ms = 50 if is_healthy else 5000
-
+            probe = await self._probe(service["endpoint"])
             health_results.append({
                 "service_id": service["service_id"],
                 "name": service["name"],
-                "healthy": is_healthy,
-                "latency_ms": latency_ms,
-                "status": "down" if not is_healthy else "healthy",
+                "healthy": probe["healthy"],
+                "latency_ms": probe["latency_ms"],
+                "status": "healthy" if probe["healthy"] else "down",
+                "detail": probe["detail"],
                 "critical": service.get("critical", False),
             })
-
         return {
             "total_services": len(upstream_services),
             "healthy_count": sum(1 for r in health_results if r["healthy"]),
@@ -239,31 +254,23 @@ class DependencyHealthSkill(BaseSkill):
         downstream_services: list[dict[str, Any]],
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Check health of downstream services.
-
-        Returns:
-            Dict with downstream health data
-        """
+        """Probe downstream services' health endpoints."""
         health_results = []
-
         for service in downstream_services:
-            # Mock health check
-            is_healthy = True
-            latency_ms = 75
-
+            probe = await self._probe(service["endpoint"])
             health_results.append({
                 "service_id": service["service_id"],
                 "name": service["name"],
-                "healthy": is_healthy,
-                "latency_ms": latency_ms,
-                "status": "healthy",
+                "healthy": probe["healthy"],
+                "latency_ms": probe["latency_ms"],
+                "status": "healthy" if probe["healthy"] else "down",
+                "detail": probe["detail"],
                 "critical": service.get("critical", False),
             })
-
         return {
             "total_services": len(downstream_services),
             "healthy_count": sum(1 for r in health_results if r["healthy"]),
-            "unhealthy_critical": [],
+            "unhealthy_critical": [r for r in health_results if not r["healthy"] and r["critical"]],
             "results": health_results,
         }
 
@@ -272,29 +279,20 @@ class DependencyHealthSkill(BaseSkill):
         databases: list[dict[str, Any]],
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Check database connection health.
-
-        Returns:
-            Dict with database health data
-        """
+        """Probe database service health endpoints (HTTP surface only —
+        deep connection-pool metrics need an exporter, not fabricated here)."""
         health_results = []
-
         for db in databases:
-            # Mock health check
-            is_healthy = db["service_id"] != "postgres-primary"  # Mock issue
-            latency_ms = 10 if is_healthy else 100
-            connection_count = 50 if is_healthy else 0
-
+            probe = await self._probe(db["endpoint"])
             health_results.append({
                 "service_id": db["service_id"],
                 "name": db["name"],
-                "healthy": is_healthy,
-                "latency_ms": latency_ms,
-                "connection_count": connection_count,
-                "status": "down" if not is_healthy else "healthy",
+                "healthy": probe["healthy"],
+                "latency_ms": probe["latency_ms"],
+                "detail": probe["detail"],
+                "status": "healthy" if probe["healthy"] else "down",
                 "critical": db.get("critical", False),
             })
-
         return {
             "total_databases": len(databases),
             "healthy_count": sum(1 for r in health_results if r["healthy"]),
@@ -307,31 +305,23 @@ class DependencyHealthSkill(BaseSkill):
         external_apis: list[dict[str, Any]],
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Check external API availability.
-
-        Returns:
-            Dict with external API health data
-        """
+        """Probe external API availability."""
         health_results = []
-
         for api in external_apis:
-            # Mock health check - check if API is reachable
-            is_healthy = True
-            latency_ms = 200
-
+            probe = await self._probe(api["endpoint"])
             health_results.append({
                 "service_id": api["service_id"],
                 "name": api["name"],
-                "healthy": is_healthy,
-                "latency_ms": latency_ms,
-                "status": "healthy",
+                "healthy": probe["healthy"],
+                "latency_ms": probe["latency_ms"],
+                "status": "healthy" if probe["healthy"] else "unreachable",
+                "detail": probe["detail"],
                 "critical": api.get("critical", False),
             })
-
         return {
             "total_apis": len(external_apis),
             "healthy_count": sum(1 for r in health_results if r["healthy"]),
-            "unhealthy_critical": [],
+            "unhealthy_critical": [r for r in health_results if not r["healthy"] and r["critical"]],
             "results": health_results,
         }
 

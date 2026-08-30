@@ -56,6 +56,24 @@ claim; `_is_valid_token()` just never decoded it. Identity was one decode away.
   is absent. Stub count: 41/44. UI flips automatically via the `implemented`
   flag.
 
+### Batch 2 (same day, review follow-up) — six more real skills
+
+- `reliability_dependency_health`: real HTTP health probes against
+  INTERNAL_SERVICES / EXTERNAL_ENDPOINTS (was fabricated healthy/down states).
+- `monitoring_alert_optimizer`: reads the running engine's alert history
+  (file or Redis) and the real alert rules.
+- `capacity_planner` + `capacity_growth_predictor`: real Prometheus range
+  series via a shared fetcher (`app/skills/capacity/prom_history.py`);
+  missing series report "insufficient data" instead of invented numbers.
+- `dockerfile_best_practices`: static line-accurate lint of uploaded
+  Dockerfile content (pinned bases, root user, piped shell installs, ADD
+  remote URLs, HEALTHCHECK, multi-stage).
+- `kubernetes_manifest_validator`: static lint of uploaded manifests
+  (resource requests/limits, probes, privilege escalation, root, unpinned
+  images, host namespaces).
+
+Stub count after batch 2: **35/44**.
+
 ## Sprint 3 — Rate-limiter consolidation
 
 Evaluated all four sites. **Full merge rejected — semantics differ**: API

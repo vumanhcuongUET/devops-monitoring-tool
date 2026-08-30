@@ -189,11 +189,15 @@ See `docs/agents/domain.md`.
 
 ### Skills Library
 
-44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 13) three
-are real**: `devops_deployment_health_check` (K8s client), `devops_resource_optimizer`
-(Prometheus), `reliability_slo_tracker` (SloClient) — they read live data injected via
-`context["clients"]` by the skills API and refuse loudly (errors, not fake data) when
-a client is missing. The remaining **41 are stubs** (`STUB_SKILLS` in
+44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 13) nine
+are real** — they read live data injected via `context["clients"]` by the skills API
+and refuse loudly (errors, not fake data) when a client is missing:
+`devops_deployment_health_check` (K8s), `devops_resource_optimizer` (Prometheus),
+`reliability_slo_tracker` (SloClient), `reliability_dependency_health` (real HTTP
+probes against INTERNAL_SERVICES/EXTERNAL_ENDPOINTS), `monitoring_alert_optimizer`
+(alert history + rules), `capacity_planner` + `capacity_growth_predictor` (Prometheus
+history), `dockerfile_best_practices` + `kubernetes_manifest_validator` (static lint
+of uploaded content). The remaining **35 are stubs** (`STUB_SKILLS` in
 `app/skills/registry.py`): `execute()` refuses to run so no fabricated data is ever
 returned, and the UI marks them "Coming soon". They are a roadmap, not working features.
 

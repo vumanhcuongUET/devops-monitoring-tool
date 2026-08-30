@@ -43,8 +43,6 @@ STUB_SKILLS: frozenset[str] = frozenset({
     # devops — no repo/cluster I/O
     "devops_config_drift_detector",
     "cicd_pipeline_analyzer",
-    "dockerfile_best_practices",
-    "kubernetes_manifest_validator",
     # code — no repo I/O
     "code_dependency_audit",
     "code_sast_scanner",
@@ -53,11 +51,8 @@ STUB_SKILLS: frozenset[str] = frozenset({
     "code_duplication_detector",
     "code_smell_detector",
     # capacity — synthetic usage data
-    "capacity_planner",
     "capacity_bottleneck_detector",
-    "capacity_growth_predictor",
     # monitoring — synthetic metrics
-    "monitoring_alert_optimizer",
     "monitoring_sli_calculator",
     "monitoring_dashboard_auditor",
     # observability — synthetic time series
@@ -68,7 +63,6 @@ STUB_SKILLS: frozenset[str] = frozenset({
     "observability_slo_tracker",
     # reliability — synthetic metrics
     "reliability_sla_compliance",
-    "reliability_dependency_health",
     "reliability_dlq_monitor",
     "reliability_scaling_analyzer",
     # compliance — synthetic audit evidence

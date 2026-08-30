@@ -64,11 +64,13 @@ async def execute_skill(
         # Phase 13: inject service clients so real skills read live data.
         # Server values always win — a client-supplied context.clients must
         # not point skills at arbitrary objects.
+        _engine = getattr(http_request.app.state, "alert_engine", None)
         context["clients"] = {
             "k8s": getattr(http_request.app.state, "k8s_client", None),
             "prometheus": getattr(http_request.app.state, "prometheus_client", None),
             "slo": getattr(http_request.app.state, "slo_client", None),
             "es": getattr(http_request.app.state, "es_client", None),
+            "alert_history": getattr(_engine, "history", None),
         }
 
         if not project:

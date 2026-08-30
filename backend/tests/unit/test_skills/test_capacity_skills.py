@@ -22,10 +22,13 @@ class TestCapacityPlannerSkill:
 
     @pytest.mark.asyncio
     async def test_analyze_success(self):
+        from tests.unit.test_skills.test_real_skills import FakeRangeProm
+
         skill = CapacityPlannerSkill()
         result = await skill.analyze(
             project="test-project",
             parameters={"forecast_days": 30, "threshold_percent": 80},
+            context={"clients": {"prometheus": FakeRangeProm()}},
         )
         assert result.success is True
         assert result.skill_id == "capacity_planner"
@@ -37,11 +40,24 @@ class TestCapacityPlannerSkill:
 
     @pytest.mark.asyncio
     async def test_analyze_default_parameters(self):
+        from tests.unit.test_skills.test_real_skills import FakeRangeProm
+
         skill = CapacityPlannerSkill()
-        result = await skill.analyze(project="test-project", parameters={})
+        result = await skill.analyze(
+            project="test-project", parameters={},
+            context={"clients": {"prometheus": FakeRangeProm()}},
+        )
         assert result.success is True
         assert result.data["forecast_days"] == 30
         assert result.data["threshold_percent"] == 80
+
+    @pytest.mark.asyncio
+    async def test_analyze_without_prometheus_refuses(self):
+        """Phase 13: the planner reads real Prometheus data or refuses."""
+        skill = CapacityPlannerSkill()
+        result = await skill.analyze(project="test-project", parameters={})
+        assert result.success is False
+        assert "Prometheus" in result.errors[0]
 
     def test_validate_parameters_valid(self):
         skill = CapacityPlannerSkill()
@@ -102,10 +118,13 @@ class TestGrowthPredictorSkill:
 
     @pytest.mark.asyncio
     async def test_analyze_success(self):
+        from tests.unit.test_skills.test_real_skills import FakeRangeProm
+
         skill = GrowthPredictorSkill()
         result = await skill.analyze(
             project="test-project",
             parameters={"forecast_months": 6, "lookback_days": 90},
+            context={"clients": {"prometheus": FakeRangeProm()}},
         )
         assert result.success is True
         assert result.skill_id == "capacity_growth_predictor"
@@ -137,22 +156,25 @@ class TestStubFlag:
     """The registry must flag stub skills and refuse to execute them."""
 
     def test_stub_set_contains_registered_skills(self):
-        assert "capacity_planner" in STUB_SKILLS
+        """Phase 13: capacity_planner is real; finops skills remain stubs."""
+        assert "capacity_planner" not in STUB_SKILLS
         assert "finops_cost_analyzer" in STUB_SKILLS
 
-    def test_registry_marks_stubs(self):
+    def test_registry_marks_real_skill_implemented(self):
         registry = SkillRegistry()
         registry.register(CapacityPlannerSkill)
-        assert registry.get_skill("capacity_planner").implemented is False
-        assert registry.get_skill("capacity_planner").get_metadata()["implemented"] is False
+        assert registry.get_skill("capacity_planner").implemented is True
+        assert registry.get_skill("capacity_planner").get_metadata()["implemented"] is True
 
     @pytest.mark.asyncio
     async def test_registry_refuses_stub_execution(self):
+        from app.skills.finops.cost_analyzer import CostAnalyzerSkill
+
         registry = SkillRegistry()
-        registry.register(CapacityPlannerSkill)
+        registry.register(CostAnalyzerSkill)
         with pytest.raises(ValueError, match="not implemented"):
             await registry.execute(
-                skill_id="capacity_planner",
+                skill_id="finops_cost_analyzer",
                 project="test",
                 parameters={},
             )
@@ -162,6 +184,5 @@ class TestStubFlag:
         registry.register(CapacityPlannerSkill)
         all_skills = registry.list_skills()
         assert len(all_skills) == 1
-        assert all_skills[0]["implemented"] is False
-        filtered = registry.list_skills(implemented_only=True)
-        assert filtered == []
+        assert all_skills[0]["implemented"] is True
+        assert registry.list_skills(implemented_only=True) == all_skills

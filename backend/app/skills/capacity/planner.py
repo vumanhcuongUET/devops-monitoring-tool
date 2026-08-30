@@ -181,14 +181,15 @@ class CapacityPlannerSkill(BaseSkill):
         project: str,
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Fetch metrics from Prometheus."""
-        # Implementation would query Prometheus
-        # For now, return mock data
-        return {
-            "cpu": [50, 55, 60, 65, 70, 72, 75],
-            "memory": [60, 62, 65, 68, 70, 72, 74],
-            "disk": [40, 42, 45, 48, 50, 52, 55],
-        }
+        """Fetch real cluster metric history from Prometheus (Phase 13)."""
+        prom = ((context or {}).get("clients") or {}).get("prometheus")
+        if prom is None:
+            raise RuntimeError(
+                "No Prometheus in context['clients']['prometheus'] — skill requires Prometheus"
+            )
+        from app.skills.capacity.prom_history import fetch_metric_series
+
+        return await fetch_metric_series(prom, ["cpu", "memory", "disk"], days=7)
 
     def _analyze_trend(self, data_points: list[float]) -> dict[str, Any]:
         """Analyze trend in data points."""

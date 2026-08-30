@@ -17,6 +17,7 @@ from app.auth import _is_valid_api_key, decode_token
 from app.users import get_role
 from app.config import settings
 from app.middleware.security import SecurityHeadersMiddleware
+from app.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS_TOTAL
 from app.rate_limit import RateLimitMiddleware
 from app.utils.logging import SensitiveDataFilter
 
@@ -75,6 +76,80 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return fastapi.responses.JSONResponse(
             status_code=401, content={"detail": "Unauthorized"}
         )
+
+
+def _route_pattern(scope: dict) -> str:
+    """Route pattern for metrics labels — the template, never the raw path.
+
+    FastAPI's router writes ``scope["route"]`` on a match (APIRoute/APIRouter
+    .matches()), and its ``path_format`` is the templated pattern
+    ("/api/v1/alerts/rules/{rule_id}"). When no route object exists (unmatched
+    404, or a plain Starlette Mount like /metrics) the fallback is the FIRST
+    path segment only: "/nonexistent/1234" becomes "/nonexistent", so a
+    scanner hitting random URLs cannot mint one series per URL.
+    """
+    pattern = getattr(scope.get("route"), "path_format", "")
+    if pattern:
+        return pattern
+    first = (scope.get("path") or "/").lstrip("/").split("/", 1)[0]
+    return f"/{first}"
+
+
+class HTTPMetricsMiddleware:
+    """Time every HTTP request into the platform http_* series (SA finding A).
+
+    Pure ASGI — no BaseHTTPMiddleware per-request task group/stream, and the
+    timer ends when the last response body chunk is sent, not at headers.
+
+    Registered FIRST (see the add_middleware calls below) so it ends up
+    INNERMOST, directly above ExceptionMiddleware and the router: by the time
+    ``self.app()`` returns, routing has already run and written
+    ``scope["route"]``, so the label is always the matched pattern. Two
+    consequences of that placement, accepted deliberately:
+    - a 401/429 short-circuited by AuthMiddleware/RateLimitMiddleware (which
+      sit ABOVE this middleware) never reaches the router and is not counted:
+      these series describe API routes, not the edge;
+    - an unhandled exception is answered by ServerErrorMiddleware, which is
+      outside this wrapper, so no http.response.start arrives — the request
+      is then recorded with the 500 it produced.
+    """
+
+    # Both scrape endpoints: /metrics is the prometheus_client mount,
+    # /api/v1/metrics the legacy authenticated router. Recording a scrape
+    # would feed the very counters/histogram the scrape reads.
+    SCRAPE_PATHS = ("/metrics", "/api/v1/metrics")
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path in self.SCRAPE_PATHS or path.startswith("/metrics/"):
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "")
+        start = time.perf_counter()
+        status = 500  # until http.response.start says otherwise
+
+        async def send_wrapper(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            # Runs on success, on a raised exception, and on cancellation —
+            # a request that never finished is still latency worth seeing.
+            labels = (method, _route_pattern(scope), str(status))
+            HTTP_REQUESTS_TOTAL.labels(*labels).inc()
+            HTTP_REQUEST_DURATION.labels(*labels).observe(time.perf_counter() - start)
 
 
 @asynccontextmanager
@@ -199,7 +274,11 @@ async def lifespan(app: FastAPI):
 
         # Initialize GitOps manager (optional - requires Git repository)
         config_git_ops = None
-        git_repo_path = os.getcwd()
+        # Phase 14: anchored to the repo root via settings, not os.getcwd() —
+        # starting uvicorn from anywhere but the repo root used to point this
+        # at a directory without .git and silently disable git history. Same
+        # graceful degradation as before: no .git -> git ops simply stay off.
+        git_repo_path = settings.GITOPS_REPO_PATH
         if os.path.exists(os.path.join(git_repo_path, ".git")):
             try:
                 config_git_ops = GitOpsManager(repo_path=git_repo_path, auto_push=False)
@@ -315,6 +394,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Phase 14 SA finding A: request metrics. Added FIRST so it is the INNERMOST
+# user middleware (add_middleware prepends; the first call ends up closest to
+# the router) — routing has run when the wrapped app returns, so the label is
+# the route pattern. See HTTPMetricsMiddleware for the placement trade-offs.
+app.add_middleware(HTTPMetricsMiddleware)
 # Phase 8: security headers + CSP (no nonce — frontend is a static build, no inline scripts)
 app.add_middleware(SecurityHeadersMiddleware)
 # Phase 9: Support Redis-based rate limiting

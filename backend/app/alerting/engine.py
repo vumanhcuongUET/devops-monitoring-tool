@@ -176,20 +176,25 @@ class AlertEngine:
 
     def _batch_key(self, rule) -> str | None:
         """Return the shared-fetch key for a rule, or None if the rule must
-        keep its own per-rule fetch (fallback path)."""
+        keep its own per-rule fetch (fallback path).
+
+        `metric` is read defensively — minimal rule stand-ins (tests, older
+        serialized rules) may lack it, and an unbatchable rule must fall
+        back, not crash the cycle."""
+        metric = getattr(rule, "metric", None)
         if rule.source == "elasticsearch":
             # Single fixed-window error-count query covers every ES rule.
-            return rule.metric if rule.metric == self.ES_ERROR_METRIC else None
+            return metric if metric == self.ES_ERROR_METRIC else None
         if rule.source == "apm":
             # Every APM metric is a key into one summary document.
             return "__summary__"
         if rule.source == "prometheus":
             # One query per distinct metric expr, cached for the cycle.
-            return rule.metric if rule.metric in self.PROM_METRICS else None
+            return metric if metric in self.PROM_METRICS else None
         if rule.source == "kubernetes":
-            if rule.metric in self.K8S_POD_METRICS:
+            if metric in self.K8S_POD_METRICS:
                 return "list_pods"
-            if rule.metric == "deployments_unavailable":
+            if metric == "deployments_unavailable":
                 return "list_deployments"
             return None
         return None

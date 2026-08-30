@@ -139,6 +139,11 @@ class Settings(BaseSettings):
     # mounted and pointed at explicitly (startup degrades gracefully if not).
     DATA_DIR: str = str(Path(__file__).resolve().parents[1] / "data")
     CONFIG_STORAGE_PATH: str = str(Path(__file__).resolve().parents[2] / "configs")
+    # GitOps needs the real git checkout (history/remotes). Defaults to the
+    # repo root — same anchor as CONFIG_STORAGE_PATH — because os.getcwd()
+    # followed wherever uvicorn was launched from; in containers, point this
+    # at the mounted clone (startup degrades gracefully if it has no .git).
+    GITOPS_REPO_PATH: str = str(Path(__file__).resolve().parents[2])
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

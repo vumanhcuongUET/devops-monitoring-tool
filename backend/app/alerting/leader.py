@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
+
+from app.metrics import LEADER_LOCK_UP
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,10 @@ ACQUIRE_RETRY_SECONDS = 5
 # dropping leadership — one timeout must not cancel a healthy engine. Three
 # misses (~30s) still expires inside the lock TTL.
 MAX_MISSED_RENEWS = 3
+# SA finding B: an acquire/renew failure streak this long means no engine
+# cycles have run on this pod for 10+ intervals. The warning re-arms, so a
+# persistent outage still logs once per window instead of once ever.
+LEADER_STREAK_WARN_SECONDS = 300.0
 
 # Compare-and-expire: no gap between ownership check and expiry extension,
 # so a lock that expired and was re-acquired by another pod can never be
@@ -67,6 +74,10 @@ class RedisLeaderLock:
         self.renew_interval = renew_interval
         self._identity = str(uuid.uuid4())
         self._client = client
+        # Monotonic time of the first failure after the last success (None =
+        # healthy / no streak). Derived from the last success so the 5-minute
+        # WARNING survives even when the lock never succeeded at all.
+        self._failure_streak_started: float | None = None
 
     def _get_client(self):
         if self._client is None:
@@ -75,15 +86,42 @@ class RedisLeaderLock:
             self._client = get_redis()
         return self._client
 
+    def _record_lock_state(self, ok: bool) -> None:
+        """Drive the leader_lock_up gauge and warn on long failure streaks.
+
+        Called from every acquire/renew outcome. Monotonic (not wall) time, so
+        an NTP jump can neither fake nor hide an outage.
+        """
+        now = time.monotonic()
+        if ok:
+            self._failure_streak_started = None
+            LEADER_LOCK_UP.labels(self.key).set(1)
+            return
+
+        LEADER_LOCK_UP.labels(self.key).set(0)
+        if self._failure_streak_started is None:
+            self._failure_streak_started = now
+        elif now - self._failure_streak_started >= LEADER_STREAK_WARN_SECONDS:
+            logger.warning(
+                "Leader lock %s acquire/renew failing for %ds (>= %ds threshold) — "
+                "background tasks are not running on this pod",
+                self.key,
+                int(now - self._failure_streak_started),
+                int(LEADER_STREAK_WARN_SECONDS),
+            )
+            self._failure_streak_started = now  # re-arm: one warning per window
+
     async def try_acquire(self) -> bool:
         """One acquisition attempt. False also covers Redis errors (fail-safe)."""
         try:
-            return bool(
+            ok = bool(
                 await self._get_client().set(self.key, self._identity, nx=True, px=self.ttl * 1000)
             )
         except Exception as e:
             logger.warning("Leader lock acquire failed (%s): %s", self.key, e)
-            return False
+            ok = False
+        self._record_lock_state(ok)
+        return ok
 
     async def renew(self) -> bool:
         """Extend the lock if and only if we still own it.
@@ -92,11 +130,19 @@ class RedisLeaderLock:
         so the caller can apply its own grace policy instead of treating a
         transient timeout as leadership loss.
         """
-        return bool(
-            await self._get_client().eval(
-                _RENEW_SCRIPT, 1, self.key, self._identity, self.ttl * 1000
+        try:
+            ok = bool(
+                await self._get_client().eval(
+                    _RENEW_SCRIPT, 1, self.key, self._identity, self.ttl * 1000
+                )
             )
-        )
+        except Exception:
+            # Still re-raised (caller applies the grace policy), but a Redis
+            # error IS a lock-health failure — the gauge must show it.
+            self._record_lock_state(False)
+            raise
+        self._record_lock_state(ok)
+        return ok
 
     async def is_mine(self) -> bool:
         """Fencing check (best effort): does this pod still own the lock?
@@ -117,6 +163,12 @@ class RedisLeaderLock:
             await self._get_client().eval(_RELEASE_SCRIPT, 1, self.key, self._identity)
         except Exception as e:
             logger.warning("Leader lock release failed (%s): %s", self.key, e)
+        finally:
+            # Released on purpose (leadership lost or handed over): this pod
+            # is not the leader, so the gauge reads 0 — but it is not a
+            # failure, so it neither starts nor extends a warning streak.
+            LEADER_LOCK_UP.labels(self.key).set(0)
+            self._failure_streak_started = None
 
 
 async def run_as_leader(

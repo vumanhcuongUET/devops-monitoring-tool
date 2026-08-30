@@ -221,6 +221,24 @@ class ActionEngine:
         )
         return action
 
+    def _check_decision_permission(self, state: dict, user: str) -> None:
+        """Phase 12 S6: the decision-maker must hold `approve` for the env.
+
+        Shared by approve and reject: both are approval-flow decisions, so
+        both require the `approve` permission for the action's environment.
+        """
+        env = (state.get("context") or {}).get("environment", "development")
+        result = self.permission_checker.check(
+            action="approve",
+            environment=env,
+            project=state.get("project"),
+            user=user,
+        )
+        if not result.allowed:
+            raise PermissionError(
+                f"User '{user}' lacks 'approve' permission in {env}: {result.reason}"
+            )
+
     def _check_approval_integrity(self, state: dict, approver: str) -> None:
         """Phase 12 S6: block self-approval and permission-less approvers.
 
@@ -229,7 +247,6 @@ class ActionEngine:
         - The approver must hold the `approve` permission for the action's
           environment (RBAC: dev/staging only).
         """
-        env = (state.get("context") or {}).get("environment", "development")
         created_by = state.get("created_by")
 
         if (
@@ -242,16 +259,7 @@ class ActionEngine:
                 f"Self-approval blocked: {approver} created action and ALLOW_SELF_APPROVAL is off"
             )
 
-        result = self.permission_checker.check(
-            action="approve",
-            environment=env,
-            project=state.get("project"),
-            user=approver,
-        )
-        if not result.allowed:
-            raise PermissionError(
-                f"Approver '{approver}' lacks 'approve' permission in {env}: {result.reason}"
-            )
+        self._check_decision_permission(state, approver)
 
     async def approve_action(self, action_id: str, request: ApproveActionRequest) -> Action:
         """Approve an action for execution."""
@@ -313,6 +321,11 @@ class ActionEngine:
 
         if state.get("status") != ActionStatus.PENDING:
             raise ValueError(f"Action {action_id} is not pending (current: {state.get('status')})")
+
+        # S6 (security recheck F1): reject is an approval-flow decision too —
+        # it requires the `approve` permission. Self-reject stays allowed:
+        # a creator cancelling their own pending request gains no privilege.
+        self._check_decision_permission(state, request.rejected_by)
 
         # Update status
         await self.approval_tracker.set_status(

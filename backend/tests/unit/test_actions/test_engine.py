@@ -358,6 +358,53 @@ class TestActionEngine:
         mock_approval_tracker.set_status.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_reject_without_permission_blocked(self, action_engine, mock_approval_tracker):
+        """S6 (security recheck F1): reject requires the `approve` permission too."""
+        mock_approval_tracker.get = AsyncMock(return_value={
+            "id": "act-123",
+            "status": ActionStatus.PENDING,
+            "context": {"environment": "production"},
+        })
+        action_engine.permission_checker.check = MagicMock(
+            return_value=MagicMock(allowed=False, reason="read-only env")
+        )
+
+        request = RejectActionRequest(rejected_by="someone.else", reason="not needed")
+
+        with pytest.raises(PermissionError, match="lacks 'approve' permission"):
+            await action_engine.reject_action("act-123", request)
+
+        mock_approval_tracker.set_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reject_by_creator_allowed(self, action_engine, mock_approval_tracker):
+        """S6 (security recheck F1): self-reject stays allowed — a creator
+        cancelling their own pending request gains no privilege."""
+        mock_approval_tracker.get = AsyncMock(return_value={
+            "id": "act-123",
+            "status": ActionStatus.PENDING,
+            "created_by": "john.doe",
+            "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="get",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Check pod status",
+            "description": "Get pod status",
+            "context": {"environment": "development"},
+        })
+        action_engine.permission_checker.check = MagicMock(return_value=MagicMock(allowed=True))
+
+        request = RejectActionRequest(rejected_by="john.doe", reason="cancelled by creator")
+
+        await action_engine.reject_action("act-123", request)
+
+        mock_approval_tracker.set_status.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_approve_in_development_allowed(self, action_engine, mock_approval_tracker):
         """S6: permitted approver in development passes the integrity check."""
         mock_approval_tracker.get = AsyncMock(return_value={

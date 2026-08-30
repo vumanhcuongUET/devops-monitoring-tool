@@ -349,10 +349,19 @@ class EnvironmentAwareCommandExecutor:
         Returns:
             True if command is safe to execute
         """
-        # S5 binary whitelist (argv[0] floor)
-        first = shlex.split(command)[0] 
-        if first not in ALLOWED_BINARIES:
-            logger.warning(f"Blocked non-whitelisted binary: {first!r}")
+        # S5 binary whitelist (argv[0] floor). Malformed input must fail the
+        # validation (False), not raise: empty/whitespace command → empty argv;
+        # unbalanced quotes → shlex ValueError.
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            logger.warning("Blocked command with unbalanced quoting")
+            return False
+        if not argv:
+            logger.warning("Blocked empty command")
+            return False
+        if argv[0] not in ALLOWED_BINARIES:
+            logger.warning(f"Blocked non-whitelisted binary: {argv[0]!r}")
             return False
 
         # Basic validation rules

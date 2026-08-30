@@ -54,3 +54,23 @@ async def test_kubectl_uses_stateless_context_argv():
     assert "--context" in argv and "dev-cluster" in argv
     assert "--kubeconfig" in argv and "/tmp/kube-dev.yaml" in argv
     assert "config" not in argv
+
+
+def test_validate_rejects_malformed_command():
+    """Security recheck F2: malformed input fails validation, never raises."""
+    ex = _make_executor()
+    # Empty / whitespace-only command → empty argv
+    assert ex._validate_command("") is False
+    assert ex._validate_command("   ") is False
+    # Unbalanced quotes → shlex ValueError
+    assert ex._validate_command('kubectl get pods "') is False
+
+
+@pytest.mark.asyncio
+async def test_execute_malformed_command_returns_value_error():
+    """Security recheck F2: malformed command → ValueError, not IndexError/500."""
+    ex = _make_executor()
+    with pytest.raises(ValueError, match="Command validation failed"):
+        await ex.execute("")
+    with pytest.raises(ValueError, match="Command validation failed"):
+        await ex.execute('kubectl logs "')

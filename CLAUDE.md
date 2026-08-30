@@ -189,11 +189,13 @@ See `docs/agents/domain.md`.
 
 ### Skills Library
 
-44 skills are registered across 10 categories. **As of 2026-08-29 all of them are
-stubs** (`STUB_SKILLS` in `app/skills/registry.py`): `execute()` refuses to run so no
-fabricated data is ever returned, and the UI marks them "Coming soon". They are a
-roadmap, not working features. First candidates to implement with real data sources:
-deployment health, resource optimizer, SLO tracker.
+44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 13) three
+are real**: `devops_deployment_health_check` (K8s client), `devops_resource_optimizer`
+(Prometheus), `reliability_slo_tracker` (SloClient) — they read live data injected via
+`context["clients"]` by the skills API and refuse loudly (errors, not fake data) when
+a client is missing. The remaining **41 are stubs** (`STUB_SKILLS` in
+`app/skills/registry.py`): `execute()` refuses to run so no fabricated data is ever
+returned, and the UI marks them "Coming soon". They are a roadmap, not working features.
 
 - **FinOps** (3): Cost analysis, idle resource detection, rightsizing
 - **Security** (6): Vulnerability scanning, secret detection, CIS benchmarks, misconfiguration detection, runtime monitoring, dependency confusion
@@ -220,12 +222,18 @@ See `docs/skills-library-catalog.md` for the skill catalog (status noted there).
 - `ai-prod-viewer` - Read-only in production
 - `ai-prod-operator` - Scale-only in production
 
-**Identity model (Phase 12)**: single-operator internal tool — auth is a shared
-API key; `executed_by`/`approved_by`/`created_by` are attribution labels, not
-authorization. RBAC is environment-keyed. Per-user identity is a Phase 13
-candidate. Approval integrity: self-approval blocked (`ALLOW_SELF_APPROVAL`
-escape hatch, default off) and approvers need the `approve` permission for the
-action's environment.
+**Identity model (Phase 13)**: local users in `data/users.json` (stdlib scrypt
+hashing; bootstrap with `python -m app.users create <name> --role admin`).
+`POST /auth/login` mints a bearer token whose `sub` is the username; the auth
+middleware propagates it as `request.state.user` and rejects tokens of deleted
+users. API-key access and automation tokens (`/auth/token`) mint `sub="service"`
+and keep environment-keyed RBAC. Logged-in users get a role (`admin`/`operator`/
+`viewer`) that **narrows** the environment matrix, never widens; labels without a
+local role (Slack attributions) behave exactly as before. `executed_by`/
+`approved_by`/`rejected_by` are overridden by the authenticated identity when one
+exists. Approval integrity: self-approval blocked (`ALLOW_SELF_APPROVAL` escape
+hatch, default off) and approvers need the `approve` permission for the action's
+environment. See `docs/phase-13-identity-skills-cleanup.md`.
 
 ### OPA Integration
 

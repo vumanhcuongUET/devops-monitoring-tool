@@ -13,7 +13,6 @@ Features:
 
 import logging
 import time
-from typing import Callable
 
 try:
     import redis.asyncio as redis
@@ -237,97 +236,6 @@ class RedisRateLimiter:
             logger.error(f"RedisRateLimiter: Error closing connection: {e}")
 
 
-class RedisRateLimiterMiddleware:
-    """
-    FastAPI middleware for Redis-based rate limiting.
-
-    Example:
-        limiter = RedisRateLimiter()
-        middleware = RedisRateLimiterMiddleware(limiter)
-
-        app.add_middleware(
-            RedisRateLimiterMiddleware,
-            limiter=limiter,
-            default_requests=100,
-            default_window=60,
-        )
-    """
-
-    def __init__(
-        self,
-        app,
-        limiter: RedisRateLimiter,
-        default_requests: int = 100,
-        default_window: int = 60,
-        key_generator: Callable | None = None,
-    ):
-        """
-        Initialize rate limit middleware.
-
-        Args:
-            app: FastAPI application
-            limiter: RedisRateLimiter instance
-            default_requests: Default max requests per window
-            default_window: Default window size in seconds
-            key_generator: Optional function to generate rate limit keys
-                          Defaults to using IP address
-        """
-        self.app = app
-        self.limiter = limiter
-        self.default_requests = default_requests
-        self.default_window = default_window
-        self.key_generator = key_generator or self._default_key_generator
-
-    @staticmethod
-    def _default_key_generator(request) -> str:
-        """Generate rate limit key from request (by IP address)."""
-        # Get IP from request, handling proxies
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            ip = forwarded.split(",")[0].strip()
-        else:
-            ip = request.client.host if request.client else "unknown"
-        return f"ip:{ip}"
-
-    async def dispatch(self, request, call_next):
-        """Process request with rate limiting."""
-        # Skip rate limiting for health endpoints
-        if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
-            return await call_next(request)
-
-        # Generate rate limit key
-        key = self.key_generator(request)
-
-        # Check rate limit
-        allowed, info = await self.limiter.check_rate_limit(
-            key=key,
-            max_requests=self.default_requests,
-            window_seconds=self.default_window,
-        )
-
-        if not allowed:
-            from fastapi import HTTPResponse
-            return HTTPResponse(
-                status_code=429,
-                content={
-                    "detail": "Rate limit exceeded",
-                    "retry_after": info["retry_after"],
-                },
-                headers={
-                    "Retry-After": str(info["retry_after"]),
-                    "X-RateLimit-Limit": str(info["limit"]),
-                    "X-RateLimit-Remaining": str(info["remaining"]),
-                    "X-RateLimit-Reset": str(info["reset"]),
-                },
-            )
-
-        # Add rate limit headers to successful response
-        response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(info["limit"])
-        response.headers["X-RateLimit-Remaining"] = str(info["remaining"])
-        response.headers["X-RateLimit-Reset"] = str(info["reset"])
-
-        return response
 
 
 def create_redis_rate_limiter() -> RedisRateLimiter:

@@ -69,7 +69,8 @@
       "Bash(env -i HOME=/home/vmcuong sh -c 'command -v node')",
       "mcp__graft__graft_file_api",
       "Bash(caveman opportunities *)",
-      "Bash(awk 'NR>=280 && NR<=330' backend/app/agents/k8s_agent.py)"
+      "Bash(awk 'NR>=280 && NR<=330' backend/app/agents/k8s_agent.py)",
+      "mcp__graft__graft_find_code"
     ]
   },
   "enabledMcpjsonServers": [

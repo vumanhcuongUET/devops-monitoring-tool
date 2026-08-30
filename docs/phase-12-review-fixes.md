@@ -100,10 +100,10 @@ Each item: explicit decision, then either a wiring test or a deletion receipt.
 
 | Item | Source | Note |
 |---|---|---|
-| Per-user identity (login, per-user tokens, identity-aware RBAC) | S1/S2 decision | Blocking for any multi-user rollout |
+| ~~Per-user identity~~ — **DONE 2026-08-30 (Phase 13)** | S1/S2 decision | Local users (`data/users.json`, scrypt), `/auth/login`, token `sub` propagation, role matrix narrowing env RBAC, attribution override. See docs/phase-13-identity-skills-cleanup.md. |
 | ~~Alert-worker split + Redis pub/sub~~ — **DONE 2026-08-30, no worker split needed** | H1 (deployment-guide-k8s-swarm.md, tagged "debt Phase 12") | Solved in-place: `ALERT_ENGINE_LEADER_LOCK` (Redis leader election for AlertEngine/SloReporter) + `WS_FANOUT_USE_REDIS` (pub/sub fanout for `/ws/live`). Flag-gated, default off; see docs/deployment-guide-k8s-swarm.md. Remaining operator decision: RWX volume for `data/` if rule edits must run on every replica. |
-| 44 stub skills → real data sources | CLAUDE.md roadmap | First candidates unchanged: deployment health, resource optimizer, SLO tracker |
-| Rate-limiter consolidation (3 modules) | ponytail-audit | `rate_limit.py` vs `actions/rate_limiter.py` — merge only if semantics overlap proven |
+| ~~44 stub skills → real data sources~~ — **first 3 DONE 2026-08-30 (Phase 13)** | CLAUDE.md roadmap | deployment health (K8s), resource optimizer (Prometheus), SLO tracker (SloClient) real; 41 stubs remain. |
+| ~~Rate-limiter consolidation~~ — **evaluated 2026-08-30 (Phase 13)** | ponytail-audit | Full merge rejected (semantics differ: API limiting vs action quotas vs check throttle); dead `RedisRateLimiterMiddleware` (91 lines) deleted. |
 
 ---
 

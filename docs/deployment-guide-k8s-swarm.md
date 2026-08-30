@@ -8,6 +8,16 @@ Hướng dẫn triển khai **DevOps AI Agentics 2026** (backend FastAPI + front
 > - `WS_FANOUT_USE_REDIS=true` — fanout broadcast `/ws/live` qua Redis pub/sub đến mọi pod (không còn mất realtime event).
 > Khi scale: bật cả 2 flag (`k8s/backend/configmap.yaml` hoặc biến env của `docker-stack.yml`). Lưu ý: volume `data/` là **ReadWriteOnce** — nếu cần endpoint sửa alert rule/SLO config hoạt động trên mọi pod, đổi sang RWX; nếu không, chỉ leader ghi state nên an toàn, còn rule edit nên thực hiện khi 1 replica hoặc dùng RWX. Frontend thì thoải mái scale.
 
+## Tài khoản người dùng (Phase 13)
+
+Frontend đăng nhập bằng username/password (`POST /auth/login`), token có `sub=<username>` và RBAC role (`admin`/`operator`/`viewer`). Người dùng lưu ở `data/users.json` (scrypt). Tạo user đầu tiên:
+
+```bash
+cd backend && python -m app.users create <name> --role admin
+```
+
+API key (`X-API-Key`) vẫn dùng cho automation — token mint qua `/auth/token` mang `sub="service"`, RBAC environment-keyed như cũ. `VITE_API_KEY` đã bỏ khỏi frontend bundle.
+
 ## Kiến trúc & phụ thuộc
 
 | Thành phần | Image | Ghi chú |
@@ -69,7 +79,7 @@ kubectl create secret generic monitor-backend-secrets -n devops-monitor \
   --from-literal=ALERT_EMAIL_FROM='' --from-literal=ALERT_WEBHOOK_URL=''
 ```
 
-`API_KEYS` là danh sách phân tách bằng dấu phẩy — frontend/auth client cần 1 key này. Nếu ứng client thật, điền thêm `ANTHROPIC_API_KEY` (Triage Cards) và `TEAMS_WEBHOOK_URL`, `SLACK_SIGNING_SECRET` nếu dùng approvals qua chat.
+`API_KEYS` là danh sách phân tách bằng dấu phẩy — frontend/auth client cần 1 key này. Nếu ứng client thật, điền thêm `ANTHROPIC_API_KEY` (Triage Cards) và `TEAMS_WEBHOOK_SECRET`, `SLACK_SIGNING_SECRET` nếu dùng approvals qua chat (Phase 13: HMAC key của Teams là `TEAMS_WEBHOOK_SECRET`, không phải webhook URL).
 
 ### A.4. Deploy theo thứ tự
 

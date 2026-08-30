@@ -49,8 +49,14 @@ class TestSkillCatalog:
         assert all(m["category"] == SkillCategory.FINOPS for m in finops)
 
     def test_implemented_only_filter_drops_stubs(self, registry):
-        """The honest catalog view: implemented_only returns nothing while all are stubs."""
-        assert registry.list_skills(implemented_only=True) == []
+        """The honest catalog view: implemented_only returns exactly the real
+        skills (Phase 13: deployment health, resource optimizer, SLO tracker)."""
+        real = registry.list_skills(implemented_only=True)
+        assert {m["skill_id"] for m in real} == {
+            "devops_deployment_health_check",
+            "devops_resource_optimizer",
+            "reliability_slo_tracker",
+        }
 
 
 class TestStubRefusal:

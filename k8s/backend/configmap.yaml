@@ -14,7 +14,6 @@ data:
   K8S_NAMESPACES: '["default","production"]'
   ALERT_CHECK_INTERVAL_SECONDS: "30"
   CORS_ORIGINS: '["http://localhost"]'
-  POLL_INTERVAL_SECONDS: "10"
   REQUEST_TIMEOUT_SECONDS: "5"
   # Phase 12 H1: multi-replica safety (require Redis in monitor-backend-secrets).
   # Keep "false" while replicas=1; set both to "true" before scaling >= 2.

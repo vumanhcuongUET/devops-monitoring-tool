@@ -40,7 +40,7 @@ class SloReporter:
 
     def _should_report(self) -> bool:
         from zoneinfo import ZoneInfo
-        tz = ZoneInfo(getattr(settings, "SLO_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh"))
+        tz = ZoneInfo(settings.SLO_REPORT_TIMEZONE)
         now = datetime.now(tz)
         report_hour = getattr(settings, "SLO_REPORT_HOUR", 9)
 
@@ -89,7 +89,7 @@ class SloReporter:
     def _format_slack_message(self, results: list, slow_apis: dict) -> dict:
         from datetime import datetime as dt
         from zoneinfo import ZoneInfo
-        tz = ZoneInfo(getattr(settings, "SLO_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh"))
+        tz = ZoneInfo(settings.SLO_REPORT_TIMEZONE)
         date_str = dt.now(tz).strftime("%d/%m/%Y")
 
         healthy = sum(1 for r in results if r.status == "healthy")

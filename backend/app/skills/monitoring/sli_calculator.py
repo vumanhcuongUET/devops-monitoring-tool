@@ -1,14 +1,14 @@
-"""SLI Calculator Skill - Calculate and track Service Level Indicators.
+"""SLI Calculator Skill — real Prometheus SLIs (Phase 13).
 
-This skill analyzes metrics to calculate:
-- Error rates and availability
-- Latency percentiles (p50, p95, p99)
-- Throughput metrics
-- SLI trends over time
+Was a stub computing indicators from synthetic metric data. Now every SLI is
+a live PromQL computation over the injected Prometheus client: availability
+from `up`, error rate from 5xx ratios, fast-latency share from the request
+duration histogram, and raw throughput.
 """
 
+from __future__ import annotations
+
 import logging
-from datetime import datetime
 from typing import Any
 
 from app.skills.base import (
@@ -22,32 +22,44 @@ from app.skills.base import (
 
 logger = logging.getLogger(__name__)
 
+_EXPRS = {
+    "error_rate_percent": (
+        '100 * sum(rate(http_requests_total{{status=~"5.."}}[{h}h])) '
+        "/ sum(rate(http_requests_total[{h}h]))"
+    ),
+    "latency_sli_percent": (
+        '100 * sum(rate(http_request_duration_seconds_bucket{{le="0.5"}}[{h}h])) '
+        "/ sum(rate(http_request_duration_seconds_count[{h}h]))"
+    ),
+    "throughput_rps": "sum(rate(http_requests_total[{h}h]))",
+}
+
+
+def _scalar(rows: list[dict[str, Any]]) -> float | None:
+    for row in rows or []:
+        value = row.get("value")
+        if value and len(value) == 2:
+            try:
+                return float(value[1])
+            except (TypeError, ValueError):
+                continue
+    return None
+
 
 class SLICalculatorSkill(BaseSkill):
-    """Calculate Service Level Indicators from metrics.
-
-    This skill analyzes Prometheus metrics to:
-    - Calculate error rates and availability
-    - Measure latency percentiles
-    - Track throughput
-    - Monitor SLI trends over time
-    - Compare against SLO targets
-
-    Requires:
-    - Prometheus metrics access
-    - Service definition and endpoints
-    - SLO target configurations
-    """
+    """Calculate service level indicators from live Prometheus data."""
 
     skill_id = "monitoring_sli_calculator"
     name = "SLI Calculator"
-    description = "Calculate and track Service Level Indicators (SLIs)"
+    description = (
+        "Calculate availability, error-rate, fast-latency share and throughput "
+        "SLIs from live Prometheus metrics."
+    )
     category = SkillCategory.MONITORING
     priority = SkillPriority.HIGH
-    version = "1.0.0"
+    version = "2.0.0"
 
     def __init__(self, config: SkillConfig | None = None):
-        """Initialize the SLI Calculator skill."""
         super().__init__(config)
 
     async def analyze(
@@ -56,331 +68,111 @@ class SLICalculatorSkill(BaseSkill):
         parameters: dict[str, Any],
         context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
-        """Calculate SLIs for the service.
-
-        Args:
-            project: Project/service name
-            parameters: Analysis parameters (time_window, sli_types)
-            context: Additional context (SLO targets)
-
-        Returns:
-            AnalysisResult with SLI calculations
-        """
         try:
-            logger.info(f"Calculating SLIs for {project}")
-
-            # Extract parameters
-            time_window_hours = parameters.get("time_window_hours", 24)
-            sli_types = parameters.get("sli_types", ["availability", "latency", "throughput"])
-
-            # Calculate different SLI types
-            sli_results = {}
-
-            if "availability" in sli_types:
-                sli_results["availability"] = await self._calculate_availability_sli(
-                    project,
-                    time_window_hours,
-                    context
+            hours = max(int(parameters.get("time_window_hours", 24)), 1)
+            prom = ((context or {}).get("clients") or {}).get("prometheus")
+            if prom is None:
+                raise RuntimeError(
+                    "No Prometheus client in context['clients']['prometheus'] — "
+                    "skill requires a live metrics source"
                 )
 
-            if "latency" in sli_types:
-                sli_results["latency"] = await self._calculate_latency_sli(
-                    project,
-                    time_window_hours,
-                    context
+            slis: dict[str, Any] = {}
+
+            # Availability per monitored job from the up probe.
+            up_rows = await prom.query(f"avg_over_time(up[{hours}h]) * 100")
+            availability: dict[str, float] = {}
+            for row in up_rows or []:
+                labels = row.get("metric", {})
+                job = labels.get("job") or labels.get("instance") or "unknown"
+                value = row.get("value")
+                if value and len(value) == 2:
+                    try:
+                        availability[job] = round(float(value[1]), 3)
+                    except (TypeError, ValueError):
+                        continue
+            if availability:
+                slis["availability_percent_by_job"] = availability
+                slis["availability_percent"] = round(
+                    sum(availability.values()) / len(availability), 3
                 )
 
-            if "throughput" in sli_types:
-                sli_results["throughput"] = await self._calculate_throughput_sli(
-                    project,
-                    time_window_hours,
-                    context
+            for name, expr in _EXPRS.items():
+                value = _scalar(await prom.query(expr.format(h=hours)))
+                if value is not None:
+                    slis[name] = round(value, 3)
+
+            if not slis:
+                return AnalysisResult(
+                    success=False,
+                    skill_id=self.skill_id,
+                    errors=[
+                        f"No SLI source metrics (up / http_requests_total / "
+                        f"http_request_duration_seconds) found over the last {hours}h"
+                    ],
                 )
 
-            # Calculate SLO compliance
-            slo_compliance = self._calculate_slo_compliance(sli_results, context)
-
-            # Generate recommendations
-            recommendations = self._generate_recommendations(sli_results, slo_compliance)
-
-            # Build result
-            data = {
-                "sli_results": sli_results,
-                "slo_compliance": slo_compliance,
-                "time_window_hours": time_window_hours,
-                "analysis_timestamp": datetime.now().isoformat(),
+            objectives = {
+                "availability_percent": 99.9,
+                "error_rate_percent": 0.1,
+                "latency_sli_percent": 99.0,
             }
-
-            confidence = 0.85  # High confidence for SLI calculations
+            slis["objectives"] = objectives
+            slis["breaches"] = [
+                {"sli": name, "value": slis[name], "objective": objective}
+                for name, objective in objectives.items()
+                if name in slis
+                and (
+                    slis[name] < objective
+                    if name != "error_rate_percent"
+                    else slis[name] > objective
+                )
+            ]
 
             return AnalysisResult(
                 success=True,
                 skill_id=self.skill_id,
-                confidence=confidence,
-                data=data,
-                recommendations=recommendations,
+                confidence=0.9,
+                data={
+                    "project": project,
+                    "window_hours": hours,
+                    "slis": slis,
+                },
+                warnings=[f"SLI breach: {b['sli']}={b['value']}" for b in slis["breaches"]],
             )
-
         except Exception as e:
-            logger.error(f"SLI calculation failed for {project}: {e}")
+            logger.error(f"{self.skill_id} failed for {project}: {e}")
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                confidence=0.0,
-                data={"error": str(e)},
-                recommendations=[],
+                errors=[f"SLI calculation failed: {e!s}"],
             )
 
-    async def _calculate_availability_sli(
-        self,
-        project: str,
-        time_window_hours: int,
-        context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Calculate availability SLI.
-
-        Returns:
-            Dict with availability metrics
-        """
-        # Mock implementation - query Prometheus for:
-        # - Total requests
-        # - Error requests (5xx errors)
-        # - Successful requests
-
-        total_requests = 100000
-        error_requests = 250  # 0.25% error rate
-
-        availability_sli = {
-            "total_requests": total_requests,
-            "error_requests": error_requests,
-            "success_requests": total_requests - error_requests,
-            "error_rate_percent": round((error_requests / total_requests) * 100, 3),
-            "availability_percent": round(((total_requests - error_requests) / total_requests) * 100, 3),
-            "slo_target_percent": 99.9,  # From context
-            "slo_compliant": ((total_requests - error_requests) / total_requests) >= 0.999,
-        }
-
-        return availability_sli
-
-    async def _calculate_latency_sli(
-        self,
-        project: str,
-        time_window_hours: int,
-        context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Calculate latency SLI with percentiles.
-
-        Returns:
-            Dict with latency metrics
-        """
-        # Mock implementation - query Prometheus for histogram metrics
-        # Real implementation would calculate from http_request_duration_seconds
-
-        latency_sli = {
-            "percentiles": {
-                "p50_ms": 120,
-                "p90_ms": 350,
-                "p95_ms": 520,
-                "p99_ms": 1200,
-            },
-            "average_ms": 245,
-            "max_ms": 3500,
-            "slo_target_p95_ms": 1000,  # From context
-            "slo_compliant": True,  # p95 < 1000ms
-        }
-
-        return latency_sli
-
-    async def _calculate_throughput_sli(
-        self,
-        project: str,
-        time_window_hours: int,
-        context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Calculate throughput SLI.
-
-        Returns:
-            Dict with throughput metrics
-        """
-        # Mock implementation - query Prometheus for request rate
-
-        throughput_sli = {
-            "requests_per_second": 125.5,
-            "requests_per_minute": 7530,
-            "peak_rps": 450,
-            "average_rps": 125,
-            "trend": "increasing",  # increasing, stable, decreasing
-        }
-
-        return throughput_sli
-
-    def _calculate_slo_compliance(
-        self,
-        sli_results: dict[str, Any],
-        context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Calculate SLO compliance across all SLIs.
-
-        Returns:
-            Dict with SLO compliance summary
-        """
-        compliance = {
-            "overall_compliant": True,
-            "sli_compliance": {},
-        }
-
-        for sli_type, sli_data in sli_results.items():
-            if sli_type == "availability":
-                is_compliant = sli_data.get("slo_compliant", False)
-                compliance["sli_compliance"][sli_type] = {
-                    "compliant": is_compliant,
-                    "sli_value": sli_data.get("availability_percent"),
-                    "slo_target": sli_data.get("slo_target_percent"),
-                }
-                if not is_compliant:
-                    compliance["overall_compliant"] = False
-
-            elif sli_type == "latency":
-                is_compliant = sli_data.get("slo_compliant", False)
-                compliance["sli_compliance"][sli_type] = {
-                    "compliant": is_compliant,
-                    "sli_value": sli_data["percentiles"]["p95_ms"],
-                    "slo_target": sli_data.get("slo_target_p95_ms"),
-                }
-                if not is_compliant:
-                    compliance["overall_compliant"] = False
-
-        return compliance
-
-    def _generate_recommendations(
-        self,
-        sli_results: dict[str, Any],
-        slo_compliance: dict[str, Any],
-    ) -> list[Recommendation]:
-        """Generate SLI/SLO recommendations.
-
-        Returns:
-            List of recommendations
-        """
-        recommendations = []
-
-        # Check SLO compliance
-        if not slo_compliance["overall_compliant"]:
-            for sli_type, compliance_data in slo_compliance["sli_compliance"].items():
-                if not compliance_data["compliant"]:
-                    recommendations.append(Recommendation(
-                        title=f"Fix {sli_type} SLO violation",
-                        description=f"{sli_type} SLI not meeting SLO target",
-                        impact="high",
-                        effort="high",
-                        priority="critical",
-                        actions=[
-                            "Investigate root cause of SLO violation",
-                            "Implement performance optimizations",
-                            "Scale infrastructure if needed",
-                            "Review SLO targets if unrealistic",
-                        ],
-                    ))
-
-        # Availability recommendations
-        if "availability" in sli_results:
-            avail_data = sli_results["availability"]
-            error_rate = avail_data.get("error_rate_percent", 0)
-
-            if error_rate > 0.5:
-                recommendations.append(Recommendation(
-                    title="Reduce error rate",
-                    description=f"Error rate is {error_rate}%, above recommended 0.1%",
-                    impact="high",
-                    effort="medium",
-                    priority="high",
-                    actions=[
-                        "Investigate error patterns",
-                        "Add circuit breakers for failing services",
-                        "Implement retry logic with exponential backoff",
-                    ],
-                ))
-
-        # Latency recommendations
-        if "latency" in sli_results:
-            lat_data = sli_results["latency"]
-            p99_latency = lat_data["percentiles"]["p99_ms"]
-
-            if p99_latency > 2000:
-                recommendations.append(Recommendation(
-                    title="Improve tail latency",
-                    description=f"P99 latency is {p99_latency}ms, above recommended 1000ms",
-                    impact="medium",
-                    effort="high",
-                    priority="medium",
-                    actions=[
-                        "Profile slow requests",
-                        "Optimize database queries",
-                        "Add caching for slow endpoints",
-                        "Consider connection pooling optimizations",
-                    ],
-                ))
-
-        # General monitoring recommendations
-        recommendations.append(Recommendation(
-            title="Set up SLI monitoring dashboard",
-            description="Create visibility into SLI metrics",
-            impact="medium",
-            effort="low",
-            priority="medium",
-            actions=[
-                "Create Grafana dashboard with SLI charts",
-                "Set up alerts for SLO violations",
-                "Daily SLI reports",
-            ],
-        ))
-
-        return recommendations
-
-    def validate_parameters(self, parameters: dict[str, Any]) -> tuple[bool, list[str]]:
-        """Validate skill parameters.
-
-        Returns:
-            Tuple of (is_valid, error_messages)
-        """
-        errors = []
-
-        # Validate time_window_hours
-        time_window = parameters.get("time_window_hours")
-        if time_window is not None:
-            if not isinstance(time_window, int) or time_window < 1 or time_window > 720:
-                errors.append("time_window_hours must be between 1 and 720")
-
-        # Validate sli_types
-        sli_types = parameters.get("sli_types")
-        if sli_types is not None:
-            valid_types = ["availability", "latency", "throughput", "saturation"]
-            for sli_type in sli_types:
-                if sli_type not in valid_types:
-                    errors.append(f"Invalid sli_type: {sli_type}")
-
-        return len(errors) == 0, errors
-
     async def get_recommendations(
-        self,
-        analysis_id: str,
-        project: str,
+        self, analysis_id: str, project: str
     ) -> list[Recommendation]:
-        """Get recommendations based on analysis results.
-
-        Args:
-            analysis_id: ID of previous analysis result
-            project: Project/service name
-
-        Returns:
-            List of recommendations
-        """
         from app.skills.registry import get_skill_registry
 
-        registry = get_skill_registry()
-        result = registry.get_result(analysis_id)
-
+        result = get_skill_registry().get_result(analysis_id)
         if not result or not result.success:
             return []
 
-        return result.recommendations or []
+        recommendations = []
+        for breach in result.data.get("slis", {}).get("breaches", []):
+            recommendations.append(Recommendation(
+                title=f"SLI breach: {breach['sli']}",
+                description=(
+                    f"{breach['sli']} is {breach['value']} against objective "
+                    f"{breach['objective']} over the analysis window."
+                ),
+                priority=SkillPriority.HIGH,
+                action_type="investigate",
+                risk_level="high",
+            ))
+        return recommendations
+
+    def validate_parameters(self, parameters: dict[str, Any]) -> tuple[bool, list[str]]:
+        hours = parameters.get("time_window_hours", 24)
+        if not isinstance(hours, (int, float)) or hours <= 0:
+            return False, ["time_window_hours must be a positive number"]
+        return True, []

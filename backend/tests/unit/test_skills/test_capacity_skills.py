@@ -87,18 +87,30 @@ class TestBottleneckDetectorSkill:
     def test_initialization(self):
         skill = BottleneckDetectorSkill()
         assert skill.skill_id == "capacity_bottleneck_detector"
-        assert skill.name == "Bottleneck Detector"
+        assert skill.name == "Capacity Bottleneck Detector"
 
     @pytest.mark.asyncio
     async def test_analyze_success(self):
+        from tests.unit.test_skills.test_real_skills import FakeRangeProm
+
         skill = BottleneckDetectorSkill()
         result = await skill.analyze(
-            project="test-project", parameters={"time_range_minutes": 60}
+            project="test-project",
+            parameters={},
+            context={"clients": {"prometheus": FakeRangeProm()}},
         )
         assert result.success is True
         assert result.skill_id == "capacity_bottleneck_detector"
         assert "bottlenecks" in result.data
-        assert result.data["summary"]["total"] == len(result.data["bottlenecks"])
+        assert result.data["summary"]["bottleneck_count"] == len(result.data["bottlenecks"])
+
+    @pytest.mark.asyncio
+    async def test_analyze_without_prometheus_refuses(self):
+        """Phase 13 batch 3: the detector reads real series or refuses."""
+        skill = BottleneckDetectorSkill()
+        result = await skill.analyze(project="test-project", parameters={})
+        assert result.success is False
+        assert "Prometheus" in result.errors[0]
 
     def test_validate_parameters_accepts_anything(self):
         skill = BottleneckDetectorSkill()

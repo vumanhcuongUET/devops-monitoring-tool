@@ -189,7 +189,7 @@ See `docs/agents/domain.md`.
 
 ### Skills Library
 
-44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 13) nine
+44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 13) 21
 are real** — they read live data injected via `context["clients"]` by the skills API
 and refuse loudly (errors, not fake data) when a client is missing:
 `devops_deployment_health_check` (K8s), `devops_resource_optimizer` (Prometheus),
@@ -197,9 +197,16 @@ and refuse loudly (errors, not fake data) when a client is missing:
 probes against INTERNAL_SERVICES/EXTERNAL_ENDPOINTS), `monitoring_alert_optimizer`
 (alert history + rules), `capacity_planner` + `capacity_growth_predictor` (Prometheus
 history), `dockerfile_best_practices` + `kubernetes_manifest_validator` (static lint
-of uploaded content). The remaining **35 are stubs** (`STUB_SKILLS` in
-`app/skills/registry.py`): `execute()` refuses to run so no fabricated data is ever
-returned, and the UI marks them "Coming soon". They are a roadmap, not working features.
+of uploaded content), plus batch 3: `observability_metrics_analyzer`,
+`observability_anomaly_detector`, `capacity_bottleneck_detector`,
+`monitoring_sli_calculator` (Prometheus), `reliability_scaling_analyzer` (K8s),
+`reliability_sla_compliance` + `observability_slo_tracker` (SloClient),
+`observability_tracing_analyzer` + `reliability_dlq_monitor` (Elasticsearch/APM),
+and `code_complexity_analyzer` + `code_duplication_detector` +
+`code_smell_detector` (static AST lint of uploaded Python). The remaining **23 are
+stubs** (`STUB_SKILLS` in `app/skills/registry.py`): `execute()` refuses to run so
+no fabricated data is ever returned, and the UI marks them "Coming soon". They are
+a roadmap, not working features.
 
 - **FinOps** (3): Cost analysis, idle resource detection, rightsizing
 - **Security** (6): Vulnerability scanning, secret detection, CIS benchmarks, misconfiguration detection, runtime monitoring, dependency confusion

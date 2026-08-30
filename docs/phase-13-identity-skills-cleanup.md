@@ -74,6 +74,41 @@ claim; `_is_valid_token()` just never decoded it. Identity was one decode away.
 
 Stub count after batch 2: **35/44**.
 
+### Batch 3 (same day) — twelve more real skills
+
+- **Prometheus** (context client): `observability_metrics_analyzer` (real
+  error ratio + histogram_quantile latency percentiles — the old version
+  hardcoded p50/p95/p99), `observability_anomaly_detector` (z-score/IQR over
+  a real range query; the numpy-seeded mock series and fabricated
+  "correlated events" are gone), `capacity_bottleneck_detector` (reuses the
+  shared `prom_history` fetcher; flags current/peak saturation and
+  trend-projected exhaustion), `monitoring_sli_calculator` (availability from
+  `up`, 5xx ratio, sub-500ms latency share, throughput).
+- **Kubernetes**: `reliability_scaling_analyzer` — replica headroom per
+  deployment, unschedulable/restart-looping pods, FailedScheduling/OOM/HPA
+  events (was invented HPA effectiveness numbers).
+- **SloClient**: `reliability_sla_compliance` (per-service contract status
+  + breach list; no invented penalty dollars) and
+  `observability_slo_tracker` (subclass of the real reliability tracker —
+  same live computation, observability packaging).
+- **Elasticsearch/APM**: `observability_tracing_analyzer` (builds an
+  `ApmClient` on the injected ES client; real latency percentiles, slowest
+  transaction names, top error groups — was a fabricated trace with invented
+  spans), `reliability_dlq_monitor` (real ERROR-log search for dead-letter
+  markers, aggregated per service/hour; zero matches reported as zero).
+- **Static code lint** (uploaded Python, stdlib `ast`, same shape as the
+  Dockerfile/manifest linters): `code_complexity_analyzer` (cyclomatic
+  complexity per function), `code_duplication_detector` (Type-1 clones via
+  normalized line windows), `code_smell_detector` (long functions, too many
+  args, bare except, mutable defaults, deep nesting, print debugging,
+  TODO/FIXME, god files — line-accurate).
+
+All twelve refuse loudly when their client/input is missing, and report
+"insufficient data" instead of inventing numbers when a metric series is
+empty. Stub count after batch 3: **23/44** (what remains: finops/billing,
+external security scanners, compliance evidence, dashboard auditors, repo/CI
+I/O, load-test artifacts — all need data sources the platform does not own).
+
 ## Sprint 3 — Rate-limiter consolidation
 
 Evaluated all four sites. **Full merge rejected — semantics differ**: API
@@ -86,8 +121,11 @@ callers — deleted. Closed honestly rather than forced.
 
 ## Verification
 
-- Backend: compileall, ruff, bandit clean; 892 unit tests pass (identity,
-  RBAC matrix, real skills, Teams shim regressions).
+- Backend: compileall, ruff, bandit clean; unit suite green — 938 tests after
+  batch 3 (identity, RBAC matrix, real skills batches 1-3, Teams shim
+  regressions). The 22 failures in `tests/smoke`, `tests/test_analyze_api.py`
+  and `tests/approvals/test_redis_store.py` are pre-existing and need a live
+  staging stack / Redis (verified identical on the pre-batch-3 tree).
 - Frontend: tsc + vite build clean; 169 vitest tests (incl. LoginPage).
 - Manual follow-ups when a live stack is available: curl login → execute with
   bearer → audit shows real identity; Slack/Teams approval E2E; nginx `-t`.

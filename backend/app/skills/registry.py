@@ -46,25 +46,11 @@ STUB_SKILLS: frozenset[str] = frozenset({
     # code — no repo I/O
     "code_dependency_audit",
     "code_sast_scanner",
-    "code_complexity_analyzer",
     "code_test_coverage_analyzer",
-    "code_duplication_detector",
-    "code_smell_detector",
-    # capacity — synthetic usage data
-    "capacity_bottleneck_detector",
     # monitoring — synthetic metrics
-    "monitoring_sli_calculator",
     "monitoring_dashboard_auditor",
     # observability — synthetic time series
-    "observability_metrics_analyzer",
-    "observability_tracing_analyzer",
     "observability_dashboard_auditor",
-    "observability_anomaly_detector",
-    "observability_slo_tracker",
-    # reliability — synthetic metrics
-    "reliability_sla_compliance",
-    "reliability_dlq_monitor",
-    "reliability_scaling_analyzer",
     # compliance — synthetic audit evidence
     "compliance_gdpr_auditor",
     "compliance_soc2_auditor",

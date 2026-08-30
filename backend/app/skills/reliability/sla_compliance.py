@@ -1,14 +1,16 @@
-"""SLA Compliance Skill - Check SLA compliance against contractual obligations.
+"""SLA Compliance Skill — real SLO computations (Phase 13).
 
-This skill analyzes SLA data to:
-- Check current SLA compliance status
-- Calculate SLA penalties (if any)
-- Track SLA performance history
-- Identify SLA risk factors
+Was a stub returning fabricated compliance history and penalty figures.
+Now it evaluates the same SLO configs as the API/Slack reporter through the
+injected SloClient and reports which service contracts are currently met.
+Penalties are not computed — there is no contract data to derive them from,
+and invented dollars are worse than none.
 """
 
+from __future__ import annotations
+
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.skills.base import (
@@ -24,31 +26,19 @@ logger = logging.getLogger(__name__)
 
 
 class SLAComplianceSkill(BaseSkill):
-    """Check SLA compliance against contractual obligations.
-
-    This skill analyzes:
-    - Current SLA compliance status
-    - Monthly/quarterly/yearly SLA performance
-    - SLA penalty calculations
-    - Risk factors for SLA breaches
-    - Historical SLA performance
-
-    Requires:
-    - SLA contract terms
-    - SLO performance data
-    - Incident history
-    - Credit/penalty schedules
-    """
+    """Check service SLA compliance from real SLO results."""
 
     skill_id = "reliability_sla_compliance"
-    name = "SLA Compliance"
-    description = "Check SLA compliance against contractual obligations"
+    name = "SLA Compliance Checker"
+    description = (
+        "Check contractual service-level compliance from real SLO results: "
+        "per-service status, error budget and breach list."
+    )
     category = SkillCategory.RELIABILITY
     priority = SkillPriority.HIGH
-    version = "1.0.0"
+    version = "2.0.0"
 
     def __init__(self, config: SkillConfig | None = None):
-        """Initialize the SLA Compliance skill."""
         super().__init__(config)
 
     async def analyze(
@@ -57,343 +47,112 @@ class SLAComplianceSkill(BaseSkill):
         parameters: dict[str, Any],
         context: dict[str, Any] | None = None,
     ) -> AnalysisResult:
-        """Analyze SLA compliance.
-
-        Args:
-            project: Project/service name
-            parameters: Analysis parameters
-            context: Additional context (SLA terms)
-
-        Returns:
-            AnalysisResult with SLA compliance data
-        """
         try:
-            logger.info(f"Checking SLA compliance for {project}")
+            service = parameters.get("service") or project
+            slo_client = ((context or {}).get("clients") or {}).get("slo")
+            if slo_client is None:
+                raise RuntimeError(
+                    "No SloClient in context['clients']['slo'] — skill requires "
+                    "a live SLO data source"
+                )
 
-            # Get SLA contract terms
-            sla_terms = await self._get_sla_terms(project, context)
+            from app.api.v1.slo import _load_configs
+            from app.models.slo import SloConfig
 
-            # Calculate current compliance
-            current_compliance = await self._calculate_compliance(
-                project,
-                sla_terms,
-                context
-            )
+            configs = [
+                SloConfig(**c)
+                for c in _load_configs()
+                if c.get("enabled", True)
+                and (not service or c.get("service_name") == service)
+            ]
+            if not configs:
+                return AnalysisResult(
+                    success=True,
+                    skill_id=self.skill_id,
+                    confidence=0.9,
+                    data={
+                        "services": [],
+                        "message": f"No SLO/SLA configs found for service {service!r}",
+                    },
+                )
 
-            # Calculate monthly compliance
-            monthly_compliance = await self._calculate_monthly_compliance(
-                project,
-                sla_terms,
-                context
-            )
+            services = []
+            for cfg in configs:
+                result = await slo_client.calculate_slo(cfg)
+                services.append({
+                    "service": result.service_name,
+                    "slo_type": result.slo_type,
+                    "target_percent": result.target,
+                    "current_percent": round(result.current_value, 3),
+                    "compliant": result.current_value >= result.target,
+                    "status": result.status,
+                    "error_budget_remaining_percent": round(
+                        result.error_budget_remaining_percent, 2
+                    ),
+                    "window_days": result.window_days,
+                    "total_requests": result.total_requests,
+                })
 
-            # Check for penalties
-            penalties = self._calculate_penalties(
-                current_compliance,
-                monthly_compliance,
-                sla_terms,
-            )
-
-            # Identify risk factors
-            risk_factors = self._identify_risk_factors(
-                current_compliance,
-                monthly_compliance,
-            )
-
-            # Generate recommendations
-            recommendations = self._generate_recommendations(
-                current_compliance,
-                penalties,
-                risk_factors,
-            )
-
-            # Build result
-            data = {
-                "sla_terms": sla_terms,
-                "current_compliance": current_compliance,
-                "monthly_compliance": monthly_compliance,
-                "penalties": penalties,
-                "risk_factors": risk_factors,
-                "analysis_date": datetime.now().isoformat(),
-            }
-
-            confidence = 0.8
-
+            compliant = sum(1 for s in services if s["compliant"])
             return AnalysisResult(
                 success=True,
                 skill_id=self.skill_id,
-                confidence=confidence,
-                data=data,
-                recommendations=recommendations,
+                confidence=0.9,
+                data={
+                    "services": services,
+                    "summary": {
+                        "services_tracked": len(services),
+                        "compliant": compliant,
+                        "breached": len(services) - compliant,
+                        "overall_compliance_percent": round(
+                            100 * compliant / len(services), 1
+                        ),
+                        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "breaches": [
+                        s for s in services if not s["compliant"]
+                    ],
+                },
+                warnings=[
+                    f"SLA breach: {s['service']} ({s['slo_type']}) at "
+                    f"{s['current_percent']}% vs target {s['target_percent']}%"
+                    for s in services
+                    if not s["compliant"]
+                ],
             )
-
         except Exception as e:
-            logger.error(f"SLA compliance check failed for {project}: {e}")
+            logger.error(f"{self.skill_id} failed for {project}: {e}")
             return AnalysisResult(
                 success=False,
                 skill_id=self.skill_id,
-                confidence=0.0,
-                data={"error": str(e)},
-                recommendations=[],
+                errors=[f"SLA compliance check failed: {e!s}"],
             )
 
-    async def _get_sla_terms(
-        self,
-        project: str,
-        context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Get SLA contract terms.
-
-        Returns:
-            Dict with SLA terms
-        """
-        # Mock implementation - query SLA contracts
-        return {
-            "availability_target": 99.9,
-            "latency_target_p95_ms": 500,
-            "monthly_credits": {
-                "99.0-99.9": "10% credit",
-                "95.0-98.9": "25% credit",
-                "below_95": "50% credit",
-            },
-        }
-
-    async def _calculate_compliance(
-        self,
-        project: str,
-        sla_terms: dict[str, Any],
-        context: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Calculate current SLA compliance.
-
-        Returns:
-            Dict with compliance data
-        """
-        # Mock implementation - calculate from actual metrics
-        availability_target = sla_terms["availability_target"]
-        latency_target = sla_terms["latency_target_p95_ms"]
-
-        # Current metrics (slightly below targets for realism)
-        current_availability = 99.85
-        current_latency_p95 = 520
-
-        return {
-            "availability": {
-                "target": availability_target,
-                "current": current_availability,
-                "compliant": current_availability >= availability_target,
-                "gap": round(availability_target - current_availability, 3),
-            },
-            "latency": {
-                "target_p95_ms": latency_target,
-                "current_p95_ms": current_latency_p95,
-                "compliant": current_latency_p95 <= latency_target,
-                "gap_ms": current_latency_p95 - latency_target,
-            },
-            "overall_compliant": (current_availability >= availability_target and
-                                current_latency_p95 <= latency_target),
-        }
-
-    async def _calculate_monthly_compliance(
-        self,
-        project: str,
-        sla_terms: dict[str, Any],
-        context: dict[str, Any] | None,
-    ) -> list[dict[str, Any]]:
-        """Calculate monthly SLA compliance.
-
-        Returns:
-            List of monthly compliance data
-        """
-        # Mock implementation - last 6 months
-        months = []
-        for i in range(6):
-            month = datetime.now().replace(day=1).month - i
-            year = datetime.now().year
-            if month <= 0:
-                month += 12
-                year -= 1
-
-            # Generate realistic compliance data
-            availability = 99.5 + (i * 0.1)  # Improving trend
-            months.append({
-                "period": f"{year}-{month:02d}",
-                "availability": round(availability, 2),
-                "compliant": availability >= sla_terms["availability_target"],
-            })
-
-        return months
-
-    def _calculate_penalties(
-        self,
-        current_compliance: dict[str, Any],
-        monthly_compliance: list[dict[str, Any]],
-        sla_terms: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Calculate SLA penalties/credits.
-
-        Returns:
-            Dict with penalty data
-        """
-        penalties = {
-            "current_month": None,
-            "total_credits_owed": 0,
-        }
-
-        # Check current month
-        if not current_compliance["overall_compliant"]:
-            availability = current_compliance["availability"]["current"]
-            _target = sla_terms["availability_target"]
-
-            # Determine credit tier
-            if availability >= 99.0:
-                credit_percent = 10
-            elif availability >= 95.0:
-                credit_percent = 25
-            else:
-                credit_percent = 50
-
-            penalties["current_month"] = {
-                "availability": availability,
-                "credit_percent": credit_percent,
-                "credit_amount": f"{credit_percent}% of monthly bill",
-            }
-            penalties["total_credits_owed"] = credit_percent
-
-        return penalties
-
-    def _identify_risk_factors(
-        self,
-        current_compliance: dict[str, Any],
-        monthly_compliance: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Identify SLA risk factors.
-
-        Returns:
-            List of risk factors
-        """
-        risks = []
-
-        # Check if close to SLA breach
-        availability_gap = current_compliance["availability"]["gap"]
-        if availability_gap < 0.1:  # Less than 0.1% margin
-            risks.append({
-                "type": "nearing_breach",
-                "description": f"Only {availability_gap}% margin below SLA target",
-                "severity": "high",
-            })
-
-        # Check for declining trend
-        recent_months = monthly_compliance[:3]
-        if len(recent_months) >= 2:
-            if not all(m["compliant"] for m in recent_months):
-                risks.append({
-                    "type": "recent_breaches",
-                    "description": "Recent months show SLA compliance issues",
-                    "severity": "high",
-                })
-
-        # Check latency issues
-        if not current_compliance["latency"]["compliant"]:
-            risks.append({
-                "type": "latency_sla_breach",
-                "description": "Latency SLA not being met",
-                "severity": "medium",
-            })
-
-        return risks
-
-    def _generate_recommendations(
-        self,
-        current_compliance: dict[str, Any],
-        penalties: dict[str, Any],
-        risk_factors: list[dict[str, Any]],
-    ) -> list[Recommendation]:
-        """Generate SLA compliance recommendations.
-
-        Returns:
-            List of recommendations
-        """
-        recommendations = []
-
-        # Penalty warnings
-        if penalties["current_month"]:
-            recommendations.append(Recommendation(
-                title="SLA penalty incurred - immediate action required",
-                description=f"Credit of {penalties['current_month']['credit_amount']} owed to customer",
-                impact="critical",
-                effort="high",
-                priority="critical",
-                actions=[
-                    "Engage customer support team",
-                    "Implement service credits",
-                    "Incident review with customer",
-                    "Preventive measures for future",
-                ],
-            ))
-
-        # Risk factor recommendations
-        for risk in risk_factors:
-            if risk["severity"] == "high":
-                recommendations.append(Recommendation(
-                    title=f"Address SLA risk: {risk['type']}",
-                    description=risk["description"],
-                    impact="high",
-                    effort="medium",
-                    priority="high",
-                    actions=[
-                        "Increase monitoring and alerting",
-                        "Implement performance optimizations",
-                        "Scale infrastructure proactively",
-                    ],
-                ))
-
-        # General SLA monitoring
-        recommendations.append(Recommendation(
-            title="Set up SLA monitoring dashboard",
-            description="Track SLA compliance against contractual obligations",
-            impact="medium",
-            effort="low",
-            priority="medium",
-            actions=[
-                "Create SLA compliance dashboard",
-                "Set up alerts for SLA breaches",
-                "Monthly SLA review meetings",
-            ],
-        ))
-
-        return recommendations
-
-    def validate_parameters(self, parameters: dict[str, Any]) -> tuple[bool, list[str]]:
-        """Validate skill parameters.
-
-        Returns:
-            Tuple of (is_valid, error_messages)
-        """
-        # No specific validation required
-        return True, []
-
-
     async def get_recommendations(
-        self,
-        analysis_id: str,
-        project: str,
+        self, analysis_id: str, project: str
     ) -> list[Recommendation]:
-        """Get recommendations based on analysis results.
-
-        Args:
-            analysis_id: ID of previous analysis result
-            project: Project/service name
-
-        Returns:
-            List of recommendations
-        """
         from app.skills.registry import get_skill_registry
 
-        registry = get_skill_registry()
-        result = registry.get_result(analysis_id)
-
+        result = get_skill_registry().get_result(analysis_id)
         if not result or not result.success:
             return []
 
-        return result.recommendations or []
+        recommendations = []
+        for breach in result.data.get("breaches", []):
+            recommendations.append(Recommendation(
+                title=f"SLA breach: {breach['service']}",
+                description=(
+                    f"{breach['slo_type']} at {breach['current_percent']}% vs "
+                    f"target {breach['target_percent']}%; error budget remaining "
+                    f"{breach['error_budget_remaining_percent']}%."
+                ),
+                priority=SkillPriority.CRITICAL
+                if breach["status"] == "breached"
+                else SkillPriority.HIGH,
+                action_type="investigate",
+                risk_level="high",
+            ))
+        return recommendations
+
+    def validate_parameters(self, parameters: dict[str, Any]) -> tuple[bool, list[str]]:
+        return True, []

@@ -50,18 +50,33 @@ class TestSkillCatalog:
 
     def test_implemented_only_filter_drops_stubs(self, registry):
         """The honest catalog view: implemented_only returns exactly the real
-        skills (Phase 13: deployment health, resource optimizer, SLO tracker)."""
+        skills (Phase 13 batches 1-3: 21 live-data skills)."""
         real = registry.list_skills(implemented_only=True)
         assert {m["skill_id"] for m in real} == {
+            # batch 1
             "devops_deployment_health_check",
             "devops_resource_optimizer",
             "reliability_slo_tracker",
+            # batch 2
             "reliability_dependency_health",
             "monitoring_alert_optimizer",
             "capacity_planner",
             "capacity_growth_predictor",
             "dockerfile_best_practices",
             "kubernetes_manifest_validator",
+            # batch 3
+            "observability_metrics_analyzer",
+            "observability_tracing_analyzer",
+            "observability_anomaly_detector",
+            "observability_slo_tracker",
+            "reliability_sla_compliance",
+            "reliability_dlq_monitor",
+            "reliability_scaling_analyzer",
+            "capacity_bottleneck_detector",
+            "monitoring_sli_calculator",
+            "code_complexity_analyzer",
+            "code_duplication_detector",
+            "code_smell_detector",
         }
 
 

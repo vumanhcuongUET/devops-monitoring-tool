@@ -1,8 +1,11 @@
 # Skills Library Catalog - Complete Skill List
 
-> **Status (2026-08-29): all 44 skills are stubs.** `execute()` refuses to run
-> (`STUB_SKILLS` in `backend/app/skills/registry.py`) so no fabricated data is
-> returned. This catalog is the design target; nothing here analyzes real data yet.
+> **Status (2026-08-30, Phase 13): 21 of 44 skills are real.** They read live
+> data (Prometheus / Kubernetes / Elasticsearch-APM / SloClient / uploaded
+> content) via `context["clients"]` and refuse loudly when a source is missing.
+> The other 23 are flagged in `STUB_SKILLS`
+> (`backend/app/skills/registry.py`): `execute()` refuses to run so no
+> fabricated data is returned. See `docs/phase-13-identity-skills-cleanup.md`.
 
 ## Skill Categories
 

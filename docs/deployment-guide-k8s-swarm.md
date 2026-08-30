@@ -2,8 +2,11 @@
 
 Hướng dẫn triển khai **DevOps AI Agentics 2026** (backend FastAPI + frontend React + Redis + PostgreSQL/TimescaleDB) lên **Kubernetes** (khuyến nghị cho production, manifests sẵn trong `k8s/`) hoặc **Docker Swarm** (môi trường đơn giản hơn, dùng `docker-stack.yml` ở thư mục gốc).
 
-> **Ràng buộc quan trọng nhất — backend chạy 1 replica.**
-> AlertEngine chạy in-process và WebSocket broadcast là pod-local. Chạy ≥2 replica sẽ **nhân đôi alert và mất realtime event** (phát hiện review H1, 2026-08-29). Chỉ scale ra sau khi tách alert-worker + Redis pub/sub (debt [Phase 12](phase-12-review-fixes.md), mục Deferred). Frontend thì thoải mái scale.
+> **Scale backend — đã hỗ trợ ≥2 replica (cập nhật H1, 2026-08-30).**
+> Trước đây AlertEngine chạy in-process và WebSocket broadcast là pod-local, nên ≥2 replica **nhân đôi alert và mất realtime event** (review H1, 2026-08-29). Giờ đã có 2 cơ chế flag-gated (mặc định **tắt**, cần Redis):
+> - `ALERT_ENGINE_LEADER_LOCK=true` — bầu 1 leader qua Redis lock cho AlertEngine + SloReporter (không còn alert/report nhân bản; leader chết thì lock TTL 30s hết hạn, pod khác tự nhận vai).
+> - `WS_FANOUT_USE_REDIS=true` — fanout broadcast `/ws/live` qua Redis pub/sub đến mọi pod (không còn mất realtime event).
+> Khi scale: bật cả 2 flag (`k8s/backend/configmap.yaml` hoặc biến env của `docker-stack.yml`). Lưu ý: volume `data/` là **ReadWriteOnce** — nếu cần endpoint sửa alert rule/SLO config hoạt động trên mọi pod, đổi sang RWX; nếu không, chỉ leader ghi state nên an toàn, còn rule edit nên thực hiện khi 1 replica hoặc dùng RWX. Frontend thì thoải mái scale.
 
 ## Kiến trúc & phụ thuộc
 

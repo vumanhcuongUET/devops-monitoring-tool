@@ -31,6 +31,9 @@ services:
       ALERT_STATE_USE_REDIS: "true"
       APPROVAL_STATE_USE_REDIS: "true"
       RATE_LIMIT_USE_REDIS: "true"
+      # H1: flip both to "true" when raising backend replicas past 1
+      ALERT_ENGINE_LEADER_LOCK: ${ALERT_ENGINE_LEADER_LOCK:-false}
+      WS_FANOUT_USE_REDIS: ${WS_FANOUT_USE_REDIS:-false}
       DATABASE_ENABLED: ${DATABASE_ENABLED:-true}
       DATABASE_HOST: postgres
       DATABASE_NAME: ${DATABASE_NAME:-devops_monitor}
@@ -53,9 +56,10 @@ services:
       - backend-net
       - frontend-net # frontend nginx proxies to http://monitor-backend:8000
     deploy:
-      # H1 (2026-08-29 review): AlertEngine is in-process, WS broadcast is
-      # pod-local — 2 replicas duplicate alerts and drop realtime events.
-      # Split out an alert-worker + Redis pub/sub before raising this.
+      # H1 (Phase 12): >1 replica is supported once ALERT_ENGINE_LEADER_LOCK and
+      # WS_FANOUT_USE_REDIS are "true" (leader election + pub/sub fanout). Note:
+      # the alert-data volume is single-node on Swarm — shared storage or keeping
+      # rule edits on one replica is still an operator decision.
       replicas: 1
       restart_policy:
         condition: on-failure

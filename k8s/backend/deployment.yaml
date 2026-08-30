@@ -4,9 +4,11 @@ metadata:
   name: monitor-backend
   namespace: devops-monitor
 spec:
-  # Phase 12 debt: 1 replica — AlertEngine + WS broadcast are in-process with no
-  # leader election / pub-sub fanout; 2 replicas duplicate alerts and drop realtime
-  # events (review H1, 2026-08-29). Split out an alert-worker when scaling is needed.
+  # H1 (Phase 12): scaling past 1 replica is now supported — flip
+  # ALERT_ENGINE_LEADER_LOCK and WS_FANOUT_USE_REDIS to "true" in
+  # monitor-backend-config (Redis required; see docs/deployment-guide-k8s-swarm.md).
+  # The data/ PVC is ReadWriteOnce: for >1 replica, switch it to RWX so the
+  # alert-rule/SLO-config edit endpoints work on every pod.
   replicas: 1
   selector:
     matchLabels:

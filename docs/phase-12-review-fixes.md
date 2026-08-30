@@ -1,6 +1,6 @@
 # Phase 12: Review Fixes — Real Bugs & Enforcement Gaps
 
-**Status**: Sprints 1-3 code complete (2026-08-30) — pending full gates + manual smoke + final commit
+**Status**: Sprints 1-3 code complete (2026-08-30) — full gates + security re-check done; H1 debt closed (leader lock + WS fanout). Only manual smoke remains before closing Phase 12.
 **Created**: 2026-08-30
 **Basis**: Full codebase review 2026-08-30 (all CI gates green: compileall/ruff/bandit/733 unit/262 ai_assistant/frontend build; deep-read of actions engine, approvals, governance, webhooks, executors, cache, frontend auth; ponytail-audit)
 **Goal**: Fix the 4 confirmed real bugs, close the security enforcement gaps (identity, webhooks, executor), and resolve every "claimed ✅ but never wired" feature by an explicit wire-or-delete decision. No new dependencies.
@@ -101,7 +101,7 @@ Each item: explicit decision, then either a wiring test or a deletion receipt.
 | Item | Source | Note |
 |---|---|---|
 | Per-user identity (login, per-user tokens, identity-aware RBAC) | S1/S2 decision | Blocking for any multi-user rollout |
-| Alert-worker split + Redis pub/sub | H1 (deployment-guide-k8s-swarm.md, tagged "debt Phase 12") | Required before backend replicas ≥ 2 |
+| ~~Alert-worker split + Redis pub/sub~~ — **DONE 2026-08-30, no worker split needed** | H1 (deployment-guide-k8s-swarm.md, tagged "debt Phase 12") | Solved in-place: `ALERT_ENGINE_LEADER_LOCK` (Redis leader election for AlertEngine/SloReporter) + `WS_FANOUT_USE_REDIS` (pub/sub fanout for `/ws/live`). Flag-gated, default off; see docs/deployment-guide-k8s-swarm.md. Remaining operator decision: RWX volume for `data/` if rule edits must run on every replica. |
 | 44 stub skills → real data sources | CLAUDE.md roadmap | First candidates unchanged: deployment health, resource optimizer, SLO tracker |
 | Rate-limiter consolidation (3 modules) | ponytail-audit | `rate_limit.py` vs `actions/rate_limiter.py` — merge only if semantics overlap proven |
 
@@ -109,8 +109,8 @@ Each item: explicit decision, then either a wiring test or a deletion receipt.
 
 ## Overall exit criteria
 
-- [ ] All Sprint 1-3 checkboxes done; every fix has its fail-first test.
-- [ ] Full gates green: compileall, ruff, bandit, 733+ unit tests, ai_assistant suite, frontend build.
+- [x] All Sprint 1-3 checkboxes done; every fix has its fail-first test.
+- [x] Full gates green: compileall, ruff, bandit, 861 unit tests, ai_assistant suite, frontend build (verified 2026-08-30).
 - [ ] Manual smoke: create → approve (different user) → dry-run execute → execute; Slack signed webhook approve + view; dry-run shows no side effect.
-- [ ] Security re-check written against the Sprint 2 changes (same bar as `security-recheck-phase11-2026-08-29.md`).
-- [ ] CLAUDE.md + security review addendum reflect real enforcement paths.
+- [x] Security re-check written against the Sprint 2 changes — `security-recheck-phase12-2026-08-30.md` (APPROVED; findings F1 reject-permission, F2 executor malformed-command guard fixed in the paired commit).
+- [x] CLAUDE.md + security review addendum reflect real enforcement paths.

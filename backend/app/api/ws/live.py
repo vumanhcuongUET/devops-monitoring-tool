@@ -53,6 +53,19 @@ class ConnectionManager:
             self.active.remove(ws)
 
     async def broadcast(self, data: dict):
+        """Broadcast to all clients on this pod, and (when WS_FANOUT_USE_REDIS
+        is on) to clients on every other pod via Redis pub/sub.
+
+        Redis-delivery succeeded → the local subscriber delivers here too;
+        disabled or Redis down → pod-local delivery (today's behavior).
+        """
+        from app.api.ws.fanout import publish
+
+        if await publish(data):
+            return
+        await self.broadcast_local(data)
+
+    async def broadcast_local(self, data: dict):
         msg = json.dumps(data, default=str)  # model_dump() may carry datetimes
         for ws in self.active[:]:
             try:

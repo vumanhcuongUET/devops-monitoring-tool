@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     ALERT_STATE_USE_REDIS: bool = False  # Use Redis for alert state (default: file-based)
     APPROVAL_STATE_USE_REDIS: bool = False  # Use Redis for approval state (default: file-based)
     RATE_LIMIT_USE_REDIS: bool = False  # Use Redis for rate limiting (default: in-memory)
+    # Phase 12 H1: multi-replica safe background tasks + cross-pod WS events.
+    # Both require Redis; leave off for single-replica deployments.
+    ALERT_ENGINE_LEADER_LOCK: bool = False  # Elect one alert-engine/SLO-reporter leader via Redis
+    WS_FANOUT_USE_REDIS: bool = False  # Fanout /ws/live broadcasts across replicas via Redis pub/sub
 
     # Phase 10: PostgreSQL Database Configuration
     DATABASE_ENABLED: bool = False  # Enable PostgreSQL persistence layer (default: off)

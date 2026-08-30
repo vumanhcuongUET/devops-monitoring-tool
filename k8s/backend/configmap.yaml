@@ -16,3 +16,7 @@ data:
   CORS_ORIGINS: '["http://localhost"]'
   POLL_INTERVAL_SECONDS: "10"
   REQUEST_TIMEOUT_SECONDS: "5"
+  # Phase 12 H1: multi-replica safety (require Redis in monitor-backend-secrets).
+  # Keep "false" while replicas=1; set both to "true" before scaling >= 2.
+  ALERT_ENGINE_LEADER_LOCK: "false"
+  WS_FANOUT_USE_REDIS: "false"

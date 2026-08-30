@@ -110,10 +110,40 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Alert engine initialized with {'Redis' if settings.ALERT_STATE_USE_REDIS else 'file-based'} state storage")
 
-    alert_task = asyncio.create_task(alert_engine.start(app.state))
+    # Phase 12 H1: when ALERT_ENGINE_LEADER_LOCK is on (multi-replica), every
+    # pod starts run_as_leader; one pod wins the Redis lock and runs the
+    # engine/SLO reporter, the others poll. Off (default) = today's behavior.
+    if settings.ALERT_ENGINE_LEADER_LOCK:
+        from app.alerting.leader import RedisLeaderLock, run_as_leader
 
-    slo_reporter = SloReporter(slo_client=app.state.slo_client)
-    slo_task = asyncio.create_task(slo_reporter.start(app.state))
+        alert_task = asyncio.create_task(
+            run_as_leader(
+                "alert-engine",
+                lambda: alert_engine.start(app.state),
+                RedisLeaderLock("alert-engine"),
+            )
+        )
+        slo_reporter = SloReporter(slo_client=app.state.slo_client)
+        slo_task = asyncio.create_task(
+            run_as_leader(
+                "slo-reporter",
+                lambda: slo_reporter.start(app.state),
+                RedisLeaderLock("slo-reporter"),
+            )
+        )
+        logger.info("Phase 12 H1: alert engine + SLO reporter under Redis leader lock")
+    else:
+        alert_task = asyncio.create_task(alert_engine.start(app.state))
+
+        slo_reporter = SloReporter(slo_client=app.state.slo_client)
+        slo_task = asyncio.create_task(slo_reporter.start(app.state))
+
+    fanout_task = None
+    if settings.WS_FANOUT_USE_REDIS:
+        from app.api.ws.fanout import subscribe_loop
+
+        fanout_task = asyncio.create_task(subscribe_loop(ws_manager.broadcast_local))
+        logger.info("Phase 12 H1: WS fanout subscriber started (Redis pub/sub)")
 
     # Phase 2: Initialize Action Engine
     # Phase 12 B3: inject the real k8s client so impact estimation can use it.
@@ -230,6 +260,8 @@ async def lifespan(app: FastAPI):
     alert_task.cancel()
     slo_reporter.stop()
     slo_task.cancel()
+    if fanout_task is not None:
+        fanout_task.cancel()
 
     # Close database engine if it was initialized
     if getattr(app.state, 'db_enabled', False):

@@ -44,6 +44,10 @@ class PrometheusClient:
         """Close the HTTP client."""
         await self._client.aclose()
 
+    async def query(self, expr: str) -> list[dict[str, Any]]:
+        """Public instant PromQL query (Phase 13 skills)."""
+        return await self._query(expr)
+
     async def get_node_metrics(self, minutes: int = 60) -> list[dict[str, Any]]:
         end_ts = datetime.now(timezone.utc).timestamp()
         start_ts = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).timestamp()

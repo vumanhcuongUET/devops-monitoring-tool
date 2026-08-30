@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.skills.registry import get_skill_registry
 
@@ -45,12 +45,14 @@ async def list_skills(
 async def execute_skill(
     skill_id: str,
     request: dict[str, Any],
+    http_request: Request,
 ) -> dict[str, Any]:
     """Execute a skill analysis.
 
     Args:
         skill_id: ID of skill to execute
         request: Analysis request with project and parameters
+        http_request: FastAPI request (source of the service clients)
 
     Returns:
         Dictionary with execution ID and result
@@ -59,6 +61,13 @@ async def execute_skill(
         project = request.get("project", "")
         parameters = request.get("parameters", {})
         context = request.get("context", {})
+        # Phase 13: inject service clients so real skills read live data
+        context.setdefault("clients", {
+            "k8s": getattr(http_request.app.state, "k8s_client", None),
+            "prometheus": getattr(http_request.app.state, "prometheus_client", None),
+            "slo": getattr(http_request.app.state, "slo_client", None),
+            "es": getattr(http_request.app.state, "es_client", None),
+        })
 
         if not project:
             raise HTTPException(status_code=400, detail="project is required")

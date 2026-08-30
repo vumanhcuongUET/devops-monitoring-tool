@@ -134,12 +134,42 @@ class DeploymentHealthCheckSkill(BaseSkill):
         deployment: str | None,
         context: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
-        """Fetch deployment status from Kubernetes."""
-        return []
+        """Fetch deployment status from Kubernetes.
+
+        Phase 13: real data via the k8s client injected by the skills API as
+        context["clients"]["k8s"].
+        """
+        clients = (context or {}).get("clients") or {}
+        k8s = clients.get("k8s")
+        if k8s is None:
+            raise RuntimeError(
+                "No Kubernetes client in context['clients']['k8s'] — skill requires a live K8s connection"
+            )
+        deployments = await k8s.list_deployments(namespace)
+        if deployment:
+            deployments = [d for d in deployments if d["name"] == deployment]
+        return deployments
 
     def _analyze_health(self, deployments: list) -> dict[str, Any]:
-        """Analyze overall health."""
-        return {"healthy": 0, "unhealthy": 0, "pending": 0}
+        """Stamp health + reason per deployment; return summary counts."""
+        healthy = degraded = unhealthy = 0
+        for d in deployments:
+            available, replicas = d.get("available", 0), d.get("replicas", 0)
+            if replicas == 0:
+                d["health"], d["reason"] = "pending", "scaled to zero"
+                degraded += 1
+            elif available >= replicas:
+                d["health"], d["reason"] = "healthy", "all replicas available"
+                healthy += 1
+            elif available > 0:
+                d["health"] = "unhealthy"
+                d["reason"] = f"{available}/{replicas} replicas available"
+                unhealthy += 1
+            else:
+                d["health"] = "unhealthy"
+                d["reason"] = f"0 of {replicas} replicas available"
+                unhealthy += 1
+        return {"healthy": healthy, "unhealthy": unhealthy, "pending": degraded}
 
     def validate_parameters(self, parameters: dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate parameters."""

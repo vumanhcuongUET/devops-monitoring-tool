@@ -41,8 +41,6 @@ STUB_SKILLS: frozenset[str] = frozenset({
     "security_header_validator",
     "security_secret_exposure_scanner",
     # devops — no repo/cluster I/O
-    "devops_deployment_health_check",
-    "devops_resource_optimizer",
     "devops_config_drift_detector",
     "cicd_pipeline_analyzer",
     "dockerfile_best_practices",
@@ -69,7 +67,6 @@ STUB_SKILLS: frozenset[str] = frozenset({
     "observability_anomaly_detector",
     "observability_slo_tracker",
     # reliability — synthetic metrics
-    "reliability_slo_tracker",
     "reliability_sla_compliance",
     "reliability_dependency_health",
     "reliability_dlq_monitor",

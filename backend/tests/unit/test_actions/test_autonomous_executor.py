@@ -155,10 +155,13 @@ class TestAutonomousExecutor:
             labels={"environment": "development", "project": "test"},
             autonomous_action={
                 "enabled": True,
-                "action_type": "delete_crashloop_pod",
+                # Phase 14: medium-risk type — autonomous execution allowed.
+                # High-risk types (delete/rollback/evict/…) are blocked by the
+                # server-owned AUTONOMOUS_ACTION_RISK table.
+                "action_type": "scale_deployment",
                 "auto_approve": True,
                 "max_executions_per_hour": 3,
-                "parameters": {"namespace": "default", "restart_threshold": 5},
+                "parameters": {"namespace": "default", "deployment": "api", "replicas": 2},
             },
         )
 
@@ -198,6 +201,37 @@ class TestAutonomousExecutor:
         assert result.success is True
 
     @pytest.mark.asyncio
+    async def test_execute_autonomous_action_high_risk_blocked(self, executor, alert_rule, alert_event):
+        """Phase 14: high-risk action types need manual approval even when a
+        rule enables them autonomously — the risk table is server-owned."""
+        alert_rule.autonomous_action["action_type"] = "delete_crashloop_pod"
+
+        result = await executor.execute_autonomous_action(
+            alert_rule=alert_rule,
+            alert_event=alert_event,
+            environment="development",
+            dry_run=False,
+        )
+
+        assert result.success is False
+        assert "requires manual approval" in result.error_message
+
+    @pytest.mark.asyncio
+    async def test_execute_autonomous_action_unknown_type_blocked(self, executor, alert_rule, alert_event):
+        """Phase 14: unmapped action types default to high risk."""
+        alert_rule.autonomous_action["action_type"] = "rotate_service_account_token"
+
+        result = await executor.execute_autonomous_action(
+            alert_rule=alert_rule,
+            alert_event=alert_event,
+            environment="development",
+            dry_run=False,
+        )
+
+        assert result.success is False
+        assert "requires manual approval" in result.error_message
+
+    @pytest.mark.asyncio
     async def test_execute_autonomous_action_production_blocked(self, executor, alert_rule, alert_event):
         """Test autonomous action blocked in production."""
         result = await executor.execute_autonomous_action(
@@ -228,9 +262,9 @@ class TestAutonomousExecutor:
     @pytest.mark.asyncio
     async def test_execute_autonomous_action_rate_limited(self, executor, alert_rule, alert_event):
         """Test rate limiting blocks execution."""
-        # Exhaust rate limit
+        # Exhaust rate limit (same action type as the fixture's rule)
         for _ in range(3):
-            executor.rate_limiter.record_execution("delete_crashloop_pod")
+            executor.rate_limiter.record_execution("scale_deployment")
 
         result = await executor.execute_autonomous_action(
             alert_rule=alert_rule,

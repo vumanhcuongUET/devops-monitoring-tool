@@ -15,6 +15,29 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 RULES_FILE = "data/alert_rules.json"
 
+# Phase 14 security: rule mutation is operator+ work. API-key (service)
+# requests carry request.state.user = None and stay allowed.
+_RULE_EDITOR_ROLES = {"admin", "operator"}
+MAX_RULES = 500
+
+
+def _require_rule_editor(request: Request) -> None:
+    """Reject viewer-role users from mutating alert rules (Phase 14).
+
+    Autonomous remediation cannot be configured through this API at all —
+    see create_rule/update_rule. request.state.user is the username set by
+    the auth middleware (None = API-key service identity).
+    """
+    username = getattr(request.state, "user", None)
+    if username is not None:
+        from app.users import get_role
+
+        if get_role(username) not in _RULE_EDITOR_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="Viewer role cannot modify alert rules",
+            )
+
 
 def _load_rules() -> list[dict]:
     if not os.path.exists(RULES_FILE):
@@ -38,20 +61,28 @@ async def list_rules(source: str | None = None):
 
 
 @router.post("/rules", response_model=AlertRule, status_code=201)
-async def create_rule(rule: AlertRule):
+async def create_rule(rule: AlertRule, request: Request):
+    _require_rule_editor(request)
     rules = _load_rules()
+    if len(rules) >= MAX_RULES:
+        raise HTTPException(status_code=422, detail=f"Rule limit reached ({MAX_RULES})")
     rule.id = str(uuid.uuid4())
+    # Phase 14 security: autonomous remediation (kubectl execution) is
+    # server-side config only — never accepted from API clients.
+    rule.autonomous_action = None
     rules.append(rule.model_dump())
     _save_rules(rules)
     return rule
 
 
 @router.put("/rules/{rule_id}", response_model=AlertRule)
-async def update_rule(rule_id: str, rule_update: AlertRule):
+async def update_rule(rule_id: str, rule_update: AlertRule, request: Request):
+    _require_rule_editor(request)
     rules = _load_rules()
     for i, r in enumerate(rules):
         if r["id"] == rule_id:
             rule_update.id = rule_id
+            rule_update.autonomous_action = None  # server-side config only
             rules[i] = rule_update.model_dump()
             _save_rules(rules)
             return rule_update
@@ -59,7 +90,8 @@ async def update_rule(rule_id: str, rule_update: AlertRule):
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str):
+async def delete_rule(rule_id: str, request: Request):
+    _require_rule_editor(request)
     rules = _load_rules()
     rules = [r for r in rules if r["id"] != rule_id]
     _save_rules(rules)

@@ -286,7 +286,10 @@ class AIPermissionChecker:
     def _check_rate_limit(self) -> bool:
         """Check if rate limit allows another check.
 
-        Uses a sliding window of 60 seconds from NOW, not from minute boundary.
+        Uses a sliding window of 60 seconds from NOW, not from minute
+        boundary. Phase 14 fix: the check now RECORDS the attempt — the
+        previous implementation filtered the window but never appended,
+        so the list stayed empty and the limit could never trip.
 
         Returns:
             True if under rate limit
@@ -299,8 +302,12 @@ class AIPermissionChecker:
             ts for ts in self._check_timestamps if ts > window_start
         ]
 
-        # Check limit
-        return len(self._check_timestamps) < self.max_checks_per_minute
+        if len(self._check_timestamps) >= self.max_checks_per_minute:
+            return False
+
+        # Record this attempt so the window actually fills
+        self._check_timestamps.append(now)
+        return True
 
     def _log_check(
         self,

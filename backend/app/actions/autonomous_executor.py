@@ -89,6 +89,27 @@ class SafetyChecker:
         return True, None
 
 
+# Phase 14 security: server-owned risk classification per action type.
+# Unknown types default to "high" — blocked for autonomous execution —
+# so adding a new action type is an explicit security decision.
+AUTONOMOUS_ACTION_RISK: dict[str, str] = {
+    "scale_deployment": "medium",
+    "restart_deployment": "medium",
+    "clear_stuck_pods": "medium",
+    "cleanup_failed_jobs": "medium",
+    "adjust_hpa_min_replicas": "medium",
+    "restart_statefulset_pod": "medium",
+    "delete_crashloop_pod": "high",
+    "rollback_deployment": "high",
+    "flush_endpoints": "high",
+    "evict_pod_from_node": "high",
+    "rotate_service_account_token": "critical",
+    "truncate_node_logs": "critical",
+    "restart_daemonset": "high",
+    "restart_ingress_controller": "high",
+}
+
+
 class AutonomousExecutor:
     """Orchestrates autonomous remediation actions with safety and rate limiting."""
 
@@ -152,7 +173,19 @@ class AutonomousExecutor:
                 timestamp=datetime.now(timezone.utc),
             )
 
-        # Safety Check 2: Rate limiting
+        # Safety Check 2: Risk level — server-owned classification; unknown
+        # action types are high-risk and blocked (Phase 14).
+        risk_level = AUTONOMOUS_ACTION_RISK.get(action_type_str, "high")
+        risk_allowed, risk_reason = SafetyChecker.check_risk_level(risk_level)
+        if not risk_allowed:
+            logger.warning(f"Autonomous action blocked: {risk_reason}")
+            return ExecutionResult(
+                success=False,
+                error_message=risk_reason,
+                timestamp=datetime.now(timezone.utc),
+            )
+
+        # Safety Check 3: Rate limiting
         rate_allowed, rate_reason = self.rate_limiter.can_execute(action_type_str)
         if not rate_allowed:
             logger.warning(f"Autonomous action blocked by rate limit: {rate_reason}")
@@ -162,7 +195,7 @@ class AutonomousExecutor:
                 timestamp=datetime.now(timezone.utc),
             )
 
-        # Safety Check 3: Cooldown
+        # Safety Check 4: Cooldown
         last_exec = self._last_executions.get(action_type_str)
         cooldown_allowed, cooldown_reason = SafetyChecker.check_cooldown(action_type_str, last_exec)
         if not cooldown_allowed:

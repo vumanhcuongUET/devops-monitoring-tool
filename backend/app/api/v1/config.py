@@ -13,7 +13,7 @@ import logging
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, Field
 
 from app.config import (
@@ -38,6 +38,51 @@ _version_manager: ConfigVersionManager | None = None
 _git_ops: GitOpsManager | None = None
 _audit_logger: AuditLogger | None = None
 _security: ConfigSecurity | None = None
+
+# Phase 14 security: config mutation (versions, rollback, gitops) is
+# operator+ work. API-key (service) requests carry request.state.user = None.
+_CONFIG_EDITOR_ROLES = {"admin", "operator"}
+
+
+def _require_config_editor(http_request: Request) -> None:
+    """Reject viewer-role users from mutating configuration (Phase 14)."""
+    username = getattr(http_request.state, "user", None)
+    if username is not None:
+        from app.users import get_role
+
+        if get_role(username) not in _CONFIG_EDITOR_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="Viewer role cannot modify configuration",
+            )
+
+
+def _authoritative_author(http_request: Request, claimed: str) -> str:
+    """Audit attribution comes from the authenticated identity, never the
+    client-supplied author field (Phase 14 — attribution forgery fix)."""
+    username = getattr(http_request.state, "user", None)
+    if username is not None:
+        if username != claimed:
+            logger.warning(
+                "Config change: client author %r overridden by authenticated %r",
+                claimed, username,
+            )
+        return username
+    return f"service:{claimed}"
+
+
+def _safe_project(project: str) -> str:
+    """Reject path traversal in project names (Phase 14).
+
+    Project names are joined into filesystem paths by the version manager
+    and into `git add projects/{project}` by GitOps.
+    """
+    from app.security import validate_identifier
+
+    validate_identifier(project, "project")
+    if project in (".", "..") or "/" in project or "\\" in project:
+        raise HTTPException(status_code=422, detail="Invalid project name")
+    return project
 
 
 def set_config_instances(
@@ -153,16 +198,21 @@ async def validate_configuration(request: ConfigValidationRequest):
 
 
 @router.post("/versions")
-async def create_version(request: VersionCreateRequest):
+async def create_version(request: VersionCreateRequest, http_request: Request):
     """Create a new configuration version.
 
     Args:
         request: Version creation request
+        http_request: FastAPI request (auth identity)
 
     Returns:
         Created version details
     """
     try:
+        _require_config_editor(http_request)
+        _safe_project(request.project)
+        author = _authoritative_author(http_request, request.author)
+
         if not _version_manager:
             raise HTTPException(status_code=500, detail="Version manager not initialized")
 
@@ -171,7 +221,7 @@ async def create_version(request: VersionCreateRequest):
         version = await _version_manager.create_version(
             project=request.project,
             config=request.config,
-            author=request.author,
+            author=author,
             message=request.message,
             change_type=change_type,
             commit_to_git=True
@@ -182,7 +232,7 @@ async def create_version(request: VersionCreateRequest):
             await _audit_logger.log(
                 action=AuditAction.VERSION_CREATE,
                 project=request.project,
-                user=request.author,
+                user=author,
                 details={
                     "version": version.version,
                     "change_type": request.change_type,
@@ -200,6 +250,8 @@ async def create_version(request: VersionCreateRequest):
             "size_bytes": version.size_bytes
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Version creation error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -222,6 +274,8 @@ async def list_versions(
         List of version summaries
     """
     try:
+        _safe_project(project)
+
         if not _version_manager:
             raise HTTPException(status_code=500, detail="Version manager not initialized")
 
@@ -239,23 +293,28 @@ async def list_versions(
 
 
 @router.post("/versions/rollback")
-async def rollback_version(request: VersionRollbackRequest):
+async def rollback_version(request: VersionRollbackRequest, http_request: Request):
     """Rollback to a specific version.
 
     Args:
         request: Rollback request
+        http_request: FastAPI request (auth identity)
 
     Returns:
         New rollback version details
     """
     try:
+        _require_config_editor(http_request)
+        _safe_project(request.project)
+        author = _authoritative_author(http_request, request.author)
+
         if not _version_manager:
             raise HTTPException(status_code=500, detail="Version manager not initialized")
 
         version = await _version_manager.rollback(
             project=request.project,
             target_version=request.target_version,
-            author=request.author,
+            author=author,
             reason=request.reason
         )
 
@@ -264,7 +323,7 @@ async def rollback_version(request: VersionRollbackRequest):
             await _audit_logger.log(
                 action=AuditAction.VERSION_ROLLBACK,
                 project=request.project,
-                user=request.author,
+                user=author,
                 details={
                     "from_version": request.target_version,
                     "new_version": version.version,
@@ -279,6 +338,8 @@ async def rollback_version(request: VersionRollbackRequest):
             "message": version.message
         }
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
@@ -330,6 +391,8 @@ async def get_version_history(
         List of versions in range
     """
     try:
+        _safe_project(project)
+
         if not _version_manager:
             raise HTTPException(status_code=500, detail="Version manager not initialized")
 
@@ -440,7 +503,7 @@ async def get_audit_summary(
 
 
 @router.post("/git/branch")
-async def create_git_branch(request: GitBranchCreateRequest):
+async def create_git_branch(request: GitBranchCreateRequest, http_request: Request):
     """Create a new Git branch for config changes.
 
     Args:
@@ -450,12 +513,16 @@ async def create_git_branch(request: GitBranchCreateRequest):
         Created branch details
     """
     try:
+        _require_config_editor(http_request)
+        _safe_project(request.project)
+        author = _authoritative_author(http_request, request.author)
+
         if not _git_ops:
             raise HTTPException(status_code=500, detail="GitOps manager not initialized")
 
         branch_name = await _git_ops.create_feature_branch(
             project=request.project,
-            author=request.author,
+            author=author,
             base_branch=request.base_branch
         )
 
@@ -463,25 +530,31 @@ async def create_git_branch(request: GitBranchCreateRequest):
             "branch": branch_name,
             "base_branch": request.base_branch,
             "project": request.project,
-            "author": request.author
+            "author": author
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Branch creation error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/git/pr")
-async def create_pull_request(request: PullRequestCreateRequest):
+async def create_pull_request(request: PullRequestCreateRequest, http_request: Request):
     """Create a pull request for configuration changes.
 
     Args:
         request: PR creation request
+        http_request: FastAPI request (auth identity)
 
     Returns:
         PR details
     """
     try:
+        _require_config_editor(http_request)
+        _safe_project(request.project)
+
         if not _git_ops:
             raise HTTPException(status_code=500, detail="GitOps manager not initialized")
 
@@ -495,6 +568,8 @@ async def create_pull_request(request: PullRequestCreateRequest):
 
         return pr_info
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"PR creation error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -502,17 +577,22 @@ async def create_pull_request(request: PullRequestCreateRequest):
 
 @router.post("/git/sync")
 async def sync_from_git(
+    http_request: Request,
     branch: str = Query("develop", description="Branch to sync from")
 ):
     """Sync configurations from Git.
 
     Args:
+        http_request: FastAPI request (auth identity)
         branch: Branch to sync from
 
     Returns:
         Sync result with changed projects
     """
     try:
+        _require_config_editor(http_request)
+        author = _authoritative_author(http_request, "git-sync")
+
         if not _git_ops:
             raise HTTPException(status_code=500, detail="GitOps manager not initialized")
 
@@ -523,7 +603,7 @@ async def sync_from_git(
             await _audit_logger.log(
                 action=AuditAction.GIT_PULL,
                 project="global",
-                user="system",
+                user=author,
                 details={"branch": branch, "changed_projects": changed}
             )
 
@@ -533,6 +613,8 @@ async def sync_from_git(
             "timestamp": datetime.now().isoformat()
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Git sync error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

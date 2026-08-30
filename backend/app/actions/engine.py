@@ -1,5 +1,6 @@
 """Action Engine for converting Triage Card recommendations into executable actions."""
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -67,18 +68,45 @@ class ActionEngine:
         self.permission_checker = get_permission_checker()
         self.env_aware_executor = get_executor()
         self.feedback = get_feedback_collector()
+        # Phase 14 TOCTOU fix: serialize decision/execution per action id so
+        # concurrent approve/execute/reject can't both observe the old status
+        # and double-run a mutating command. (Multi-process deployments still
+        # need the Redis store's compare-and-set — this covers one process.)
+        self._action_locks: dict[str, asyncio.Lock] = {}
         # Real cluster client for impact estimation (Phase 12 B3). Previously
         # resolved via `from app.main import app_state`, a symbol that never
         # existed — the import always failed silently and estimation ran on
         # heuristics alone.
         self.k8s_client = k8s_client
 
+    def _action_lock(self, action_id: str) -> asyncio.Lock:
+        lock = self._action_locks.get(action_id)
+        if lock is None:
+            lock = self._action_locks[action_id] = asyncio.Lock()
+        return lock
+
+    async def approve_action(
+        self,
+        action_id: str,
+        request: ApproveActionRequest,
+        auth_user: str | None = None,
+    ) -> Action:
+        """Approve an action (per-action serialized — Phase 14 TOCTOU fix)."""
+        async with self._action_lock(action_id):
+            return await self._approve_action_impl(action_id, request, auth_user)
+
     async def create_action_from_recommendation(
         self,
         request: CreateActionRequest,
         recommendation: Recommendation,
+        auth_user: str | None = None,
     ) -> Action:
-        """Create an Action from a Triage Card recommendation."""
+        """Create an Action from a Triage Card recommendation.
+
+        auth_user: authenticated identity (Phase 14) — the creation-time
+        permission check is narrowed by it exactly like execute, so a
+        viewer can no longer stage actions born APPROVED.
+        """
         # Generate unique action ID
         action_id = str(uuid.uuid4())
 
@@ -98,11 +126,13 @@ class ActionEngine:
         if project_config and hasattr(project_config, "tags"):
             environment = project_config.tags.get("environment", "production")
 
-        # Check permissions using RBAC (Phase 3 integration)
+        # Check permissions using RBAC (Phase 3 integration; Phase 14: narrow
+        # by the authenticated identity, same as execute).
         permission_result = self.permission_checker.check_command(
             command=command,
             environment=environment,
             project=request.project,
+            user=auth_user,
         )
 
         # Determine risk level from validation and permission check
@@ -155,6 +185,7 @@ class ActionEngine:
                 "validation": validation.to_dict(),
                 "priority": recommendation.priority,
                 "permission_check": permission_result.to_dict(),
+                "permission_check_user": auth_user,
                 "environment": environment,
                 "impact_estimate": {
                     "impact_level": impact_estimate.impact_level.value,
@@ -231,7 +262,7 @@ class ActionEngine:
         must never — otherwise an automation label colliding with a local
         username would silently change permission decisions.
         """
-        env = (state.get("context") or {}).get("environment", "development")
+        env = (state.get("context") or {}).get("environment", "production")
         result = self.permission_checker.check(
             action="approve",
             environment=env,
@@ -267,7 +298,7 @@ class ActionEngine:
 
         self._check_decision_permission(state, approver, auth_user)
 
-    async def approve_action(
+    async def _approve_action_impl(
         self,
         action_id: str,
         request: ApproveActionRequest,
@@ -333,6 +364,16 @@ class ActionEngine:
         request: RejectActionRequest,
         auth_user: str | None = None,
     ) -> Action:
+        """Reject an action (per-action serialized — Phase 14 TOCTOU fix)."""
+        async with self._action_lock(action_id):
+            return await self._reject_action_impl(action_id, request, auth_user)
+
+    async def _reject_action_impl(
+        self,
+        action_id: str,
+        request: RejectActionRequest,
+        auth_user: str | None = None,
+    ) -> Action:
         """Reject an action.
 
         auth_user: authenticated identity from the API layer; drives RBAC
@@ -391,6 +432,16 @@ class ActionEngine:
         return Action(**action_kwargs)
 
     async def execute_action(
+        self,
+        action_id: str,
+        request: ExecuteActionRequest,
+        auth_user: str | None = None,
+    ) -> Action:
+        """Execute an approved action (per-action serialized — Phase 14)."""
+        async with self._action_lock(action_id):
+            return await self._execute_action_impl(action_id, request, auth_user)
+
+    async def _execute_action_impl(
         self,
         action_id: str,
         request: ExecuteActionRequest,

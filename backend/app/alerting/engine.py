@@ -167,8 +167,16 @@ class AlertEngine:
                 timestamp=event["timestamp"],
             )
 
-            # Get environment from labels or default
-            environment = rule.labels.get("environment", settings.ENVIRONMENT)
+            # Phase 14 security: environment is server-side truth. Rule
+            # labels are client-influenced data and must never select the
+            # execution environment.
+            if "environment" in rule.labels:
+                logger.warning(
+                    "Rule %s carries labels.environment=%r — ignored; "
+                    "using server ENVIRONMENT=%r",
+                    rule.id, rule.labels["environment"], settings.ENVIRONMENT,
+                )
+            environment = settings.ENVIRONMENT
 
             # Get autonomous executor and execute action
             autonomous_executor = get_autonomous_executor()

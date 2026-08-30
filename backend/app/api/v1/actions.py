@@ -62,10 +62,12 @@ async def create_action(request: Request, body: CreateActionRequest) -> ActionRe
             estimated_impact="No impact (read-only)",
         )
 
-        # Create the action
+        # Create the action (auth_user narrows the creation-time permission
+        # check — Phase 14)
         action = await engine.create_action_from_recommendation(
             request=body,
             recommendation=mock_recommendation,
+            auth_user=getattr(request.state, "user", None),
         )
 
         # Broadcast WebSocket event
@@ -292,6 +294,7 @@ async def create_bulk_actions(
                         project=project,
                     ),
                     recommendation=rec,
+                    auth_user=getattr(request.state, "user", None),
                 )
                 actions.append(action)
             except Exception as e:

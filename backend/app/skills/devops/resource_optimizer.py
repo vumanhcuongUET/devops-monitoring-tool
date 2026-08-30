@@ -52,6 +52,12 @@ class ResourceOptimizerSkill(BaseSkill):
         try:
             days = parameters.get("days", 7)
             namespace = parameters.get("namespace")
+            if namespace:
+                # Interpolated into PromQL selectors and kubectl strings —
+                # reject anything outside safe identifier characters.
+                from app.security import validate_identifier
+
+                validate_identifier(namespace, "namespace")
 
             resources = await self._fetch_resource_metrics(project, days, context, namespace)
             over_provisioned = self._find_over_provisioned(resources)

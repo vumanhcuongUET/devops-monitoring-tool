@@ -6,6 +6,11 @@ from elasticsearch import AsyncElasticsearch
 
 from app.config import settings
 
+# Default _source projection for search_logs. Full documents can be huge
+# (stack traces, kubernetes metadata, agent fields); every current caller
+# only reads these five. Pass source_includes explicitly to widen.
+DEFAULT_LOG_SOURCE_INCLUDES = ["message", "level", "service", "@timestamp", "log"]
+
 
 class ElasticsearchClient:
     def __init__(self):
@@ -37,6 +42,7 @@ class ElasticsearchClient:
         end: str | None = None,
         page: int = 1,
         size: int = 50,
+        source_includes: list[str] | None = None,
     ) -> tuple[list[dict], int]:
         must = []
         if query and query != "*":
@@ -67,6 +73,11 @@ class ElasticsearchClient:
             "sort": [{"@timestamp": {"order": "desc"}}],
             "from": (page - 1) * size,
             "size": size,
+            # Token optimization: project only the fields callers read
+            # instead of shipping full _source docs to the LLM/API.
+            "_source": source_includes
+            if source_includes is not None
+            else DEFAULT_LOG_SOURCE_INCLUDES,
         }
 
         resp = await asyncio.wait_for(

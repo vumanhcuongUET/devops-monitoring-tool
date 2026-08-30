@@ -461,10 +461,13 @@ async def _get_logs_context(es_client, project: str, time_delta: timedelta) -> l
         from datetime import datetime, timezone
 
         since = (datetime.now(timezone.utc) - time_delta).isoformat()
+        # Fetch a deeper window than the old 50: llm_client now samples by
+        # severity quota (critical/error/warning/info caps, ~30 kept), so a
+        # bigger fetch yields better signal at the same prompt cost.
         logs, _ = await es_client.search_logs(
             query=f"{project} AND (error OR ERROR OR critical OR fail)",
             start=since,
-            size=50,
+            size=200,
         )
         return logs
     except Exception:

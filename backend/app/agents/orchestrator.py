@@ -6,6 +6,7 @@ Implements consensus voting and result aggregation.
 """
 
 import asyncio
+import inspect
 import time
 import logging
 from datetime import datetime
@@ -16,10 +17,31 @@ from .cost_agent import CostOptimizationAgent
 from .k8s_agent import KubernetesAgent
 from .log_agent import LogAnalysisAgent
 from .metrics_agent import MetricsAgent
+from .model_selector import ModelSelector
 from .performance_agent import PerformanceAgent
 from .security_agent import SecurityAgent
 
 logger = logging.getLogger(__name__)
+
+# Which context keys each agent actually consumes — used to score that
+# agent's input complexity independently (log volume says nothing about
+# the security agent's workload).
+_AGENT_CONTEXT_KEYS: dict[str, tuple[str, ...]] = {
+    "log": ("logs", "log_entries"),
+    "metrics": ("metrics", "prometheus_data"),
+    "k8s": ("k8s_state", "cluster_state"),
+    "cost": ("resources", "cost_data"),
+    "security": ("security_data", "vulnerabilities"),
+    "performance": ("performance_data", "traces"),
+}
+
+# Request-level flags the selector's complexity scoring reacts to.
+_COMPLEXITY_FLAGS = (
+    "requires_deep_analysis",
+    "multi_hop_reasoning",
+    "complex_correlation",
+    "cost_critical",
+)
 
 
 class AgentOrchestrator:
@@ -34,7 +56,7 @@ class AgentOrchestrator:
     - Fallback to simpler agents if complex ones fail
     """
 
-    def __init__(self, model_selector: Any | None = None):
+    def __init__(self, model_selector: ModelSelector | None = None):
         """Initialize the orchestrator with all available agents."""
         self.agents: dict[str, BaseAgent] = {
             "log": LogAnalysisAgent(),
@@ -81,7 +103,7 @@ class AgentOrchestrator:
         logger.info(f"Running analysis with agents: {agents}")
 
         # Run agents in parallel
-        agent_results = await self._run_agents_parallel(agents, context)
+        agent_results, agent_models = await self._run_agents_parallel(agents, context)
 
         # Aggregate results
         aggregated = self._aggregate_results(agent_results)
@@ -103,6 +125,8 @@ class AgentOrchestrator:
                 "timestamp": datetime.utcnow().isoformat(),
             }
         )
+        if self.model_selector:
+            aggregated["models"] = agent_models
 
         # Track execution
         self._execution_history.append(
@@ -110,6 +134,7 @@ class AgentOrchestrator:
                 "context_keys": list(context.keys()),
                 "agents": agents,
                 "success_count": aggregated["agents_successful"],
+                "models": agent_models if self.model_selector else None,
                 "timestamp": start_time.isoformat(),
             }
         )
@@ -146,16 +171,58 @@ class AgentOrchestrator:
 
         return selected
 
+    def _select_model_for(self, agent_name: str, context: dict[str, Any]) -> str | None:
+        """
+        Pick the model tier for one agent from that agent's own input.
+
+        Complexity is scored on the sub-context the agent actually reads
+        (log volume, metric series count, data sources), so a huge log
+        batch doesn't push the security agent onto Opus. Returns None when
+        no selector is attached — agents then keep their configured model.
+        """
+        if self.model_selector is None:
+            return None
+
+        keys = _AGENT_CONTEXT_KEYS.get(agent_name)
+        sub_context = {k: context[k] for k in keys if k in context} if keys else {}
+        if not sub_context:
+            sub_context = dict(context)
+        else:
+            # Request-level complexity flags apply to every agent's scoring.
+            for flag in _COMPLEXITY_FLAGS:
+                if flag in context:
+                    sub_context[flag] = context[flag]
+
+        try:
+            return self.model_selector.select_model(sub_context)
+        except Exception as e:
+            logger.warning(f"Model selection failed for {agent_name}: {e}")
+            return None
+
+    @staticmethod
+    def _accepts_model_override(agent: BaseAgent) -> bool:
+        """True if agent.analyze() takes a `model` parameter (or **kwargs)."""
+        try:
+            params = inspect.signature(agent.analyze).parameters
+        except (TypeError, ValueError):
+            return False
+        if "model" in params:
+            return True
+        return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
     async def _run_agents_parallel(
         self, agent_names: list[str], context: dict[str, Any]
-    ) -> list[AgentResponse]:
-        """Run multiple agents in parallel."""
+    ) -> tuple[list[AgentResponse], dict[str, str | None]]:
+        """Run multiple agents in parallel, each on its selected model tier."""
         tasks = []
+        models: dict[str, str | None] = {}
 
         for name in agent_names:
             agent = self.agents.get(name)
             if agent:
-                tasks.append(self._run_agent_safely(agent, context))
+                model = self._select_model_for(name, context)
+                models[name] = model
+                tasks.append(self._run_agent_safely(agent, context, model))
             else:
                 logger.warning(f"Agent not found: {name}")
 
@@ -188,18 +255,26 @@ class AgentOrchestrator:
                     )
                 )
 
-        return processed_results
+        return processed_results, models
 
     async def _run_agent_safely(
-        self, agent: BaseAgent, context: dict[str, Any]
+        self,
+        agent: BaseAgent,
+        context: dict[str, Any],
+        model: str | None = None,
     ) -> AgentResponse:
         """Run a single agent with timeout and error handling."""
         from app.metrics import AGENT_DURATION, AGENT_INVOCATIONS, AGENT_TIMEOUTS
 
+        if model is not None and self._accepts_model_override(agent):
+            invocation = agent.analyze(context, model=model)
+        else:
+            invocation = agent.analyze(context)
+
         started = time.monotonic()
         try:
             result = await asyncio.wait_for(
-                agent.analyze(context),
+                invocation,
                 timeout=agent.timeout,
             )
         except asyncio.TimeoutError:

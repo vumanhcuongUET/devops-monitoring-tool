@@ -13,6 +13,7 @@ from typing import Any
 from anthropic import AsyncAnthropic
 
 from app.config import settings
+from app.llm_metrics import record_request, record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,7 @@ class BaseAgent(ABC):
         self,
         user_message: str,
         max_tokens: int = 1024,
+        model: str | None = None,
     ) -> str:
         """
         Query Claude API with the agent's system prompt.
@@ -108,15 +110,28 @@ class BaseAgent(ABC):
         Args:
             user_message: The user query or data to analyze
             max_tokens: Maximum tokens in response
+            model: Optional model override (per-call tier selected by the
+                orchestrator); falls back to the agent's configured model
 
         Returns:
             Claude's response as text
         """
+        # The agent system prompt is stable across calls — mark it
+        # ephemeral-cached so repeat calls bill at the cache-read rate.
+        system_blocks = [
+            {
+                "type": "text",
+                "text": self.get_prompt_template(),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        selected_model = model or self.model
         try:
+            record_request(path="agents", model=selected_model)
             response = await self.client.messages.create(
-                model=self.model,
+                model=selected_model,
                 max_tokens=max_tokens,
-                system=self.get_prompt_template(),
+                system=system_blocks,
                 messages=[
                     {
                         "role": "user",
@@ -124,6 +139,9 @@ class BaseAgent(ABC):
                     }
                 ],
                 timeout=self.timeout,
+            )
+            record_usage(
+                path="agents", model=selected_model, usage=getattr(response, "usage", None)
             )
             return response.content[0].text
         except Exception as e:

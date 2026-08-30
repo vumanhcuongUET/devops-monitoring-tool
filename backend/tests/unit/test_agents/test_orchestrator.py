@@ -39,10 +39,14 @@ class FakeAgent:
         self.delay = delay
         self.calls = 0
         self.last_context: dict[str, Any] | None = None
+        self.last_model: str | None = None
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         self.calls += 1
         self.last_context = context
+        self.last_model = model
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.raise_exc:
@@ -390,3 +394,111 @@ class TestHistoryAndHealth:
 
         assert health["agents"]["log"]["status"] == "unhealthy"
         assert health["agents"]["metrics"]["status"] == "healthy"
+
+
+@pytest.mark.unit
+class TestModelSelectionWiring:
+    """The orchestrator must actually use its ModelSelector per agent."""
+
+    @pytest.fixture
+    def orchestrator_with_selector(self, monkeypatch):
+        from app.agents.model_selector import ModelSelector
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+        orch = AgentOrchestrator(model_selector=ModelSelector())
+        orch.agents = {}
+        return orch
+
+    @pytest.mark.asyncio
+    async def test_low_complexity_routes_to_fast_tier(
+        self, orchestrator_with_selector
+    ):
+        from app.agents.model_selector import ModelSelector
+
+        agent = FakeAgent("log")
+        install_agents(orchestrator_with_selector, agent)
+
+        await orchestrator_with_selector.analyze({"logs": [{"m": "e"}]})
+
+        assert agent.last_model == ModelSelector.MODELS["fast"]
+
+    @pytest.mark.asyncio
+    async def test_high_complexity_routes_to_capable_tier(
+        self, orchestrator_with_selector
+    ):
+        from app.agents.model_selector import ModelSelector
+
+        agent = FakeAgent("log")
+        install_agents(orchestrator_with_selector, agent)
+        huge_context = {"logs": [{"m": i} for i in range(2000)],
+                        "requires_deep_analysis": True}
+
+        await orchestrator_with_selector.analyze(huge_context)
+
+        assert agent.last_model == ModelSelector.MODELS["capable"]
+
+    @pytest.mark.asyncio
+    async def test_per_agent_scoring_uses_only_agent_keys(
+        self, orchestrator_with_selector
+    ):
+        """A huge log batch must not drag the security agent onto Opus."""
+        from app.agents.model_selector import ModelSelector
+
+        log_agent = FakeAgent("log")
+        security_agent = FakeAgent("security")
+        install_agents(orchestrator_with_selector, log_agent, security_agent)
+        context = {
+            "logs": [{"m": i} for i in range(2000)],  # log-only complexity
+            "security_data": {"finding": "x"},
+        }
+
+        await orchestrator_with_selector.analyze(
+            context, agents=["log", "security"]
+        )
+
+        # log sees 2000 entries -> balanced; security sees one small dict -> fast
+        assert log_agent.last_model == ModelSelector.MODELS["balanced"]
+        assert security_agent.last_model == ModelSelector.MODELS["fast"]
+
+    @pytest.mark.asyncio
+    async def test_no_selector_leaves_model_unset(self, orchestrator):
+        agent = FakeAgent("log")
+        install_agents(orchestrator, agent)
+
+        await orchestrator.analyze({"logs": [{"m": "e"}]})
+
+        assert agent.last_model is None
+
+    @pytest.mark.asyncio
+    async def test_agent_without_model_param_is_called_without_it(
+        self, orchestrator_with_selector
+    ):
+        """Backward compat: stubs with analyze(context) must keep working."""
+
+        class LegacyAgent(FakeAgent):
+            async def analyze(self, context):  # noqa: ARG002 - legacy signature
+                self.calls += 1
+                self.last_context = context
+                return AgentResponse(agent_name=self.name, insights={"ok": True})
+
+        legacy = LegacyAgent("log")
+        install_agents(orchestrator_with_selector, legacy)
+
+        result = await orchestrator_with_selector.analyze({"logs": [{"m": "e"}]})
+
+        assert legacy.calls == 1
+        assert result["agents_successful"] == 1
+
+    @pytest.mark.asyncio
+    async def test_result_exposes_models_used(self, orchestrator_with_selector):
+        from app.agents.model_selector import ModelSelector
+
+        agent = FakeAgent("log")
+        install_agents(orchestrator_with_selector, agent)
+
+        result = await orchestrator_with_selector.analyze({"logs": [{"m": "e"}]})
+
+        assert result["models"]["log"] == ModelSelector.MODELS["fast"]
+        history = orchestrator_with_selector.get_execution_history()
+        assert history[-1]["models"]["log"] == ModelSelector.MODELS["fast"]

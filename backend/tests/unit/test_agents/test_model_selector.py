@@ -84,6 +84,27 @@ class TestTierSelection:
 
 
 @pytest.mark.unit
+class TestModelIds:
+    """Tier ids must be real Anthropic API model ids.
+
+    Regression guard: the fast tier previously carried a fabricated id
+    ("claude-haiku-4-20250101") that would 404 at the API the moment
+    low-complexity routing actually fired (token-optimization follow-up).
+    """
+
+    def test_fast_tier_is_real_haiku_model(self):
+        assert ModelSelector.MODELS["fast"] == "claude-haiku-4-5-20251001"
+
+    def test_all_tiers_follow_anthropic_id_shape(self):
+        for tier, model in ModelSelector.MODELS.items():
+            assert model.startswith("claude-"), tier
+            # Pinned ids end in a YYYYMMDD date stamp
+            assert model.rsplit("-", 1)[-1].isdigit() and len(
+                model.rsplit("-", 1)[-1]
+            ) == 8, f"{tier}: {model}"
+
+
+@pytest.mark.unit
 class TestCostLimitSelection:
     """Tight budgets force cheaper tiers regardless of complexity."""
 

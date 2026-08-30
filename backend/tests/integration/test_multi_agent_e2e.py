@@ -36,7 +36,7 @@ def mock_claude(monkeypatch):
     """Replace the Claude boundary on BaseAgent with a canned analysis."""
     fake = AsyncMock(return_value=CLAUDE_ANALYSIS_RESPONSE)
 
-    async def _query(self, user_message, max_tokens=1024):
+    async def _query(self, user_message, max_tokens=1024, model=None):
         return await fake(user_message, max_tokens=max_tokens)
 
     monkeypatch.setattr(BaseAgent, "_query_claude", _query)

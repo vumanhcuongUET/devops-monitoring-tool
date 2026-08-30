@@ -73,7 +73,9 @@ RECOMMENDATION: [Actionable recommendation]
 Be specific about resource values, pod counts, and configuration details.
 """
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         """
         Analyze Kubernetes cluster state.
 
@@ -128,7 +130,7 @@ Provide analysis with focus on health, resources, and best practices.
 """
 
         try:
-            response_text = await self._query_claude(prompt, max_tokens=2048)
+            response_text = await self._query_claude(prompt, max_tokens=2048, model=model)
 
             insights = {
                 "namespace": namespace,

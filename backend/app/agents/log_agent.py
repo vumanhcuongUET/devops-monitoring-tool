@@ -68,7 +68,9 @@ RECOMMENDATION: [Actionable recommendation]
 Be specific, evidence-based, and actionable. If data is insufficient, state what additional information would help.
 """
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         """
         Analyze log data for patterns and issues.
 
@@ -116,7 +118,7 @@ Provide analysis focusing on root causes and actionable recommendations.
 """
 
         try:
-            response_text = await self._query_claude(prompt, max_tokens=2048)
+            response_text = await self._query_claude(prompt, max_tokens=2048, model=model)
 
             # Extract insights from response
             insights = {

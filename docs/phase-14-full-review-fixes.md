@@ -89,3 +89,55 @@ ai_assistant cleanup.
    (billing, scanners, Grafana, CI, load-test artifacts).
 5. Alert-engine heartbeat/`/health/ready` with live dependency pings —
    recommended next (finding C7 of the architecture pass, not yet built).
+
+## Token optimization follow-up (2026-08-30)
+
+What was done:
+
+- **Usage capture everywhere** (was: output-only on TriageCard, nothing
+  else). New `app/llm_metrics.py` exports
+  `llm_input_tokens_total`/`llm_output_tokens_total` (labels: path, model)
+  and `llm_api_requests_total` (name differs from `llm_requests_total` in
+  `app/api/v1/metrics.py`, which already owns that series with labels
+  [model, status]). Recorded at every call site: triage, both streaming
+  paths (`message_start.usage.input_tokens` +
+  `message_delta.usage.output_tokens`), agents (`_query_claude`), and
+  `health_check`. TriageCard.tokens_used is now input+output.
+- **Compact JSON prompts**: all `json.dumps(indent=2)` in
+  `llm_client._build_user_prompt` and the simple-stream context dump are
+  compact — pretty-printing roughly halved again the payload token count
+  for zero quality gain.
+- **ES `_source` projection**: `search_logs` projects
+  `["message","level","service","@timestamp","log"]` by default
+  (widenable via `source_includes=`). All existing callers (logs API,
+  analyze context, dlq_monitor skill, frontend LogsPage) read only these
+  fields.
+- **Log severity quotas** replace the blunt `logs[:50]`:
+  `sample_logs_by_severity()` in `llm_client` keeps
+  critical:5/error:10/warning:10/info:5 when >50 logs arrive and notes
+  "showing N of M logs by severity (…)" in the prompt. The analyze
+  endpoint now fetches 200 logs so quotas have something to sample.
+- **ModelSelector actually wired**: `orchestrator.analyze` scores each
+  agent's own sub-context, picks a tier, and passes `model=` into
+  `agent.analyze` (agents/`_query_claude` accept the override; stubs
+  without the param are still called positionally — backward compatible).
+  Selected models surface in `result["models"]` and execution history.
+- **Fast-tier routing**: simple-stream and `health_check` run on
+  `ModelSelector.MODELS["fast"]`. That id was previously the fabricated
+  `claude-haiku-4-20250101` (no such Anthropic model — every low-complexity
+  routing would have 404'd); corrected to `claude-haiku-4-5-20251001`.
+  Triage generation stays on the configured Sonnet model.
+- **Prompt caching**: system prompts carry
+  `cache_control: {"type": "ephemeral"}` on triage, main streaming and all
+  agent calls (applied unconditionally — sub-1024-token prompts are simply
+  not cached, no error).
+
+Expected effect: 40-60% fewer input tokens per triage/stream call (compact
+JSON + projection + quotas), cache-read pricing on repeated system
+prompts, haiku pricing on simple questions/health probes, and per-path
+token spend finally visible in Prometheus.
+
+Note: the Phase 6/9/10 "token reduction" claims referenced code that was
+never wired (ModelSelector stored but unused; indent + full `_source`
+shipping unchanged). This follow-up makes those reductions real; earlier
+percentage claims were aspirational until now.

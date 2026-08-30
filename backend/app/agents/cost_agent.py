@@ -72,7 +72,9 @@ RECOMMENDATION: [Actionable recommendation with estimated savings]
 Be specific about dollar amounts and percentages. Prioritize high-impact opportunities.
 """
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         """
         Analyze resource costs and identify optimization opportunities.
 
@@ -117,7 +119,7 @@ Provide analysis with specific recommendations and estimated savings.
 """
 
         try:
-            response_text = await self._query_claude(prompt, max_tokens=2048)
+            response_text = await self._query_claude(prompt, max_tokens=2048, model=model)
 
             insights = {
                 "total_resources": len(resources),

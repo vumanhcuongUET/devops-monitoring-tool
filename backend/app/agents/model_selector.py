@@ -22,7 +22,11 @@ class ModelSelector:
     """
 
     MODELS = {
-        "fast": "claude-haiku-4-20250101",      # Fast, cheap
+        # Token-optimization follow-up: "claude-haiku-4-20250101" was a
+        # fabricated id (no such Anthropic model) — every low-complexity
+        # routing to the fast tier would have 404'd at the API. Real id:
+        # https://platform.claude.com/docs/en/models/overview
+        "fast": "claude-haiku-4-5-20251001",     # Fast, cheap
         "balanced": "claude-sonnet-4-20250514",  # Balanced
         "capable": "claude-opus-4-20250514"      # Most capable
     }

@@ -70,7 +70,9 @@ RECOMMENDATION: [Actionable performance recommendation]
 Be quantitative with timing data. Prioritize high-impact optimizations.
 """
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         """
         Analyze application performance.
 
@@ -119,7 +121,7 @@ Provide performance analysis with specific optimization recommendations.
 """
 
         try:
-            response_text = await self._query_claude(prompt, max_tokens=2048)
+            response_text = await self._query_claude(prompt, max_tokens=2048, model=model)
 
             insights = {
                 "service": service,

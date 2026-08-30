@@ -69,7 +69,9 @@ RECOMMENDATION: [Actionable security recommendation]
 Prioritize findings by severity. Be specific about CVEs and configuration issues.
 """
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         """
         Analyze security posture.
 
@@ -129,7 +131,7 @@ Provide security analysis with prioritized remediation recommendations.
 """
 
         try:
-            response_text = await self._query_claude(prompt, max_tokens=2048)
+            response_text = await self._query_claude(prompt, max_tokens=2048, model=model)
 
             insights = {
                 "overall_risk": overall_risk,

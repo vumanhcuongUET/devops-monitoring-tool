@@ -71,7 +71,9 @@ RECOMMENDATION: [Actionable recommendation]
 Be quantitative where possible. Use specific thresholds and time windows.
 """
 
-    async def analyze(self, context: dict[str, Any]) -> AgentResponse:
+    async def analyze(
+        self, context: dict[str, Any], model: str | None = None
+    ) -> AgentResponse:
         """
         Analyze metrics data for trends and issues.
 
@@ -133,7 +135,7 @@ Provide analysis with focus on performance, capacity, and SLO compliance.
 """
 
         try:
-            response_text = await self._query_claude(prompt, max_tokens=2048)
+            response_text = await self._query_claude(prompt, max_tokens=2048, model=model)
 
             # Extract insights
             insights = {

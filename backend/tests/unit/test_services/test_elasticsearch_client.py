@@ -5,11 +5,84 @@ Tests the Elasticsearch client functionality including:
 - Log search functionality
 - Error count retrieval
 - Cluster health checks
+- _source projection for token-optimized payloads (2026-08-30)
 """
 
 from unittest.mock import AsyncMock
 
 import pytest
+
+from app.services import elasticsearch_client as es_module
+from app.services.elasticsearch_client import (
+    DEFAULT_LOG_SOURCE_INCLUDES,
+    ElasticsearchClient,
+)
+
+
+class FakeAsyncElasticsearch:
+    """Captures search bodies instead of hitting a cluster."""
+
+    last_body: dict | None = None
+    response = {"hits": {"total": {"value": 0}, "hits": []}}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def search(self, index=None, body=None):
+        type(self).last_body = body
+        return type(self).response
+
+    async def close(self):
+        return None
+
+
+@pytest.fixture
+def es(monkeypatch):
+    monkeypatch.setattr(es_module, "AsyncElasticsearch", FakeAsyncElasticsearch)
+    return ElasticsearchClient()
+
+
+@pytest.mark.unit
+class TestSourceProjection:
+    """search_logs must project only the fields callers read."""
+
+    @pytest.mark.asyncio
+    async def test_default_projection_in_request_body(self, es):
+        await es.search_logs(query="error", size=50)
+
+        assert FakeAsyncElasticsearch.last_body["_source"] == (
+            DEFAULT_LOG_SOURCE_INCLUDES
+        )
+
+    @pytest.mark.asyncio
+    async def test_projection_is_widenable(self, es):
+        await es.search_logs(query="*", source_includes=["*"])
+
+        assert FakeAsyncElasticsearch.last_body["_source"] == ["*"]
+
+    @pytest.mark.asyncio
+    async def test_default_projection_fields(self):
+        assert DEFAULT_LOG_SOURCE_INCLUDES == [
+            "message", "level", "service", "@timestamp", "log",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_returns_source_docs(self, es):
+        FakeAsyncElasticsearch.response = {
+            "hits": {
+                "total": {"value": 1},
+                "hits": [{"_source": {"message": "m", "level": "ERROR"}}],
+            }
+        }
+        try:
+            docs, total = await es.search_logs(query="error")
+        finally:
+            FakeAsyncElasticsearch.response = {
+                "hits": {"total": {"value": 0}, "hits": []}
+            }
+
+        assert docs == [{"message": "m", "level": "ERROR"}]
+        assert total == 1
 
 
 @pytest.mark.unit

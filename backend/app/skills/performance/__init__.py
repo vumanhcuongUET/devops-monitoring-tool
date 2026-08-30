@@ -1,13 +1,5 @@
-"""Performance skills for Phase 5.
+"""Performance Skills.
 
-This package contains skills for analyzing load test results,
-circuit breaker health, and performance bottleneck detection.
+Both performance skills are catalog stubs (Phase 14): they need load-test
+artifacts / circuit telemetry sources. See app/skills/catalog_stub.py.
 """
-
-from app.skills.performance.circuit_breaker_health import CircuitBreakerHealthSkill
-from app.skills.performance.load_test_analyzer import LoadTestAnalyzerSkill
-
-__all__ = [
-    "CircuitBreakerHealthSkill",
-    "LoadTestAnalyzerSkill",
-]

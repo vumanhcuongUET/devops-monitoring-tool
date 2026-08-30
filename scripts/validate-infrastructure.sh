@@ -146,20 +146,19 @@ check_postgres() {
 check_gitops() {
     print_header "Checking GitOps Configuration"
 
-    config_dir="./config-repo"
+    config_dir="./configs"
 
     if [ ! -d "$config_dir" ]; then
-        print_error "GitOps repository not found at $config_dir"
+        print_error "GitOps configuration tree not found at $config_dir"
         echo ""
         return 1
     fi
 
-    print_success "GitOps repository exists"
+    print_success "GitOps configuration tree exists"
 
     # Check global configs
     configs=(
         "$config_dir/global/defaults.yaml"
-        "$config_dir/global/policies.yaml"
         "$config_dir/global/schemas/project.schema.yaml"
         "$config_dir/global/schemas/alert.schema.yaml"
         "$config_dir/global/schemas/slo.config.schema.yaml"
@@ -176,11 +175,19 @@ check_gitops() {
     done
 
     # Check project configs
-    if [ -f "$config_dir/projects/meinvoice/config.yaml" ]; then
-        print_success "Example project config exists"
-    else
-        print_error "Example project config missing"
-    fi
+    project_configs=(
+        "$config_dir/projects/meinvoice/config.yaml"
+        "$config_dir/projects/meinvoice/alerts.yaml"
+        "$config_dir/projects/meinvoice/slos.yaml"
+    )
+
+    for config in "${project_configs[@]}"; do
+        if [ -f "$config" ]; then
+            print_success "meinvoice $(basename $config) exists"
+        else
+            print_error "meinvoice $(basename $config) missing"
+        fi
+    done
 
     echo ""
 }
@@ -305,8 +312,8 @@ display_connection_details() {
     echo "PostgreSQL:"
     echo "  Analytics:  postgres.monitoring.svc.cluster.local:5432/devops_monitoring"
     echo ""
-    echo "GitOps Repository:"
-    echo "  Path: ./config-repo/"
+    echo "GitOps Configuration:"
+    echo "  Path: ./configs/"
     echo ""
     echo "Monitoring:"
     echo "  Grafana:    http://grafana.monitoring.svc.cluster.local"

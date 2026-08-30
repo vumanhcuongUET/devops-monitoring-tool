@@ -5,14 +5,12 @@ and detecting anomalies in observability data.
 """
 
 from app.skills.observability.anomaly_detector import AnomalyDetectorSkill
-from app.skills.observability.dashboard_auditor import DashboardAuditorSkill
 from app.skills.observability.metrics_analyzer import MetricsAnalyzerSkill
 from app.skills.observability.slo_tracker import SLOTrackerSkill
 from app.skills.observability.tracing_analyzer import TracingAnalyzerSkill
 
 __all__ = [
     "AnomalyDetectorSkill",
-    "DashboardAuditorSkill",
     "MetricsAnalyzerSkill",
     "SLOTrackerSkill",
     "TracingAnalyzerSkill",

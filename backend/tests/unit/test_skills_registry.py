@@ -24,15 +24,14 @@ def test_group_failure_does_not_block_rest(monkeypatch):
     def _boom(_registry):
         raise RuntimeError("simulated group failure")
 
-    monkeypatch.setattr(
-        registry_module,
-        "_SKILL_GROUPS",
-        (_boom, *registry_module._SKILL_GROUPS[1:]),
-    )
+    groups = list(registry_module._SKILL_GROUPS)
+    groups[groups.index(registry_module._group_devops)] = _boom
+    monkeypatch.setattr(registry_module, "_SKILL_GROUPS", tuple(groups))
     registry = SkillRegistry()
     _initialize_registry(registry)
-    # Only the 3 finops skills (first group) are missing.
-    assert len(registry._skills) == EXPECTED_SKILL_COUNT - 3
+    # _group_devops registers the 4 real devops skills — everything after it
+    # still registers, catalog stubs included.
+    assert len(registry._skills) == EXPECTED_SKILL_COUNT - 4
 
 
 def test_duplicate_free_registration_is_idempotent_error_visible(caplog):

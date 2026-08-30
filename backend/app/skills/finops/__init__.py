@@ -1,11 +1,5 @@
-"""FinOps Skills - Cost optimization and resource management."""
+"""FinOps Skills - Cost optimization and resource management.
 
-from app.skills.finops.cost_analyzer import CostAnalyzerSkill
-from app.skills.finops.idle_resources import IdleResourcesSkill
-from app.skills.finops.rightsizing import RightSizingSkill
-
-__all__ = [
-    "CostAnalyzerSkill",
-    "IdleResourcesSkill",
-    "RightSizingSkill",
-]
+All finops skills are catalog stubs (Phase 14): they need a real
+billing/cloud-provider client. See app/skills/catalog_stub.py.
+"""

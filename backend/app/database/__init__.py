@@ -2,7 +2,7 @@
 Database Module
 
 Phase 10 - Sprint 1 - Day 3/4
-Purpose: PostgreSQL integration with SQLAlchemy + TimescaleDB
+Purpose: PostgreSQL integration with SQLAlchemy
 """
 
 from app.database.base import Base
@@ -31,25 +31,3 @@ __all__ = [
     "check_connection",
     "get_database_url",
 ]
-
-# TimescaleDB (optional import - requires TimescaleDB extension)
-try:
-    from app.database.timescaledb import (  # noqa: F401
-        DAILY_METRICS_VIEW,
-        DAILY_REFRESH_POLICY,
-        HOURLY_METRICS_VIEW,
-        HOURLY_REFRESH_POLICY,
-        Metric,
-        MetricRepository,
-    )
-
-    __all__.extend([
-        "DAILY_METRICS_VIEW",
-        "DAILY_REFRESH_POLICY",
-        "HOURLY_METRICS_VIEW",
-        "HOURLY_REFRESH_POLICY",
-        "Metric",
-        "MetricRepository",
-    ])
-except ImportError:
-    pass

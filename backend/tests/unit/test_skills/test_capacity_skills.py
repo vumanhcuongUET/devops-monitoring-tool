@@ -180,10 +180,12 @@ class TestStubFlag:
 
     @pytest.mark.asyncio
     async def test_registry_refuses_stub_execution(self):
-        from app.skills.finops.cost_analyzer import CostAnalyzerSkill
+        from functools import partial
+
+        from app.skills.catalog_stub import CatalogStubSkill
 
         registry = SkillRegistry()
-        registry.register(CostAnalyzerSkill)
+        registry.register(partial(CatalogStubSkill, "finops_cost_analyzer"))
         with pytest.raises(ValueError, match="not implemented"):
             await registry.execute(
                 skill_id="finops_cost_analyzer",

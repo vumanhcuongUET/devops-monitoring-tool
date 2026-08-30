@@ -16,48 +16,17 @@ from app.skills.base import (
     SkillStatus,
     SkillTimeoutError,
 )
+from app.skills.catalog_stub import STUB_CATALOG
 
 logger = logging.getLogger(__name__)
 
 # Singleton instance
 _skill_registry: Optional["SkillRegistry"] = None
 
-# Skills that have no real data-source integration yet: their fetch/scan layer
-# returns empty lists or generated sample data, so results are not actionable.
-# Kept registered as a public catalog but flagged and refused on execution.
-STUB_SKILLS: frozenset[str] = frozenset({
-    # finops — mock billing/cloud-provider clients
-    "finops_cost_analyzer",
-    "finops_idle_resources",
-    "finops_rightsizing",
-    # security — mock scanners / fabricated findings
-    "security_vulnerability_scanner",
-    "security_secret_scanner",
-    "security_kube_bench",
-    "security_misconfiguration_detector",
-    "security_dependency_confusion",
-    "security_runtime_monitor",
-    "security_csp_analyzer",
-    "security_header_validator",
-    "security_secret_exposure_scanner",
-    # devops — no repo/cluster I/O
-    "devops_config_drift_detector",
-    "cicd_pipeline_analyzer",
-    # code — no repo I/O
-    "code_dependency_audit",
-    "code_sast_scanner",
-    "code_test_coverage_analyzer",
-    # monitoring — synthetic metrics
-    "monitoring_dashboard_auditor",
-    # observability — synthetic time series
-    "observability_dashboard_auditor",
-    # compliance — synthetic audit evidence
-    "compliance_gdpr_auditor",
-    "compliance_soc2_auditor",
-    # performance — synthetic load-test/circuit data
-    "performance_load_test_analyzer",
-    "performance_circuit_breaker_health",
-})
+# Skills that have no real data-source integration yet: they are registered
+# as metadata-only CatalogStubSkill entries (app/skills/catalog_stub.py) and
+# refused on execution, so mock data is never returned as analysis.
+STUB_SKILLS: frozenset[str] = frozenset(STUB_CATALOG)
 
 
 class SkillRegistry:
@@ -495,37 +464,15 @@ EXPECTED_SKILL_COUNT = 44
 
 
 def _group_finops(registry: SkillRegistry) -> None:
-    from app.skills.finops import (
-        CostAnalyzerSkill,
-        IdleResourcesSkill,
-        RightSizingSkill,
-    )
-    registry.register(CostAnalyzerSkill)
-    registry.register(IdleResourcesSkill)
-    registry.register(RightSizingSkill)
+    pass  # all finops skills are catalog stubs (registered by _group_catalog_stubs)
 
 
 def _group_security(registry: SkillRegistry) -> None:
-    from app.skills.security import (
-        DependencyConfusionSkill,
-        KubeBenchSkill,
-        MisconfigurationDetectorSkill,
-        SecretScannerSkill,
-        SecurityRuntimeMonitorSkill,
-        VulnerabilityScannerSkill,
-    )
-    registry.register(VulnerabilityScannerSkill)
-    registry.register(SecretScannerSkill)
-    registry.register(KubeBenchSkill)
-    registry.register(MisconfigurationDetectorSkill)
-    registry.register(DependencyConfusionSkill)
-    registry.register(SecurityRuntimeMonitorSkill)
+    pass  # all security skills are catalog stubs
 
 
 def _group_devops(registry: SkillRegistry) -> None:
     from app.skills.devops import (
-        CicdPipelineAnalyzerSkill,
-        ConfigDriftDetectorSkill,
         DeploymentHealthCheckSkill,
         DockerfileBestPracticesSkill,
         KubernetesManifestValidatorSkill,
@@ -533,8 +480,6 @@ def _group_devops(registry: SkillRegistry) -> None:
     )
     registry.register(DeploymentHealthCheckSkill)
     registry.register(ResourceOptimizerSkill)
-    registry.register(ConfigDriftDetectorSkill)
-    registry.register(CicdPipelineAnalyzerSkill)
     registry.register(DockerfileBestPracticesSkill)
     registry.register(KubernetesManifestValidatorSkill)
 
@@ -543,15 +488,9 @@ def _group_code(registry: SkillRegistry) -> None:
     from app.skills.code import (
         CodeSmellDetectorSkill,
         ComplexityAnalyzerSkill,
-        DependencyAuditSkill,
         DuplicationDetectorSkill,
-        SastScannerSkill,
-        TestCoverageAnalyzerSkill,
     )
-    registry.register(DependencyAuditSkill)
-    registry.register(SastScannerSkill)
     registry.register(ComplexityAnalyzerSkill)
-    registry.register(TestCoverageAnalyzerSkill)
     registry.register(DuplicationDetectorSkill)
     registry.register(CodeSmellDetectorSkill)
 
@@ -570,12 +509,10 @@ def _group_capacity(registry: SkillRegistry) -> None:
 def _group_monitoring(registry: SkillRegistry) -> None:
     from app.skills.monitoring import (
         AlertOptimizerSkill,
-        DashboardAuditorSkill,
         SLICalculatorSkill,
     )
     registry.register(AlertOptimizerSkill)
     registry.register(SLICalculatorSkill)
-    registry.register(DashboardAuditorSkill)
 
 
 def _group_reliability(registry: SkillRegistry) -> None:
@@ -590,40 +527,34 @@ def _group_reliability(registry: SkillRegistry) -> None:
 
 
 def _group_compliance(registry: SkillRegistry) -> None:
-    from app.skills.compliance import (
-        GDPRAuditorSkill,
-        SOC2AuditorSkill,
-    )
-    registry.register(GDPRAuditorSkill)
-    registry.register(SOC2AuditorSkill)
+    pass  # all compliance skills are catalog stubs
 
 
 def _group_observability(registry: SkillRegistry) -> None:
     from app.skills.observability import (
         AnomalyDetectorSkill,
-        DashboardAuditorSkill,
         MetricsAnalyzerSkill,
-        TracingAnalyzerSkill,
-    )
-    from app.skills.observability import (
         SLOTrackerSkill as ObservabilitySLOTrackerSkill,
+        TracingAnalyzerSkill,
     )
     registry.register(MetricsAnalyzerSkill)
     registry.register(TracingAnalyzerSkill)
-    registry.register(DashboardAuditorSkill)
     registry.register(AnomalyDetectorSkill)
     registry.register(ObservabilitySLOTrackerSkill)
 
 
-def _group_security_extended(registry: SkillRegistry) -> None:
-    from app.skills.security import (
-        CSPAnalyzerSkill,
-        HeaderValidatorSkill,
-        SecretExposureScannerSkill,
-    )
-    registry.register(CSPAnalyzerSkill)
-    registry.register(HeaderValidatorSkill)
-    registry.register(SecretExposureScannerSkill)
+def _group_catalog_stubs(registry: SkillRegistry) -> None:
+    """Metadata-only registrations for the unimplemented catalog (Phase 14).
+
+    These carry id/name/description for the public catalog and UI; execute()
+    refuses them via the stub flag.
+    """
+    from functools import partial
+
+    from app.skills.catalog_stub import CatalogStubSkill
+
+    for skill_id in STUB_CATALOG:
+        registry.register(partial(CatalogStubSkill, skill_id))
 
 
 def _group_reliability_extended(registry: SkillRegistry) -> None:
@@ -636,12 +567,7 @@ def _group_reliability_extended(registry: SkillRegistry) -> None:
 
 
 def _group_performance(registry: SkillRegistry) -> None:
-    from app.skills.performance import (
-        CircuitBreakerHealthSkill,
-        LoadTestAnalyzerSkill,
-    )
-    registry.register(LoadTestAnalyzerSkill)
-    registry.register(CircuitBreakerHealthSkill)
+    pass  # all performance skills are catalog stubs
 
 
 _SKILL_GROUPS = (
@@ -654,9 +580,9 @@ _SKILL_GROUPS = (
     _group_reliability,
     _group_compliance,
     _group_observability,
-    _group_security_extended,
     _group_reliability_extended,
     _group_performance,
+    _group_catalog_stubs,
 )
 
 

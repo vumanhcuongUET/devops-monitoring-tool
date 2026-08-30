@@ -4,9 +4,9 @@ Config-driven monitoring assistant for Claude CLI. Ask natural language question
 
 ---
 
-## ⚠️  Migration Notice
+## Migration Notice
 
-**`run_query.py` (v1) is deprecated.** Please migrate to `run_query_v2.py` (v2) for enhanced features:
+**`run_query.py` (v1) was removed on 2026-08-30.** Use `run_query_v2.py`:
 
 ### v2 Features
 - ✅ Backend service integration with graceful fallback
@@ -30,7 +30,7 @@ Config-driven monitoring assistant for Claude CLI. Ask natural language question
 **Quick start:**
 ```bash
 # Old (deprecated)
-python tools/run_query.py --project meinvoice --section errors
+python tools/run_query_v2.py --project meinvoice --section errors
 
 # New (recommended)
 python tools/run_query_v2.py --project meinvoice --section errors
@@ -88,8 +88,7 @@ ai_assistant/
 │   ├── test_performance.py          # Performance regression tests (18 tests)
 │   └── test_*.py                   # Unit tests for core modules
 ├── tools/
-│   ├── run_query.py                 # Legacy (v1, deprecated)
-│   └── run_query_v2.py              # Enhanced query runner (v2, recommended)
+│   └── run_query_v2.py              # Query runner (CLI entrypoint)
 └── projects/
     ├── _template/                   # Copy this for a new project
     │   └── config.yaml
@@ -194,7 +193,7 @@ $env:PROM_AUTH = [Convert]::ToBase64String(
 
 ```bash
 # Should print JSON with "unreachable" status since this is test endpoints
-python tools/run_query.py --project meinvoice --section errors --output pretty
+python tools/run_query_v2.py --project meinvoice --section errors --output pretty
 ```
 
 ---

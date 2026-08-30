@@ -108,6 +108,13 @@ jobs:
           cd backend
           pytest tests/integration/ -v -m "not security"
 
+      # Full-repo review 2026-08-30: tests/security/ had no CI job — security
+      # validation (webhook replay, CSP, chain limits) only ever ran locally.
+      - name: Run security tests
+        run: |
+          cd backend
+          pytest tests/security/ -v
+
       # Codecov upload removed 2026-08-29: uploads have always failed
       # (tokenless uploads discontinued) and no dashboard was in use.
       # Coverage still prints in the pytest step above.

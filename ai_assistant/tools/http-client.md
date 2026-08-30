@@ -1,11 +1,11 @@
 # Tool: Python Query Runner
 
-All monitoring queries are executed via `tools/run_query.py` — a cross-platform Python script that handles ELK and Prometheus HTTP requests.
+All monitoring queries are executed via `tools/run_query_v2.py` — a cross-platform Python script that handles ELK and Prometheus HTTP requests.
 
 ## Usage
 
 ```
-python tools/run_query.py --project <project> --section <section> [--time-range <range>] [--output pretty|json]
+python tools/run_query_v2.py --project <project> --section <section> [--time-range <range>] [--output pretty|json]
 ```
 
 ### Arguments
@@ -20,9 +20,9 @@ python tools/run_query.py --project <project> --section <section> [--time-range 
 ### Examples
 
 ```bash
-python tools/run_query.py --project meinvoice --section errors
-python tools/run_query.py --project meinvoice --section alerts --time-range now-30m
-python tools/run_query.py --project meinvoice --section slow_endpoints --output pretty
+python tools/run_query_v2.py --project meinvoice --section errors
+python tools/run_query_v2.py --project meinvoice --section alerts --time-range now-30m
+python tools/run_query_v2.py --project meinvoice --section slow_endpoints --output pretty
 ```
 
 ## Return format

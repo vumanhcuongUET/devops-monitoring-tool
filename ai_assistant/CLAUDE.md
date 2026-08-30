@@ -35,7 +35,7 @@ Skip any sections listed in the project's `skip_sections`.
 For each section in the report template, run:
 
 ```bash
-python tools/run_query.py --project <project> --section <query_file> [--time-range <override>]
+python tools/run_query_v2.py --project <project> --section <query_file> [--time-range <override>]
 ```
 
 - `--section` nhận giá trị `query_file` từ template (không phải `id`). Ví dụ: section `id: disk_usage`, `query_file: node_disk_usage` → dùng `--section node_disk_usage`

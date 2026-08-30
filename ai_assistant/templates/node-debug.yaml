@@ -1,6 +1,6 @@
 # Template: Debug tình trạng Node chi tiết
 # Dùng để trace/investigate sự cố node: CPU spike, memory leak, network drop, TCP issues, system errors.
-# Chạy: python tools/run_query.py --project <project> --section <query_file> [--time-range now-30m]
+# Chạy: python tools/run_query_v2.py --project <project> --section <query_file> [--time-range now-30m]
 
 name: node-debug
 title: "Debug Node {{ project }}"

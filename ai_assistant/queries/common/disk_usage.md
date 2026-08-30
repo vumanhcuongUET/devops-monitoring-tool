@@ -48,8 +48,8 @@ Displays disk usage metrics across all nodes including disk used percentage, ava
 ## Example Usage
 
 ```bash
-python tools/run_query.py --project meinvoice --section disk_usage
-python tools/run_query.py --project meinvoice --section disk_usage --time-range now-30m
+python tools/run_query_v2.py --project meinvoice --section disk_usage
+python tools/run_query_v2.py --project meinvoice --section disk_usage --time-range now-30m
 ```
 
 ## Troubleshooting Tips

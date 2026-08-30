@@ -2,7 +2,7 @@
 
 ## Overview
 
-`run_query.py` (v1) is deprecated and will be removed in **v1.1.0** (estimated November 2026).
+`run_query.py` (v1) was removed on **2026-08-30**. Use `run_query_v2.py`.
 
 This guide helps you migrate to `run_query_v2.py`, which includes significant enhancements:
 

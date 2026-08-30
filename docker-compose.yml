@@ -16,6 +16,9 @@ services:
       - backend-net
 
   backend:
+    # nginx (frontend image) proxies to http://monitor-backend:8000 — the
+    # same name as the k8s Service. Keep both in sync.
+    container_name: monitor-backend
     build:
       context: ./backend
       dockerfile: Dockerfile

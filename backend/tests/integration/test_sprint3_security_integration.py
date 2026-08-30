@@ -442,12 +442,12 @@ class TestWebhookSignatureIntegration:
 
     def test_teams_signature_valid(self):
         """Test valid Teams signature verification."""
-        webhook_url = "https://example.com/webhook"
+        key = "https://example.com/webhook"  # legacy URL keying, pre-S4 scheme
         body = '{"test": "teams"}'
 
         # Calculate signature
         digest = hmac.new(
-            webhook_url.encode(),
+            key.encode(),
             body.encode(),
             hashlib.sha256
         ).hexdigest()
@@ -456,19 +456,19 @@ class TestWebhookSignatureIntegration:
         result = verify_teams_hmac_signature(
             raw_body=body.encode(),
             auth_header=auth_header,
-            webhook_url=webhook_url
+            key=key
         )
         assert result is True
 
     def test_teams_signature_invalid(self):
         """Test invalid Teams signature is rejected."""
-        webhook_url = "https://example.com/webhook"
+        key = "https://example.com/webhook"
         body = '{"test": "teams"}'
 
         result = verify_teams_hmac_signature(
             raw_body=body.encode(),
             auth_header="sha256=wrong",
-            webhook_url=webhook_url
+            key=key
         )
         assert result is False
 

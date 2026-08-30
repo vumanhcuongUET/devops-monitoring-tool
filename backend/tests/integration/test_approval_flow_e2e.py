@@ -55,6 +55,10 @@ def _test_registry() -> RegistryConfig:
         cluster=ClusterConfig(name="test-cluster", context="test-context", platform="kubernetes"),
         namespaces=NamespaceMapping(app="meinvoice", database="meinvoice-db"),
         owners=[OwnerContact(user="team-devops", email="team-devops@example.com", slack="#team-devops")],
+        # Alert rule targets environment=development; without this tag the
+        # engine derives "production" where RBAC grants no `approve` permission
+        # (Phase 12 S6) and the flow can never reach EXECUTED.
+        tags={"environment": "development"},
     )
     registry = RegistryConfig()
     registry.projects = [project]
@@ -205,4 +209,64 @@ class TestApprovalFlowE2E:
                 settings.SLACK_SIGNING_SECRET = original_secret
             assert bad_resp.status_code == 401
         finally:
+            engine.registry = original_registry
+
+    async def test_approve_permission_denied_returns_200(self):
+        """S6: denied approval is a normal outcome — webhook must answer 200
+        (ephemeral denial), not 500, so Slack does not retry the interaction."""
+        engine = get_action_engine()
+        original_registry = engine.registry
+        # Production default (no environment tag) — RBAC grants `approve` to
+        # nobody there, so the approve attempt must be denied.
+        engine.registry = _test_registry()
+        engine.registry.projects[0].tags = {}
+
+        original_secret = settings.SLACK_SIGNING_SECRET
+        settings.SLACK_SIGNING_SECRET = SIGNING_SECRET
+        try:
+            recommendation = Recommendation(
+                priority=1,
+                action="Scale deployment api to 3 replicas",
+                command="kubectl scale deployment api --replicas=3 -n meinvoice",
+                reason="CrashLoopBackOff after bad rollout",
+                risk=SeverityLevel.HIGH,
+            )
+            action = await engine.create_action_from_recommendation(
+                request=CreateActionRequest(
+                    triage_card_id="tc-denied",
+                    recommendation_id="rec-denied",
+                    project="meinvoice",
+                ),
+                recommendation=recommendation,
+            )
+            assert action.status == ActionStatus.PENDING
+            action_id = action.id
+
+            payload = json.dumps({
+                "actions": [{"action_id": "approve_action", "value": f"approve_action:{action_id}"}],
+                "user": {"id": "U123", "name": "alice"},
+            })
+            body = urllib.parse.urlencode({"payload": payload})
+            timestamp = str(int(time.time()))
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-Slack-Request-Timestamp": timestamp,
+                "X-Slack-Signature": _slack_signature(body, timestamp),
+            }
+
+            webhook_app = FastAPI()
+            from app.approvals.webhook import router as webhook_router
+            webhook_app.include_router(webhook_router)
+
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=webhook_app), base_url="http://test"
+            ) as client:
+                resp = await client.post("/approvals/webhook/slack", content=body, headers=headers)
+            assert resp.status_code == 200, resp.text
+            assert "not permitted" in resp.text or "denied" in resp.text.lower() or "🚫" in resp.text
+
+            denied_state = await engine.approval_tracker.get(action_id)
+            assert denied_state["status"] == ActionStatus.PENDING
+        finally:
+            settings.SLACK_SIGNING_SECRET = original_secret
             engine.registry = original_registry

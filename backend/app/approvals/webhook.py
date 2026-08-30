@@ -263,6 +263,11 @@ async def slack_approval_webhook(
     except HTTPException:
         # Re-raise HTTP exceptions with original status code
         raise
+    except PermissionError as e:
+        # Denied approval is a normal outcome (Phase 12 S6 permission gate),
+        # not a server error — 200 keeps Slack from retrying the interaction.
+        logger.warning(f"Slack webhook action denied: {e}")
+        return {"response_type": "ephemeral", "text": f"🚫 {e}"}
     except Exception as e:
         logger.error(f"Error processing Slack webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -280,7 +285,7 @@ async def teams_approval_webhook(
 
     Security:
     - Verifies HMAC signature from Authorization header
-    - Teams HMAC is calculated as: HMAC_SHA256(webhook_url, body)
+    - Teams HMAC is keyed by TEAMS_WEBHOOK_SECRET: HMAC_SHA256(secret, body)
     - FAILS HARD if signature verification is not configured in production
 
     Teams Adaptive Cards Format:
@@ -481,6 +486,14 @@ async def teams_approval_webhook(
         raise HTTPException(status_code=400, detail="Invalid payload format") from e
     except HTTPException:
         raise
+    except PermissionError as e:
+        # Denied approval is a normal outcome (Phase 12 S6 permission gate),
+        # not a server error — 200 keeps Teams from retrying the interaction.
+        logger.warning(f"Teams webhook action denied: {e}")
+        return {
+            "type": "invokeResponse",
+            "value": {"status": 200, "body": {"type": "message", "text": f"🚫 {e}"}},
+        }
     except Exception as e:
         logger.error(f"Error processing Teams webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

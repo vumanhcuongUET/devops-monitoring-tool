@@ -412,7 +412,7 @@ class TestWebhookSignaturePerformance:
             result = verify_teams_hmac_signature(
                 raw_body=body.encode(),
                 auth_header=auth_header,
-                webhook_url=webhook_url
+                key=webhook_url
             )
 
             duration = (time.perf_counter() - start) * 1000

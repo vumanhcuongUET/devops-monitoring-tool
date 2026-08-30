@@ -148,7 +148,7 @@ class TestWebhookSecurityValidation:
         result = verify_teams_hmac_signature(
             raw_body=body.encode(),
             auth_header=tampered_signature,
-            webhook_url=webhook_url
+            key=webhook_url
         )
 
         # Should reject tampered signature

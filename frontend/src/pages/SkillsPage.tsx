@@ -103,21 +103,10 @@ export default function SkillsPage() {
 
   const categories = Array.from(new Set(skills.map((s) => s.category))).sort();
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      finops: "bg-green-100 text-green-800",
-      security: "bg-red-100 text-red-800",
-      capacity: "bg-blue-100 text-blue-800",
-      devops: "bg-purple-100 text-purple-800",
-      monitoring: "bg-yellow-100 text-yellow-800",
-      reliability: "bg-indigo-100 text-indigo-800",
-      compliance: "bg-pink-100 text-pink-800",
-      observability: "bg-teal-100 text-teal-800",
-      performance: "bg-orange-100 text-orange-800",
-      code: "bg-cyan-100 text-cyan-800",
-    };
-    return colors[category] || "bg-gray-100 text-gray-800";
-  };
+  const getCategoryColor = (category: string) =>
+    category === "security"
+      ? "bg-red-100 text-red-800"
+      : "bg-blue-100 text-blue-800";
 
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
@@ -166,36 +155,6 @@ export default function SkillsPage() {
             placeholder="Project name"
             className="px-4 py-2 border rounded-lg"
           />
-        </div>
-      </div>
-
-      {/* Phase 5 Banner */}
-      <div className="bg-gradient-to-r from-teal-500 to-blue-500 rounded-lg p-6 mb-8 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold mb-2">Phase 5 Skills Available</h2>
-            <p className="opacity-90">
-              12 new skills for Observability, Performance, Security, and Reliability analysis
-            </p>
-          </div>
-          <div className="flex gap-4 text-center">
-            <div className="bg-white/20 rounded-lg p-4">
-              <div className="text-3xl font-bold">5</div>
-              <div className="text-sm">Observability</div>
-            </div>
-            <div className="bg-white/20 rounded-lg p-4">
-              <div className="text-3xl font-bold">3</div>
-              <div className="text-sm">Security</div>
-            </div>
-            <div className="bg-white/20 rounded-lg p-4">
-              <div className="text-3xl font-bold">2</div>
-              <div className="text-sm">Performance</div>
-            </div>
-            <div className="bg-white/20 rounded-lg p-4">
-              <div className="text-3xl font-bold">2</div>
-              <div className="text-sm">Reliability</div>
-            </div>
-          </div>
         </div>
       </div>
 

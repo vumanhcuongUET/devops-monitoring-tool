@@ -1,55 +1,39 @@
 export type HealthStatus = 'healthy' | 'degraded' | 'down' | 'unknown';
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 
-export interface KubernetesHealth {
-  status: HealthStatus;
-  pods_total: number;
-  pods_running: number;
-  pods_pending: number;
-  pods_failed: number;
-  deployments_total: number;
-  deployments_available: number;
-}
-
-export interface ElasticsearchHealth {
-  status: HealthStatus;
-  error_count_1h: number;
-  cluster_health: string;
-}
-
-export interface ApmHealth {
-  status: HealthStatus;
-  avg_latency_ms: number;
-  error_rate_percent: number;
-  transactions_per_minute: number;
-}
-
-export interface InfrastructureHealth {
-  status: HealthStatus;
-  nodes_total: number;
-  nodes_healthy: number;
-  avg_cpu_percent: number;
-  avg_memory_percent: number;
-}
-
 export interface OverviewResponse {
   timestamp: string;
   systems: {
-    kubernetes: KubernetesHealth;
-    elasticsearch: ElasticsearchHealth;
-    apm: ApmHealth;
-    infrastructure: InfrastructureHealth;
+    kubernetes: {
+      status: HealthStatus;
+      pods_total: number;
+      pods_running: number;
+      pods_pending: number;
+      pods_failed: number;
+      deployments_total: number;
+      deployments_available: number;
+    };
+    elasticsearch: {
+      status: HealthStatus;
+      error_count_1h: number;
+      cluster_health: string;
+    };
+    apm: {
+      status: HealthStatus;
+      avg_latency_ms: number;
+      error_rate_percent: number;
+      transactions_per_minute: number;
+    };
+    infrastructure: {
+      status: HealthStatus;
+      nodes_total: number;
+      nodes_healthy: number;
+      avg_cpu_percent: number;
+      avg_memory_percent: number;
+    };
   };
   active_alerts: number;
   recent_alerts: AlertEvent[];
-}
-
-export interface LogEntry {
-  timestamp: string;
-  level: string;
-  service: string;
-  message: string;
-  metadata?: Record<string, unknown>;
 }
 
 export interface LogQueryParams {
@@ -66,7 +50,13 @@ export interface LogsResponse {
   total: number;
   page: number;
   size: number;
-  items: LogEntry[];
+  items: {
+    timestamp: string;
+    level: string;
+    service: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+  }[];
 }
 
 export interface Transaction {
@@ -170,16 +160,6 @@ export interface TimeRange {
 }
 
 export type SloStatus = 'healthy' | 'warning' | 'critical' | 'breached';
-
-export interface SloConfig {
-  id: string;
-  service_name: string;
-  slo_type: 'availability' | 'latency';
-  target: number;
-  latency_threshold_ms?: number;
-  window_days: number;
-  enabled: boolean;
-}
 
 export interface SloResult {
   config_id: string;

@@ -19,7 +19,6 @@ vi.mock('axios', () => ({
 // Mock tokenManager so logout()'s clear can be observed.
 vi.mock('../auth/tokenManager', () => ({
   getTokenManager: vi.fn(() => ({ clear: vi.fn() })),
-  setupTokenRefresh: vi.fn(),
 }))
 
 describe('API Client', () => {

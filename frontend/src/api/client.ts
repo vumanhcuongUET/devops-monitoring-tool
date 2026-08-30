@@ -1,28 +1,18 @@
 /**
- * API Client with Enhanced Authentication
+ * API Client with short-lived token auth.
  *
- * Features:
- * - Short-lived tokens (5-15 minutes)
- * - Automatic token refresh
- * - httpOnly cookie support
- * - Secure token management
+ * - Attaches the access token from the token manager to every request
+ * - On 401: tries one token refresh (httpOnly cookie) and retries the request
+ * - If refresh fails: clears the token and dispatches 'auth-required'
+ *   (App.tsx listens for it and drops back to the login screen)
  */
 
 import axios from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { API_URL } from '../utils/constants';
-import { getTokenManager, setupTokenRefresh } from '../auth/tokenManager';
-import type { TokenManagerConfig } from '../auth/tokenManager';
+import { getTokenManager } from '../auth/tokenManager';
 
-// Token manager configuration (5-minute tokens by default)
-const tokenConfig: Partial<TokenManagerConfig> = {
-  tokenLifetime: 15, // matches backend AUTH_TOKEN_TTL_SECONDS (15 min)
-  refreshBuffer: 30, // Refresh 30 seconds before expiry
-  maxRefreshAttempts: 3,
-};
-
-// Initialize token manager
-const tokenManager = getTokenManager(tokenConfig);
+const tokenManager = getTokenManager();
 
 export const api: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -36,14 +26,10 @@ export const api: AxiosInstance = axios.create({
 // ============================================
 api.interceptors.request.use(
   (config) => {
-    // Priority 1: Use short-lived token from token manager
     const accessToken = tokenManager.getAccessToken();
     if (accessToken && tokenManager.isTokenValid()) {
       config.headers.Authorization = `Bearer ${accessToken}`;
-      return config;
     }
-
-
     return config;
   },
   (error) => Promise.reject(error)
@@ -57,23 +43,14 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Handle 401 Unauthorized
+    // Handle 401 Unauthorized: try one refresh, then retry the request
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      // Try to refresh token if we have one
       if (tokenManager.getTokenInfo()) {
         try {
           const newToken = await refreshAccessToken();
           if (newToken) {
-            // Update token manager
-            tokenManager.setToken({
-              accessToken: newToken,
-              expiresAt: Date.now() + (tokenConfig.tokenLifetime! * 60 * 1000),
-              tokenType: 'Bearer',
-            });
-
-            // Update request header
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             return api(originalRequest);
           }
@@ -81,10 +58,14 @@ api.interceptors.response.use(
           console.error('Token refresh failed:', refreshError);
         }
 
-        // Refresh failed, clear token
+        // Refresh failed — the session can't be recovered; drop to login.
         tokenManager.clear();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth-required', {
+            detail: { reason: 'token_expired' }
+          }));
+        }
       }
-
     }
 
     return Promise.reject(error);
@@ -92,88 +73,34 @@ api.interceptors.response.use(
 );
 
 // ============================================
-// TOKEN REFRESH FUNCTION
+// TOKEN REFRESH
 // ============================================
 async function refreshAccessToken(): Promise<string | null> {
-  const tokenInfo = tokenManager.getTokenInfo();
-
-  // Check if refresh is even needed
-  if (!tokenManager.needsRefresh()) {
-    return tokenInfo?.accessToken || null;
-  }
-
   try {
-    // Call backend refresh endpoint
     const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {}, {
       withCredentials: true, // Send httpOnly cookie
-      headers: {
-        ...(tokenManager.getAccessToken()
-          ? { Authorization: `Bearer ${tokenManager.getAccessToken()}` }
-          : {}
-        )
-      },
+      headers: tokenManager.getAccessToken()
+        ? { Authorization: `Bearer ${tokenManager.getAccessToken()}` }
+        : {},
     });
 
     const { access_token, expires_in } = response.data;
-
-    // Update token manager
     tokenManager.setToken({
       accessToken: access_token,
       expiresAt: Date.now() + (expires_in || 900) * 1000,
       tokenType: 'Bearer',
     });
-
     return access_token;
   } catch (error) {
     console.error('Token refresh failed:', error);
-    tokenManager.incrementRefreshAttempts();
-
-    if (tokenManager.shouldGiveUp()) {
-      tokenManager.clear();
-      // Dispatch event for UI to handle
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('token-expired'));
-      }
-    }
-
     return null;
   }
 }
 
 // ============================================
-// AUTOMATIC TOKEN REFRESH SETUP
-// ============================================
-const cleanupTokenRefresh = setupTokenRefresh(async () => {
-  return await refreshAccessToken();
-});
-
-// ============================================
-// TOKEN EXPIRED EVENT HANDLER
-// ============================================
-if (typeof window !== 'undefined') {
-  window.addEventListener('token-expired', () => {
-    // Redirect to login or show login modal
-    console.warn('Token expired and refresh failed');
-    // You can dispatch a custom event here for your app to handle
-    window.dispatchEvent(new CustomEvent('auth-required', {
-      detail: { reason: 'token_expired' }
-    }));
-  });
-
-  // Listen for visibility changes to check token validity
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && tokenManager.isTokenValid() && tokenManager.needsRefresh()) {
-      // Token is valid but needs refresh, do it now
-      refreshAccessToken().catch(console.error);
-    }
-  });
-}
-
-// ============================================
 // EXPORTS
 // ============================================
-export { tokenManager, tokenConfig };
-
+export { tokenManager };
 
 /**
  * Logout and clear tokens
@@ -191,20 +118,5 @@ export function getAuthStatus() {
   return {
     isAuthenticated: tokenManager.isTokenValid(),
     tokenExpiry: tokenManager.getTokenInfo()?.expiresAt || null,
-    needsRefresh: tokenManager.needsRefresh(),
-    lifetimePercentage: tokenManager.getLifetimePercentage(),
-    timeUntilExpiry: tokenManager.getTimeUntilExpiry(),
-    timeUntilRefresh: tokenManager.getTimeUntilRefresh(),
   };
 }
-
-/**
- * Cleanup function (call when app unmounts)
- */
-export function cleanupAuth(): void {
-  cleanupTokenRefresh();
-  tokenManager.destroy();
-}
-
-// Export for testing
-export { resetTokenManager } from '../auth/tokenManager';

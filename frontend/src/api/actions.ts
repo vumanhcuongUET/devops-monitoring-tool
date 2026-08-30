@@ -137,19 +137,6 @@ export async function executeAction(
   return data;
 }
 
-export async function createBulkActions(
-  triageCardId: string,
-  project: string,
-): Promise<{ actions: Action[]; total_created: number; errors: string[] }> {
-  const params = new URLSearchParams({ triage_card_id: triageCardId, project });
-  const { data } = await api.post<{
-    actions: Action[];
-    total_created: number;
-    errors: string[];
-  }>('/api/v1/actions/bulk', null, { params });
-  return data;
-}
-
 export async function getActionStats(): Promise<{
   total: number;
   pending: number;

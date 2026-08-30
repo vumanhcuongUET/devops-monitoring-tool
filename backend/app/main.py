@@ -79,7 +79,6 @@ async def lifespan(app: FastAPI):
     from app.alerting.engine import AlertEngine
     from app.alerting.slo_reporter import SloReporter
     from app.api.v1 import config as config_api
-    from app.api.v1 import optimization as optimization_api
     from app.approvals.store import get_approval_tracker
 
     # Phase 7 Sprint 4: Configuration Management
@@ -91,8 +90,6 @@ async def lifespan(app: FastAPI):
         GitOpsManager,
     )
 
-    # Phase 7 Sprint 3: Performance Optimization
-    from app.optimization import ConnectionPoolManager, QueryOptimizer, RateLimiter
     from app.services.apm_client import ApmClient
     from app.services.elasticsearch_client import ElasticsearchClient
     from app.services.kubernetes_client import KubernetesClient
@@ -126,37 +123,6 @@ async def lifespan(app: FastAPI):
     app.state.action_engine = action_engine
     app.state.approval_tracker = approval_tracker
     logger.info(f"Phase 2: Action Engine initialized with {'Redis' if settings.APPROVAL_STATE_USE_REDIS else 'file-based'} approval state")
-
-    # Phase 7 Sprint 3: Initialize Performance Optimization
-    query_optimizer = QueryOptimizer(
-        es_client=app.state.es_client,
-        prom_client=app.state.prometheus_client,
-        k8s_client=app.state.k8s_client,
-    )
-
-    pool_manager = ConnectionPoolManager()
-    await pool_manager.start()
-
-    rate_limiter = RateLimiter(default_rate=100.0, burst=20)
-
-    # Store in app state and inject into API
-    app.state.query_optimizer = query_optimizer
-    app.state.pool_manager = pool_manager
-    app.state.rate_limiter = rate_limiter
-
-    optimization_api.set_optimization_instances(
-        q_optimizer=query_optimizer,
-        p_manager=pool_manager,
-        r_limiter=rate_limiter
-    )
-
-    # Start rate limiter background replenishment
-    replenish_task = asyncio.create_task(rate_limiter.start_background_replenish())
-
-    # Store task in app state for proper cleanup
-    app.state.replenish_task = replenish_task
-
-    logger.info("Phase 7 Sprint 3: Performance Optimization initialized")
 
     # Phase 7 Sprint 4: Initialize Configuration Management
     import os
@@ -264,14 +230,6 @@ async def lifespan(app: FastAPI):
     alert_task.cancel()
     slo_reporter.stop()
     slo_task.cancel()
-
-    # Cancel rate limiter replenish task if it exists
-    if hasattr(app.state, 'replenish_task'):
-        app.state.replenish_task.cancel()
-
-    # Stop pool manager if it was initialized
-    if hasattr(app.state, 'pool_manager'):
-        await app.state.pool_manager.stop()
 
     # Close database engine if it was initialized
     if getattr(app.state, 'db_enabled', False):

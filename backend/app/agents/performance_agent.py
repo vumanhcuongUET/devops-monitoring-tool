@@ -267,17 +267,6 @@ Provide performance analysis with specific optimization recommendations.
                 }
             )
 
-        # Connection pool exhaustion
-        connection_pool_usage = performance_data.get("connection_pool_usage", 0)
-        if connection_pool_usage > 0.9:
-            contention.append(
-                {
-                    "type": "ConnectionPool",
-                    "description": f"Connection pool near capacity ({connection_pool_usage:.1%})",
-                    "severity": "high",
-                }
-            )
-
         return contention
 
     def _suggest_optimizations(

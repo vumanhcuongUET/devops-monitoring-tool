@@ -12,7 +12,6 @@ from app.api.v1.infrastructure import router as infra_router
 from app.api.v1.kubernetes import router as k8s_router
 from app.api.v1.logs import router as logs_router
 from app.api.v1.metrics import router as metrics_router  # Observability
-from app.api.v1.optimization import router as optimization_router  # Phase 7 Sprint 3
 from app.api.v1.overview import router as overview_router
 from app.api.v1.skills import router as skills_router  # Phase 3
 from app.api.v1.slo import router as slo_router
@@ -33,7 +32,6 @@ v1_router.include_router(skills_router)  # Phase 3
 v1_router.include_router(governance_router)  # Phase 3
 v1_router.include_router(metrics_router)  # Observability
 v1_router.include_router(autonomous_router)  # Phase 4
-v1_router.include_router(optimization_router)  # Phase 7 Sprint 3
 v1_router.include_router(config_router.router)  # Phase 7 Sprint 4
 
 api_router = APIRouter()

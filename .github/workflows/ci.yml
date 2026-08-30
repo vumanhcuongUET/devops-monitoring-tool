@@ -261,11 +261,6 @@ jobs:
           cd backend
           pytest tests/performance/test_benchmarks.py -v -m benchmark || true
 
-      - name: Run Sprint validation
-        run: |
-          cd backend
-          python tests/performance/sprint2_validation.py || true
-
 
   # =============================================================================
   # Build and Push Docker Images

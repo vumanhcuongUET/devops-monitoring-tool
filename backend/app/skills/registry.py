@@ -501,156 +501,215 @@ def discover_skills() -> None:
                 logger.warning(f"Failed to import {modname}: {e}")
 
 
-# Initialize registry with built-in skills on import
-def _initialize_registry():
-    """Initialize the skill registry with built-in skills."""
-    try:
-        registry = get_skill_registry()
+# Initialize registry with built-in skills on import.
+#
+# Each group registers one skill category in isolation: a failure in one
+# (e.g. an optional-dependency ImportError) must not silently drop every
+# group after it. Failures are logged as ERROR and surface in /health as
+# a registered/expected count mismatch.
+EXPECTED_SKILL_COUNT = 44
 
-        # Register FinOps skills
-        from app.skills.finops import (
-            CostAnalyzerSkill,
-            IdleResourcesSkill,
-            RightSizingSkill,
+
+def _group_finops(registry: SkillRegistry) -> None:
+    from app.skills.finops import (
+        CostAnalyzerSkill,
+        IdleResourcesSkill,
+        RightSizingSkill,
+    )
+    registry.register(CostAnalyzerSkill)
+    registry.register(IdleResourcesSkill)
+    registry.register(RightSizingSkill)
+
+
+def _group_security(registry: SkillRegistry) -> None:
+    from app.skills.security import (
+        DependencyConfusionSkill,
+        KubeBenchSkill,
+        MisconfigurationDetectorSkill,
+        SecretScannerSkill,
+        SecurityRuntimeMonitorSkill,
+        VulnerabilityScannerSkill,
+    )
+    registry.register(VulnerabilityScannerSkill)
+    registry.register(SecretScannerSkill)
+    registry.register(KubeBenchSkill)
+    registry.register(MisconfigurationDetectorSkill)
+    registry.register(DependencyConfusionSkill)
+    registry.register(SecurityRuntimeMonitorSkill)
+
+
+def _group_devops(registry: SkillRegistry) -> None:
+    from app.skills.devops import (
+        CicdPipelineAnalyzerSkill,
+        ConfigDriftDetectorSkill,
+        DeploymentHealthCheckSkill,
+        DockerfileBestPracticesSkill,
+        KubernetesManifestValidatorSkill,
+        ResourceOptimizerSkill,
+    )
+    registry.register(DeploymentHealthCheckSkill)
+    registry.register(ResourceOptimizerSkill)
+    registry.register(ConfigDriftDetectorSkill)
+    registry.register(CicdPipelineAnalyzerSkill)
+    registry.register(DockerfileBestPracticesSkill)
+    registry.register(KubernetesManifestValidatorSkill)
+
+
+def _group_code(registry: SkillRegistry) -> None:
+    from app.skills.code import (
+        CodeSmellDetectorSkill,
+        ComplexityAnalyzerSkill,
+        DependencyAuditSkill,
+        DuplicationDetectorSkill,
+        SastScannerSkill,
+        TestCoverageAnalyzerSkill,
+    )
+    registry.register(DependencyAuditSkill)
+    registry.register(SastScannerSkill)
+    registry.register(ComplexityAnalyzerSkill)
+    registry.register(TestCoverageAnalyzerSkill)
+    registry.register(DuplicationDetectorSkill)
+    registry.register(CodeSmellDetectorSkill)
+
+
+def _group_capacity(registry: SkillRegistry) -> None:
+    from app.skills.capacity import (
+        BottleneckDetectorSkill,
+        CapacityPlannerSkill,
+        GrowthPredictorSkill,
+    )
+    registry.register(CapacityPlannerSkill)
+    registry.register(BottleneckDetectorSkill)
+    registry.register(GrowthPredictorSkill)
+
+
+def _group_monitoring(registry: SkillRegistry) -> None:
+    from app.skills.monitoring import (
+        AlertOptimizerSkill,
+        DashboardAuditorSkill,
+        SLICalculatorSkill,
+    )
+    registry.register(AlertOptimizerSkill)
+    registry.register(SLICalculatorSkill)
+    registry.register(DashboardAuditorSkill)
+
+
+def _group_reliability(registry: SkillRegistry) -> None:
+    from app.skills.reliability import (
+        DependencyHealthSkill,
+        SLAComplianceSkill,
+        SLOTrackerSkill,
+    )
+    registry.register(SLOTrackerSkill)
+    registry.register(SLAComplianceSkill)
+    registry.register(DependencyHealthSkill)
+
+
+def _group_compliance(registry: SkillRegistry) -> None:
+    from app.skills.compliance import (
+        GDPRAuditorSkill,
+        SOC2AuditorSkill,
+    )
+    registry.register(GDPRAuditorSkill)
+    registry.register(SOC2AuditorSkill)
+
+
+def _group_observability(registry: SkillRegistry) -> None:
+    from app.skills.observability import (
+        AnomalyDetectorSkill,
+        DashboardAuditorSkill,
+        MetricsAnalyzerSkill,
+        TracingAnalyzerSkill,
+    )
+    from app.skills.observability import (
+        SLOTrackerSkill as ObservabilitySLOTrackerSkill,
+    )
+    registry.register(MetricsAnalyzerSkill)
+    registry.register(TracingAnalyzerSkill)
+    registry.register(DashboardAuditorSkill)
+    registry.register(AnomalyDetectorSkill)
+    registry.register(ObservabilitySLOTrackerSkill)
+
+
+def _group_security_extended(registry: SkillRegistry) -> None:
+    from app.skills.security import (
+        CSPAnalyzerSkill,
+        HeaderValidatorSkill,
+        SecretExposureScannerSkill,
+    )
+    registry.register(CSPAnalyzerSkill)
+    registry.register(HeaderValidatorSkill)
+    registry.register(SecretExposureScannerSkill)
+
+
+def _group_reliability_extended(registry: SkillRegistry) -> None:
+    from app.skills.reliability import (
+        DLQMonitorSkill,
+        ScalingAnalyzerSkill,
+    )
+    registry.register(ScalingAnalyzerSkill)
+    registry.register(DLQMonitorSkill)
+
+
+def _group_performance(registry: SkillRegistry) -> None:
+    from app.skills.performance import (
+        CircuitBreakerHealthSkill,
+        LoadTestAnalyzerSkill,
+    )
+    registry.register(LoadTestAnalyzerSkill)
+    registry.register(CircuitBreakerHealthSkill)
+
+
+_SKILL_GROUPS = (
+    _group_finops,
+    _group_security,
+    _group_devops,
+    _group_code,
+    _group_capacity,
+    _group_monitoring,
+    _group_reliability,
+    _group_compliance,
+    _group_observability,
+    _group_security_extended,
+    _group_reliability_extended,
+    _group_performance,
+)
+
+
+def _initialize_registry(registry: SkillRegistry | None = None):
+    """Initialize the skill registry with built-in skills.
+
+    Groups are isolated — one failing group logs an ERROR and the rest
+    still register. A partial or short registry is an ERROR, not a silent
+    warning (compare with EXPECTED_SKILL_COUNT via /health).
+    """
+    registry = registry or get_skill_registry()
+
+    failed: list[str] = []
+    for group in _SKILL_GROUPS:
+        try:
+            group(registry)
+        except Exception as e:
+            failed.append(group.__name__)
+            logger.error("Skill group %s failed to register: %s", group.__name__, e)
+
+    registered = len(registry._skills)
+    if failed:
+        logger.error(
+            "Skill registry PARTIALLY initialized: %d/%d skills, failed groups: %s",
+            registered,
+            EXPECTED_SKILL_COUNT,
+            ", ".join(failed),
         )
-        registry.register(CostAnalyzerSkill)
-        registry.register(IdleResourcesSkill)
-        registry.register(RightSizingSkill)
-
-        # Register Security skills
-        from app.skills.security import (
-            DependencyConfusionSkill,
-            KubeBenchSkill,
-            MisconfigurationDetectorSkill,
-            SecretScannerSkill,
-            SecurityRuntimeMonitorSkill,
-            VulnerabilityScannerSkill,
+    elif registered != EXPECTED_SKILL_COUNT:
+        logger.error(
+            "Skill registry initialized with %d skills, expected %d — "
+            "check for duplicate ids or missing groups",
+            registered,
+            EXPECTED_SKILL_COUNT,
         )
-        registry.register(VulnerabilityScannerSkill)
-        registry.register(SecretScannerSkill)
-        registry.register(KubeBenchSkill)
-        registry.register(MisconfigurationDetectorSkill)
-        registry.register(DependencyConfusionSkill)
-        registry.register(SecurityRuntimeMonitorSkill)
-
-        # Register DevOps skills
-        from app.skills.devops import (
-            CicdPipelineAnalyzerSkill,
-            ConfigDriftDetectorSkill,
-            DeploymentHealthCheckSkill,
-            DockerfileBestPracticesSkill,
-            KubernetesManifestValidatorSkill,
-            ResourceOptimizerSkill,
-        )
-        registry.register(DeploymentHealthCheckSkill)
-        registry.register(ResourceOptimizerSkill)
-        registry.register(ConfigDriftDetectorSkill)
-        registry.register(CicdPipelineAnalyzerSkill)
-        registry.register(DockerfileBestPracticesSkill)
-        registry.register(KubernetesManifestValidatorSkill)
-
-        # Register Code skills
-        from app.skills.code import (
-            CodeSmellDetectorSkill,
-            ComplexityAnalyzerSkill,
-            DependencyAuditSkill,
-            DuplicationDetectorSkill,
-            SastScannerSkill,
-            TestCoverageAnalyzerSkill,
-        )
-        registry.register(DependencyAuditSkill)
-        registry.register(SastScannerSkill)
-        registry.register(ComplexityAnalyzerSkill)
-        registry.register(TestCoverageAnalyzerSkill)
-        registry.register(DuplicationDetectorSkill)
-        registry.register(CodeSmellDetectorSkill)
-
-        # Register Capacity skills
-        from app.skills.capacity import (
-            BottleneckDetectorSkill,
-            CapacityPlannerSkill,
-            GrowthPredictorSkill,
-        )
-        registry.register(CapacityPlannerSkill)
-        registry.register(BottleneckDetectorSkill)
-        registry.register(GrowthPredictorSkill)
-
-        # Register Monitoring skills
-        from app.skills.monitoring import (
-            AlertOptimizerSkill,
-            DashboardAuditorSkill,
-            SLICalculatorSkill,
-        )
-        registry.register(AlertOptimizerSkill)
-        registry.register(SLICalculatorSkill)
-        registry.register(DashboardAuditorSkill)
-
-        # Register Reliability skills
-        from app.skills.reliability import (
-            DependencyHealthSkill,
-            SLAComplianceSkill,
-            SLOTrackerSkill,
-        )
-        registry.register(SLOTrackerSkill)
-        registry.register(SLAComplianceSkill)
-        registry.register(DependencyHealthSkill)
-
-        # Register Compliance skills
-        from app.skills.compliance import (
-            GDPRAuditorSkill,
-            SOC2AuditorSkill,
-        )
-        registry.register(GDPRAuditorSkill)
-        registry.register(SOC2AuditorSkill)
-
-        # Register Phase 5: Observability skills
-        from app.skills.observability import (
-            AnomalyDetectorSkill,
-            DashboardAuditorSkill,
-            MetricsAnalyzerSkill,
-            TracingAnalyzerSkill,
-        )
-        from app.skills.observability import (
-            SLOTrackerSkill as ObservabilitySLOTrackerSkill,
-        )
-        registry.register(MetricsAnalyzerSkill)
-        registry.register(TracingAnalyzerSkill)
-        registry.register(DashboardAuditorSkill)
-        registry.register(AnomalyDetectorSkill)
-        registry.register(ObservabilitySLOTrackerSkill)
-
-        # Register Phase 5: Security skills
-        from app.skills.security import (
-            CSPAnalyzerSkill,
-            HeaderValidatorSkill,
-            SecretExposureScannerSkill,
-        )
-        registry.register(CSPAnalyzerSkill)
-        registry.register(HeaderValidatorSkill)
-        registry.register(SecretExposureScannerSkill)
-
-        # Register Phase 5: Reliability skills
-        from app.skills.reliability import (
-            DLQMonitorSkill,
-            ScalingAnalyzerSkill,
-        )
-        registry.register(ScalingAnalyzerSkill)
-        registry.register(DLQMonitorSkill)
-
-        # Register Phase 5: Performance skills
-        from app.skills.performance import (
-            CircuitBreakerHealthSkill,
-            LoadTestAnalyzerSkill,
-        )
-        registry.register(LoadTestAnalyzerSkill)
-        registry.register(CircuitBreakerHealthSkill)
-
-        logger.info("Skill registry initialized with all built-in skills (44 total)")
-
-    except Exception as e:
-        # One bad group must not abort registration of the rest, whatever the
-        # exception type (e.g. httpx missing-h2 ImportError surfaced here).
-        logger.warning(f"Failed to initialize some skills: {e}")
+    else:
+        logger.info("Skill registry initialized: %d skills", registered)
 
 
 # Auto-initialize on module import (can be disabled via settings)

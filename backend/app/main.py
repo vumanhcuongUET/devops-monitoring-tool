@@ -320,6 +320,10 @@ app.mount("/metrics", make_asgi_app())
 @app.get("/health")
 async def health():
     from app.api.v1.agents import _orchestrator as agent_orchestrator
+    from app.skills.registry import EXPECTED_SKILL_COUNT, get_skill_registry
+
+    skills = get_skill_registry().list_skills()
+    stubs = sum(1 for s in skills if not s.get("implemented", True))
 
     return {
         "status": "ok",
@@ -329,6 +333,11 @@ async def health():
             if agent_orchestrator is not None
             else "unavailable"
         ),
+        "skills": {
+            "registered": len(skills),
+            "expected": EXPECTED_SKILL_COUNT,
+            "stubs": stubs,
+        },
     }
 
 

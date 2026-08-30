@@ -2,8 +2,13 @@
 
 This module provides predefined remediation actions that can be triggered
 automatically by the alert engine for common incident patterns.
+
+Shared helpers build the standard ``ExecutionResult`` shapes and wrap the
+repeated ``executor.execute_kubectl`` / validation patterns so each action
+only implements its own logic.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -15,6 +20,122 @@ from app.models.actions import ExecutionResult
 from app.models.alerts import AlertEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    """Current UTC timestamp (used for all result timestamps)."""
+    return datetime.now(timezone.utc)
+
+
+def _fail(error_message: str) -> ExecutionResult:
+    """Failed result carrying only an error message."""
+    return ExecutionResult(success=False, error_message=error_message, timestamp=_utcnow())
+
+
+def _ok(
+    stdout: str,
+    *,
+    exit_code: int = 0,
+    stderr: str = "",
+    duration_seconds: float = 0.0,
+    error_message: str | None = None,
+) -> ExecutionResult:
+    """Successful result produced locally (no kubectl execution)."""
+    return ExecutionResult(
+        success=True,
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+        duration_seconds=duration_seconds,
+        error_message=error_message,
+        timestamp=_utcnow(),
+    )
+
+
+def _dry_run(message: str) -> ExecutionResult:
+    """Standard dry-run result: '[DRY RUN] Would <message>'."""
+    return _ok(f"[DRY RUN] Would {message}")
+
+
+def _from_result(result: ExecutionResult, success_stdout: str) -> ExecutionResult:
+    """Wrap a kubectl result, replacing stdout with a message on success."""
+    return ExecutionResult(
+        success=result.success,
+        exit_code=result.exit_code,
+        stdout=success_stdout if result.success else result.stdout,
+        stderr=result.stderr,
+        duration_seconds=result.duration_seconds,
+        timestamp=_utcnow(),
+        error_message=result.error_message,
+    )
+
+
+def _required(parameters: dict[str, Any], key: str, label: str) -> tuple[Any, ExecutionResult | None]:
+    """Fetch a required parameter; returns (value, error result or None)."""
+    value = parameters.get(key)
+    return value, None if value else _fail(f"{label} is required")
+
+
+def _validated_int(value: Any, name: str, minimum: int) -> tuple[int | None, ExecutionResult | None]:
+    """Parse an int parameter with an inclusive lower bound.
+
+    Returns (parsed int, error result or None). Bounds of 0 report as
+    "non-negative"; anything higher reports as "at least N".
+    """
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None, _fail(f"{name} must be a valid integer")
+    if parsed < minimum:
+        bound = "non-negative" if minimum == 0 else f"at least {minimum}"
+        return None, _fail(f"{name} must be {bound}")
+    return parsed, None
+
+
+def _parse_json_output(stdout: str, what: str) -> tuple[dict[str, Any] | None, ExecutionResult | None]:
+    """Parse kubectl JSON output; returns (data, error result or None)."""
+    try:
+        return json.loads(stdout), None
+    except json.JSONDecodeError as e:
+        return None, _fail(f"Failed to parse {what}: {e}")
+
+
+def _list_args(resource: str, namespace: str, label_selector: str = "") -> list[str]:
+    """Args for listing a resource as JSON, with namespace and optional selector."""
+    args = [resource, "-n", namespace, "-o", "json"]
+    if label_selector:
+        args.extend(["-l", label_selector])
+    return args
+
+
+def _deletions_result(stdout: str, pods: list[dict]) -> ExecutionResult:
+    """Result for a batch of pod deletions tracked as per-pod dicts."""
+    all_ok = all(p["deleted"] for p in pods)
+    return ExecutionResult(
+        success=all_ok,
+        exit_code=0 if all_ok else 1,
+        stdout=stdout,
+        stderr="",
+        duration_seconds=0.0,
+        timestamp=_utcnow(),
+    )
+
+
+def _batch_result(
+    stdout: str,
+    deleted: list[str],
+    errors: list[str],
+    fail_verb: str,
+    fail_noun: str,
+    stderr_prefix: str = "",
+) -> ExecutionResult:
+    """Result for a batch of per-item delete operations."""
+    return _ok(
+        stdout,
+        exit_code=0 if not errors else 1,
+        stderr=f"{stderr_prefix}Errors: {errors}" if errors else "",
+        error_message=f"Failed to {fail_verb} {len(errors)} {fail_noun}" if errors else None,
+    )
 
 
 class RemediationActionType(str, Enum):
@@ -48,27 +169,44 @@ class RemediationAction:
         self._max_history = 1000
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
-        """Execute the remediation action.
+        """Execute the remediation action (implemented by subclasses).
 
-        Args:
-            alert_event: The alert that triggered this action
-            parameters: Action-specific parameters
-            dry_run: If True, validate without executing
-
-        Returns:
-            Execution result with status and details
+        alert_event: the alert that triggered this action; parameters:
+        action-specific; dry_run: if True, validate without executing.
         """
         raise NotImplementedError("Subclasses must implement execute()")
+
+    async def _run(
+        self, args: list[str], namespace: str | None = None, dry_run: bool = False
+    ) -> ExecutionResult:
+        """Run a kubectl command through the shared executor."""
+        return await self.executor.execute_kubectl(
+            args=args, namespace=namespace, dry_run=dry_run
+        )
+
+    async def _run_batch(
+        self, commands: dict[str, list[str]], namespace: str | None
+    ) -> tuple[list[str], list[str]]:
+        """Run one kubectl command per entry, in order.
+
+        Returns (names whose command succeeded, "name: stderr" error strings).
+        """
+        succeeded: list[str] = []
+        errors: list[str] = []
+        for name, args in commands.items():
+            result = await self._run(args, namespace)
+            if result.success:
+                succeeded.append(name)
+            else:
+                errors.append(f"{name}: {result.stderr}")
+        return succeeded, errors
 
     def _record_execution(self, action_type: str, result: ExecutionResult, context: dict):
         """Record execution for learning and audit."""
         record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": _utcnow().isoformat(),
             "action_type": action_type,
             "success": result.success,
             "duration_seconds": result.duration_seconds,
@@ -79,37 +217,32 @@ class RemediationAction:
         if len(self._execution_history) > self._max_history:
             self._execution_history.pop(0)
 
+    def _record_and_return(
+        self,
+        action_type: RemediationActionType,
+        result: ExecutionResult,
+        context: dict,
+    ) -> ExecutionResult:
+        """Record execution history, then hand the result back to the caller."""
+        self._record_execution(action_type.value, result, context)
+        return result
+
     def get_execution_history(self) -> list[dict]:
         """Get execution history for learning."""
         return self._execution_history.copy()
 
 
 class DeleteCrashLoopPodAction(RemediationAction):
-    """Remediation action for deleting CrashLoopBackOff pods.
-
-    This action detects pods with high restart counts and safely deletes them
-    to allow the deployment controller to recreate them.
-    """
+    """Deletes CrashLoopBackOff pods (high restart counts) so the deployment
+    controller can recreate them."""
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute crashloop pod deletion.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace
-                - pod_name: Name of the pod (optional, auto-detected)
-                - restart_threshold: Minimum restart count (default: 5)
-                - label_selector: Additional pod selector (optional)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with deleted pod information
+        parameters: namespace, pod_name (optional, auto-detected),
+        restart_threshold (default 5), label_selector (optional).
         """
         namespace = parameters.get("namespace", "default")
         restart_threshold = parameters.get("restart_threshold", 5)
@@ -117,218 +250,120 @@ class DeleteCrashLoopPodAction(RemediationAction):
         label_selector = parameters.get("label_selector", "")
 
         # Step 1: Find pods with high restart counts
-        find_pods_cmd = ["kubectl", "get", "pods", "-n", namespace, "-o", "json"]
-
-        if label_selector:
-            find_pods_cmd.extend(["-l", label_selector])
-
-        pods_result = await self.executor.execute_kubectl(
-            args=find_pods_cmd[2:],  # Skip 'kubectl'
-            namespace=namespace,
-            dry_run=False,  # We need actual data
-        )
-
+        pods_result = await self._run(_list_args("pods", namespace, label_selector), namespace)
         if not pods_result.success:
-            return ExecutionResult(
-                success=False,
-                error_message=f"Failed to list pods: {pods_result.stderr}",
-                timestamp=datetime.now(timezone.utc),
-            )
+            return _fail(f"Failed to list pods: {pods_result.stderr}")
 
         # Step 2: Parse pods and find crashloop candidates
-        import json
-        try:
-            pods_data = json.loads(pods_result.stdout)
-            crashloop_pods = []
-            for item in pods_data.get("items", []):
-                pod = item.get("metadata", {}).get("name")
-                restart_count = item.get("status", {}).get("containerStatuses", [{}])[0].get("restartCount", 0)
-                status = item.get("status", {}).get("phase", "")
+        pods_data, parse_error = _parse_json_output(pods_result.stdout, "pod data")
+        if parse_error:
+            return parse_error
 
-                # Check for crashloop or high restart count
-                is_crashloop = (
-                    restart_count >= restart_threshold or
-                    (status == "Running" and restart_count >= 3)
-                )
-
-                if is_crashloop and (not pod_name or pod == pod):
-                    crashloop_pods.append({
-                        "name": pod,
-                        "restarts": restart_count,
-                        "status": status,
-                    })
-        except json.JSONDecodeError as e:
-            return ExecutionResult(
-                success=False,
-                error_message=f"Failed to parse pod data: {e}",
-                timestamp=datetime.now(timezone.utc),
+        crashloop_pods = []
+        for item in pods_data.get("items", []):
+            pod = item.get("metadata", {}).get("name")
+            restart_count = (
+                item.get("status", {}).get("containerStatuses", [{}])[0].get("restartCount", 0)
             )
+            status = item.get("status", {}).get("phase", "")
+
+            # Check for crashloop or high restart count
+            is_crashloop = (
+                restart_count >= restart_threshold
+                or (status == "Running" and restart_count >= 3)
+            )
+
+            if is_crashloop and (not pod_name or pod == pod_name):
+                crashloop_pods.append({"name": pod, "restarts": restart_count, "status": status})
 
         if not crashloop_pods:
-            return ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"No crashloop pods found (restart threshold: {restart_threshold})",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            return _ok(f"No crashloop pods found (restart threshold: {restart_threshold})")
 
         # Step 3: Delete each crashloop pod
         deleted_pods = []
         for pod_info in crashloop_pods:
             pod = pod_info["name"]
-            delete_cmd = ["delete", "pod", pod]
-
             if dry_run:
-                result = ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"[DRY RUN] Would delete pod: {pod}",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
-                )
+                result = _dry_run(f"delete pod: {pod}")
             else:
-                result = await self.executor.execute_kubectl(
-                    args=delete_cmd,
-                    namespace=namespace,
-                    dry_run=False,
-                )
+                result = await self._run(["delete", "pod", pod], namespace)
 
             deleted_pods.append({
-                "pod": pod,
-                "restarts": pod_info["restarts"],
-                "deleted": result.success,
+                "pod": pod, "restarts": pod_info["restarts"], "deleted": result.success,
                 "error": result.error_message if not result.success else None,
             })
 
-        # Record execution
         self._record_execution(
             RemediationActionType.DELETE_CRASHLOOP_POD.value,
-            result if len(deleted_pods) == 1 else ExecutionResult(success=all(p["deleted"] for p in deleted_pods)),
+            (
+                result if len(deleted_pods) == 1
+                else ExecutionResult(success=all(p["deleted"] for p in deleted_pods))
+            ),
             {
                 "namespace": namespace,
                 "pods_deleted": len(deleted_pods),
                 "alert_event_id": alert_event.id,
-            }
+            },
         )
 
-        return ExecutionResult(
-            success=all(p["deleted"] for p in deleted_pods),
-            exit_code=0 if all(p["deleted"] for p in deleted_pods) else 1,
-            stdout=f"Deleted {len(deleted_pods)} crashloop pods: {', '.join(p['pod'] for p in deleted_pods)}",
-            stderr="",
-            duration_seconds=0.0,
-            timestamp=datetime.now(timezone.utc),
+        return _deletions_result(
+            f"Deleted {len(deleted_pods)} crashloop pods: "
+            f"{', '.join(p['pod'] for p in deleted_pods)}",
+            deleted_pods,
         )
 
 
 class ScaleDeploymentAction(RemediationAction):
-    """Remediation action for scaling deployments based on metrics.
-
-    This action scales deployments up or down based on CPU/memory thresholds.
-    """
+    """Scales deployments up or down based on CPU/memory thresholds."""
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute deployment scaling.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace
-                - deployment: Deployment name
-                - replicas: Target replica count (or adjustment like +2, -1)
-                - min_replicas: Minimum replicas (safety limit, default: 1)
-                - max_replicas: Maximum replicas (safety limit, default: 10)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with scaling details
+        parameters: namespace, deployment, replicas (absolute or '+2'/'-1'),
+        min_replicas (default 1), max_replicas (default 10).
         """
         namespace = parameters.get("namespace", "default")
-        deployment = parameters.get("deployment")
+        deployment, error = _required(parameters, "deployment", "Deployment name")
+        if error:
+            return error
         replicas_param = parameters.get("replicas", "+1")
         min_replicas = parameters.get("min_replicas", 1)
         max_replicas = parameters.get("max_replicas", 10)
 
-        if not deployment:
-            return ExecutionResult(
-                success=False,
-                error_message="Deployment name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
         # Step 1: Get current replica count
-        get_cmd = ["get", "deployment", deployment, "-o", "json"]
-        current_result = await self.executor.execute_kubectl(
-            args=get_cmd,
-            namespace=namespace,
-            dry_run=False,
-        )
-
+        current_result = await self._run(["get", "deployment", deployment, "-o", "json"], namespace)
         if not current_result.success:
-            return ExecutionResult(
-                success=False,
-                error_message=f"Failed to get deployment: {current_result.stderr}",
-                timestamp=datetime.now(timezone.utc),
-            )
+            return _fail(f"Failed to get deployment: {current_result.stderr}")
 
-        import json
         try:
             deploy_data = json.loads(current_result.stdout)
             current_replicas = deploy_data.get("spec", {}).get("replicas", 1)
         except json.JSONDecodeError:
-            return ExecutionResult(
-                success=False,
-                error_message="Failed to parse deployment data",
-                timestamp=datetime.now(timezone.utc),
-            )
+            return _fail("Failed to parse deployment data")
 
-        # Step 2: Calculate target replicas
+        # Step 2: Calculate target replicas, then apply safety limits
         if isinstance(replicas_param, str) and replicas_param.startswith(("+", "-")):
             target_replicas = current_replicas + int(replicas_param)
         else:
             target_replicas = int(replicas_param)
 
-        # Step 3: Apply safety limits
         target_replicas = max(min_replicas, min(target_replicas, max_replicas))
 
         if target_replicas == current_replicas:
-            return ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"Deployment already at {current_replicas} replicas (within limits)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            return _ok(f"Deployment already at {current_replicas} replicas (within limits)")
 
-        # Step 4: Scale deployment
-        scale_cmd = ["scale", "deployment", deployment, "--replicas", str(target_replicas)]
-
+        # Step 3: Scale deployment
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would scale {deployment} from {current_replicas} to {target_replicas} replicas",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _dry_run(
+                f"scale {deployment} from {current_replicas} to {target_replicas} replicas"
             )
         else:
-            result = await self.executor.execute_kubectl(
-                args=scale_cmd,
-                namespace=namespace,
-                dry_run=False,
+            result = await self._run(
+                ["scale", "deployment", deployment, "--replicas", str(target_replicas)], namespace
             )
 
-        # Record execution
         self._record_execution(
             RemediationActionType.SCALE_DEPLOYMENT.value,
             result,
@@ -338,98 +373,45 @@ class ScaleDeploymentAction(RemediationAction):
                 "from_replicas": current_replicas,
                 "to_replicas": target_replicas,
                 "alert_event_id": alert_event.id,
-            }
+            },
         )
 
-        return ExecutionResult(
-            success=result.success,
-            exit_code=result.exit_code,
-            stdout=f"Scaled {deployment} from {current_replicas} to {target_replicas} replicas" if result.success else result.stdout,
-            stderr=result.stderr,
-            duration_seconds=result.duration_seconds,
-            timestamp=datetime.now(timezone.utc),
-            error_message=result.error_message,
+        return _from_result(
+            result, f"Scaled {deployment} from {current_replicas} to {target_replicas} replicas"
         )
 
 
 class RollbackDeploymentAction(RemediationAction):
-    """Remediation action for rolling back failing deployments.
-
-    This action rolls back a deployment to the previous stable revision
-    when critical failures are detected.
-    """
+    """Rolls back a failing deployment to the previous stable revision."""
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute deployment rollback.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace
-                - deployment: Deployment name
-                - revision: Target revision (default: previous revision)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with rollback details
+        parameters: namespace, deployment, revision (default: previous).
         """
         namespace = parameters.get("namespace", "default")
-        deployment = parameters.get("deployment")
+        deployment, error = _required(parameters, "deployment", "Deployment name")
+        if error:
+            return error
         target_revision = parameters.get("revision", None)
 
-        if not deployment:
-            return ExecutionResult(
-                success=False,
-                error_message="Deployment name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
-        # Step 1: Get rollout history
-        history_cmd = ["rollout", "history", "deployment", deployment]
-        history_result = await self.executor.execute_kubectl(
-            args=history_cmd,
-            namespace=namespace,
-            dry_run=False,
-        )
-
+        # Step 1: Get rollout history (also performed in dry-run)
+        history_result = await self._run(["rollout", "history", "deployment", deployment], namespace)
         if not history_result.success and "not found" in history_result.error_message.lower():
-            return ExecutionResult(
-                success=False,
-                error_message=f"Deployment '{deployment}' not found",
-                timestamp=datetime.now(timezone.utc),
-            )
+            return _fail(f"Deployment '{deployment}' not found")
 
-        # Step 2: Determine target revision
-        if target_revision is None:
-            # Default to previous revision (current - 1)
-            # Parse history to find current revision
-            # For simplicity, we'll use 'undo' command which rolls back to previous
-            rollback_cmd = ["rollout", "undo", "deployment", deployment]
-        else:
-            rollback_cmd = ["rollout", "undo", "deployment", deployment, f"--to-revision={target_revision}"]
+        # Step 2: Determine rollback command ('undo' rolls back to previous)
+        rollback_cmd = ["rollout", "undo", "deployment", deployment]
+        if target_revision is not None:
+            rollback_cmd.append(f"--to-revision={target_revision}")
 
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would rollback {deployment} to revision {target_revision or 'previous'}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _dry_run(f"rollback {deployment} to revision {target_revision or 'previous'}")
         else:
-            result = await self.executor.execute_kubectl(
-                args=rollback_cmd,
-                namespace=namespace,
-                dry_run=False,
-            )
+            result = await self._run(rollback_cmd, namespace)
 
-        # Record execution
         self._record_execution(
             RemediationActionType.ROLLBACK_DEPLOYMENT.value,
             result,
@@ -438,138 +420,62 @@ class RollbackDeploymentAction(RemediationAction):
                 "deployment": deployment,
                 "target_revision": target_revision or "previous",
                 "alert_event_id": alert_event.id,
-            }
+            },
         )
 
-        return ExecutionResult(
-            success=result.success,
-            exit_code=result.exit_code,
-            stdout=f"Rollback initiated for {deployment}" if result.success else result.stdout,
-            stderr=result.stderr,
-            duration_seconds=result.duration_seconds,
-            timestamp=datetime.now(timezone.utc),
-            error_message=result.error_message,
-        )
+        return _from_result(result, f"Rollback initiated for {deployment}")
 
 
 class RestartDeploymentAction(RemediationAction):
-    """Remediation action for restarting deployments via rollout.
-
-    This action performs a rolling restart of a deployment to refresh pods.
-    """
+    """Performs a rolling restart of a deployment to refresh its pods."""
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute deployment restart.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace
-                - deployment: Deployment name
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with restart details
+        parameters: namespace, deployment.
         """
         namespace = parameters.get("namespace", "default")
-        deployment = parameters.get("deployment")
-
-        if not deployment:
-            return ExecutionResult(
-                success=False,
-                error_message="Deployment name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
+        deployment, error = _required(parameters, "deployment", "Deployment name")
+        if error:
+            return error
 
         # Execute rollout restart
-        restart_cmd = ["rollout", "restart", deployment]
-
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would restart deployment {deployment}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _dry_run(f"restart deployment {deployment}")
         else:
-            result = await self.executor.execute_kubectl(
-                args=restart_cmd,
-                namespace=namespace,
-                dry_run=False,
-            )
+            result = await self._run(["rollout", "restart", deployment], namespace)
 
-        # Record execution
         self._record_execution(
             RemediationActionType.RESTART_DEPLOYMENT.value,
             result,
-            {
-                "namespace": namespace,
-                "deployment": deployment,
-                "alert_event_id": alert_event.id,
-            }
+            {"namespace": namespace, "deployment": deployment, "alert_event_id": alert_event.id},
         )
 
-        return ExecutionResult(
-            success=result.success,
-            exit_code=result.exit_code,
-            stdout=f"Rollout restart initiated for {deployment}" if result.success else result.stdout,
-            stderr=result.stderr,
-            duration_seconds=result.duration_seconds,
-            timestamp=datetime.now(timezone.utc),
-            error_message=result.error_message,
-        )
+        return _from_result(result, f"Rollout restart initiated for {deployment}")
 
 
 class ClearStuckPodsAction(RemediationAction):
-    """Remediation action for clearing stuck pods.
-
-    This action detects and removes pods stuck in problematic states:
-    - Terminating (stuck for >10 minutes)
-    - ImagePullBackOff / ErrImagePull
-    - CrashLoopBackOff with no recent successful start
-    - CreateContainerError / CreateContainerConfigError
+    """Clears pods stuck in problematic states (Terminating, ImagePullBackOff,
+    ErrImagePull, CrashLoopBackOff, CreateContainerError, ...) via force delete.
 
     Risk Level: LOW - Force deletion is safe as controllers recreate pods
     """
 
     STUCK_STATES = {
-        "Terminating",
-        "ImagePullBackOff",
-        "ErrImagePull",
-        "CrashLoopBackOff",
-        "CreateContainerError",
-        "CreateContainerConfigError",
-        "RunContainerError",
-        "ErrImageNeverPull",
-        "InvalidImageName",
+        "Terminating", "ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff",
+        "CreateContainerError", "CreateContainerConfigError", "RunContainerError",
+        "ErrImageNeverPull", "InvalidImageName",
     }
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute stuck pod clearance.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - stuck_duration_minutes: Minimum duration in stuck state (default: 10)
-                - label_selector: Filter pods by label (optional)
-                - pod_names: Specific pod names to clear (optional)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with cleared pods details
+        parameters: namespace, stuck_duration_minutes (default 10),
+        label_selector (optional), pod_names (optional target list).
         """
         namespace = parameters.get("namespace", "default")
         stuck_duration_minutes = parameters.get("stuck_duration_minutes", 10)
@@ -578,169 +484,123 @@ class ClearStuckPodsAction(RemediationAction):
 
         if dry_run:
             # In dry-run, just report what would be done
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would clear stuck pods in {namespace} "
-                       f"(stuck for >{stuck_duration_minutes} minutes)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _dry_run(
+                f"clear stuck pods in {namespace} "
+                f"(stuck for >{stuck_duration_minutes} minutes)"
             )
         else:
             # Step 1: Find stuck pods
-            find_cmd = ["get", "pods", "-n", namespace, "-o", "json"]
-            if label_selector:
-                find_cmd.extend(["-l", label_selector])
-
-            pods_result = await self.executor.execute_kubectl(
-                args=find_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
-
+            pods_result = await self._run(_list_args("pods", namespace, label_selector), namespace)
             if not pods_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to list pods: {pods_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to list pods: {pods_result.stderr}")
 
             # Step 2: Parse and identify stuck pods
-            import json
-            try:
-                pods_data = json.loads(pods_result.stdout)
-                stuck_pods = []
-                cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=stuck_duration_minutes)
+            pods_data, parse_error = _parse_json_output(pods_result.stdout, "pod data")
+            if parse_error:
+                return parse_error
 
-                for item in pods_data.get("items", []):
-                    pod_name = item.get("metadata", {}).get("name")
-                    pod_status = item.get("status", {}).get("phase", "Unknown")
-                    container_statuses = item.get("status", {}).get("containerStatuses", [])
-                    pod_start_time_str = item.get("status", {}).get("startTime", "")
+            stuck_pods = []
+            cutoff_time = _utcnow() - timedelta(minutes=stuck_duration_minutes)
 
-                    # Check if pod is in stuck state
-                    is_stuck = False
-                    stuck_reason = ""
+            for item in pods_data.get("items", []):
+                pod_name = item.get("metadata", {}).get("name")
+                pod_status = item.get("status", {}).get("phase", "Unknown")
+                container_statuses = item.get("status", {}).get("containerStatuses", [])
+                pod_start_time_str = item.get("status", {}).get("startTime", "")
 
-                    # Check phase
-                    if pod_status in ["Terminating", "Unknown"]:
+                # Check if pod is in stuck state
+                is_stuck = False
+                stuck_reason = ""
+
+                # Check phase
+                if pod_status in ["Terminating", "Unknown"]:
+                    is_stuck = True
+                    stuck_reason = f"Pod in {pod_status} state"
+
+                # Check container states
+                for container_status in container_statuses or []:
+                    waiting = container_status.get("waiting", {})
+                    state = waiting.get("reason", "")
+                    if state in self.STUCK_STATES:
                         is_stuck = True
-                        stuck_reason = f"Pod in {pod_status} state"
+                        stuck_reason = f"Container: {state}"
+                        break
 
-                    # Check container states
-                    for container_status in container_statuses or []:
-                        waiting = container_status.get("waiting", {})
-                        state = waiting.get("reason", "")
-                        if state in self.STUCK_STATES:
-                            is_stuck = True
-                            stuck_reason = f"Container: {state}"
-                            break
+                # Check if stuck for long enough
+                if is_stuck and pod_start_time_str:
+                    try:
+                        pod_start_time = datetime.fromisoformat(
+                            pod_start_time_str.replace("Z", "+00:00")
+                        )
+                        if pod_start_time > cutoff_time:
+                            is_stuck = True  # Only clear if stuck long enough
+                        else:
+                            is_stuck = False
+                            stuck_reason = (
+                                f"Pod not stuck long enough (started {pod_start_time_str})"
+                            )
+                    except Exception:
+                        pass  # If we can't parse time, still consider it stuck
 
-                    # Check if stuck for long enough
-                    if is_stuck and pod_start_time_str:
-                        try:
-                            pod_start_time = datetime.fromisoformat(pod_start_time_str.replace("Z", "+00:00"))
-                            if pod_start_time > cutoff_time:
-                                is_stuck = True  # Only clear if stuck long enough
-                            else:
-                                is_stuck = False
-                                stuck_reason = f"Pod not stuck long enough (started {pod_start_time_str})"
-                        except Exception:
-                            pass  # If we can't parse time, still consider it stuck
+                # Check if pod is in target list (if specified)
+                if target_pods and pod_name not in target_pods:
+                    is_stuck = False
 
-                    # Check if pod is in target list (if specified)
-                    if target_pods and pod_name not in target_pods:
-                        is_stuck = False
-
-                    if is_stuck:
-                        stuck_pods.append({
-                            "name": pod_name,
-                            "status": pod_status,
-                            "reason": stuck_reason,
-                        })
-
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to parse pod data: {e}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                if is_stuck:
+                    stuck_pods.append(
+                        {"name": pod_name, "status": pod_status, "reason": stuck_reason}
+                    )
 
             # Step 3: Delete stuck pods
-            deleted_pods = []
-            errors = []
-
-            for pod_info in stuck_pods:
-                pod_name = pod_info["name"]
-                delete_cmd = ["delete", "pod", pod_name, "--force", "--grace-period=0"]
-
-                delete_result = await self.executor.execute_kubectl(
-                    args=delete_cmd[2:],
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
-                if delete_result.success:
-                    deleted_pods.append(pod_name)
-                else:
-                    errors.append(f"{pod_name}: {delete_result.stderr}")
-
-            # Build result
-            result = ExecutionResult(
-                success=len(errors) == 0,
-                exit_code=0 if len(errors) == 0 else 1,
-                stdout=f"Cleared {len(deleted_pods)} stuck pod(s): {', '.join(deleted_pods)}",
-                stderr=f"Errors: {errors}" if errors else "",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-                error_message=f"Failed to clear {len(errors)} pod(s)" if errors else None,
+            deleted_pods, errors = await self._run_batch(
+                {p["name"]: ["pod", p["name"], "--force", "--grace-period=0"] for p in stuck_pods},
+                namespace,
             )
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.CLEAR_STUCK_PODS.value,
+            # Build result
+            result = _batch_result(
+                f"Cleared {len(deleted_pods)} stuck pod(s): {', '.join(deleted_pods)}",
+                deleted_pods, errors, "clear", "pod(s)",
+            )
+
+        return self._record_and_return(
+            RemediationActionType.CLEAR_STUCK_PODS,
             result,
             {
-                "namespace": namespace,
-                "stuck_duration_minutes": stuck_duration_minutes,
-                "label_selector": label_selector,
-                "target_pods": target_pods,
+                "namespace": namespace, "stuck_duration_minutes": stuck_duration_minutes,
+                "label_selector": label_selector, "target_pods": target_pods,
                 "alert_event_id": alert_event.id,
-            }
+            },
         )
-
-        return result
 
 
 class CleanupFailedJobsAction(RemediationAction):
-    """Remediation action for cleaning up failed Kubernetes jobs.
-
-    This action identifies and removes failed jobs older than a threshold
-    to prevent disk space issues and improve cluster hygiene.
+    """Removes failed jobs older than a threshold to prevent disk space
+    issues and improve cluster hygiene.
 
     Risk Level: LOW - Only removes failed jobs, not running/completed ones
     """
 
+    @staticmethod
+    def _job_failed_at(conditions: list[dict], start_time_str: str,
+                       cutoff_time: datetime) -> datetime | None:
+        """Failure time of a job per its conditions; None if not failed."""
+        for condition in conditions:
+            if condition.get("type", "") == "Failed" and condition.get("status", "") == "True":
+                failed_time_str = condition.get("lastTransitionTime", start_time_str)
+                try:
+                    return datetime.fromisoformat(failed_time_str.replace("Z", "+00:00"))
+                except Exception:
+                    return cutoff_time - timedelta(hours=1)  # Conservative
+        return None
+
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute failed job cleanup.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - failed_hours_ago: Delete jobs failed N hours ago (default: 24)
-                - label_selector: Filter jobs by label (optional)
-                - keep_last: Keep last N failed jobs (default: 5)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with cleanup details
+        parameters: namespace, failed_hours_ago (default 24),
+        label_selector (optional), keep_last (default 5).
         """
         namespace = parameters.get("namespace", "default")
         failed_hours_ago = parameters.get("failed_hours_ago", 24)
@@ -748,1195 +608,577 @@ class CleanupFailedJobsAction(RemediationAction):
         keep_last = parameters.get("keep_last", 5)
 
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would cleanup failed jobs in {namespace} "
-                       f"(failed >{failed_hours_ago} hours ago, keeping last {keep_last})",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _dry_run(
+                f"cleanup failed jobs in {namespace} "
+                f"(failed >{failed_hours_ago} hours ago, keeping last {keep_last})"
             )
         else:
             # Step 1: Find failed jobs
-            find_cmd = ["get", "jobs", "-n", namespace, "-o", "json"]
-            if label_selector:
-                find_cmd.extend(["-l", label_selector])
-
-            jobs_result = await self.executor.execute_kubectl(
-                args=find_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
-
+            jobs_result = await self._run(_list_args("jobs", namespace, label_selector), namespace)
             if not jobs_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to list jobs: {jobs_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to list jobs: {jobs_result.stderr}")
 
             # Step 2: Parse and identify failed jobs
-            import json
-            try:
-                jobs_data = json.loads(jobs_result.stdout)
-                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=failed_hours_ago)
-                failed_jobs = []
+            jobs_data, parse_error = _parse_json_output(jobs_result.stdout, "job data")
+            if parse_error:
+                return parse_error
 
-                for item in jobs_data.get("items", []):
-                    job_name = item.get("metadata", {}).get("name")
-                    job_status = item.get("status", {})
-                    conditions = job_status.get("conditions", [])
-                    start_time_str = item.get("status", {}).get("startTime", "")
-
-                    # Check if job failed
-                    is_failed = False
-                    failed_time = None
-
-                    for condition in conditions:
-                        if condition.get("type", "") == "Failed" and condition.get("status", "") == "True":
-                            is_failed = True
-                            # Get failure time
-                            failed_time_str = condition.get("lastTransitionTime", start_time_str)
-                            try:
-                                failed_time = datetime.fromisoformat(failed_time_str.replace("Z", "+00:00"))
-                            except Exception:
-                                failed_time = cutoff_time - timedelta(hours=1)  # Conservative
-                            break
-
-                    if is_failed and failed_time and failed_time < cutoff_time:
-                        failed_jobs.append({
-                            "name": job_name,
-                            "failed_at": failed_time.isoformat(),
-                        })
-
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to parse job data: {e}",
-                    timestamp=datetime.now(timezone.utc),
+            cutoff_time = _utcnow() - timedelta(hours=failed_hours_ago)
+            failed_jobs = []
+            for item in jobs_data.get("items", []):
+                job_name = item.get("metadata", {}).get("name")
+                job_status = item.get("status", {})
+                failed_time = self._job_failed_at(
+                    job_status.get("conditions", []),
+                    item.get("status", {}).get("startTime", ""),
+                    cutoff_time,
                 )
+                if failed_time and failed_time < cutoff_time:
+                    failed_jobs.append(
+                        {"name": job_name, "failed_at": failed_time.isoformat()}
+                    )
 
             # Sort by failed time (oldest first) and keep last N
             failed_jobs.sort(key=lambda x: x["failed_at"])
-            if len(failed_jobs) > keep_last:
-                jobs_to_delete = failed_jobs[:-keep_last]
-            else:
-                jobs_to_delete = []
+            jobs_to_delete = failed_jobs[:-keep_last] if len(failed_jobs) > keep_last else []
 
             # Step 3: Delete failed jobs
-            deleted_jobs = []
-            errors = []
-
-            for job_info in jobs_to_delete:
-                job_name = job_info["name"]
-                delete_cmd = ["delete", "job", job_name]
-
-                delete_result = await self.executor.execute_kubectl(
-                    args=delete_cmd[2:],
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
-                if delete_result.success:
-                    deleted_jobs.append(job_name)
-                else:
-                    errors.append(f"{job_name}: {delete_result.stderr}")
-
-            # Build result
-            result = ExecutionResult(
-                success=len(errors) == 0,
-                exit_code=0 if len(errors) == 0 else 1,
-                stdout=f"Cleaned up {len(deleted_jobs)} failed job(s): {', '.join(deleted_jobs)}",
-                stderr=f"Kept last {keep_last} failed jobs. Errors: {errors}" if errors else "",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-                error_message=f"Failed to cleanup {len(errors)} job(s)" if errors else None,
+            deleted_jobs, errors = await self._run_batch(
+                {job["name"]: ["job", job["name"]] for job in jobs_to_delete},
+                namespace,
             )
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.CLEANUP_FAILED_JOBS.value,
+            # Build result
+            result = _batch_result(
+                f"Cleaned up {len(deleted_jobs)} failed job(s): {', '.join(deleted_jobs)}",
+                deleted_jobs, errors, "cleanup", "job(s)",
+                stderr_prefix=f"Kept last {keep_last} failed jobs. ",
+            )
+
+        return self._record_and_return(
+            RemediationActionType.CLEANUP_FAILED_JOBS,
             result,
             {
-                "namespace": namespace,
-                "failed_hours_ago": failed_hours_ago,
-                "label_selector": label_selector,
-                "keep_last": keep_last,
+                "namespace": namespace, "failed_hours_ago": failed_hours_ago,
+                "label_selector": label_selector, "keep_last": keep_last,
                 "alert_event_id": alert_event.id,
-            }
+            },
         )
-
-        return result
 
 
 class AdjustHPAMinReplicasAction(RemediationAction):
-    """Remediation action for temporarily adjusting HPA min replicas.
-
-    This action temporarily increases the minimum replicas for an HPA
-    to handle sudden load spikes, with automatic rollback after a duration.
+    """Temporarily increases HPA minReplicas for load spikes, with automatic
+    rollback after a duration.
 
     Risk Level: LOW-MEDIUM - Reversible with time limit
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute HPA min replica adjustment.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - hpa_name: HorizontalPodAutoscaler name (required)
-                - new_min_replicas: New minimum replicas (required)
-                - duration_minutes: How long to maintain (default: 60)
-                - auto_rollback: Auto-rollback after duration (default: true)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with HPA adjustment details
+        parameters: namespace, hpa_name (required), new_min_replicas
+        (required), duration_minutes (default 60), auto_rollback (default true).
         """
         namespace = parameters.get("namespace", "default")
-        hpa_name = parameters.get("hpa_name")
+        hpa_name, error = _required(parameters, "hpa_name", "HPA name")
+        if error:
+            return error
+
         new_min_replicas = parameters.get("new_min_replicas")
+        if new_min_replicas is None:
+            return _fail("new_min_replicas is required")
+
+        new_min_replicas, error = _validated_int(new_min_replicas, "new_min_replicas", 1)
+        if error:
+            return error
+
         duration_minutes = parameters.get("duration_minutes", 60)
         auto_rollback = parameters.get("auto_rollback", True)
 
-        if not hpa_name:
-            return ExecutionResult(
-                success=False,
-                error_message="HPA name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
-        if new_min_replicas is None:
-            return ExecutionResult(
-                success=False,
-                error_message="new_min_replicas is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
-        # Validate new_min_replicas
-        try:
-            new_min_replicas = int(new_min_replicas)
-            if new_min_replicas < 1:
-                return ExecutionResult(
-                    success=False,
-                    error_message="new_min_replicas must be at least 1",
-                    timestamp=datetime.now(timezone.utc),
-                )
-        except ValueError:
-            return ExecutionResult(
-                success=False,
-                error_message="new_min_replicas must be a valid integer",
-                timestamp=datetime.now(timezone.utc),
-            )
-
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would adjust HPA {hpa_name} min replicas to {new_min_replicas} "
-                       f"for {duration_minutes} minutes (auto-rollback: {auto_rollback})",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _dry_run(
+                f"adjust HPA {hpa_name} min replicas to {new_min_replicas} "
+                f"for {duration_minutes} minutes (auto-rollback: {auto_rollback})"
             )
         else:
             # Step 1: Get current HPA config
-            get_cmd = ["get", "hpa", hpa_name, "-n", namespace, "-o", "json"]
-
-            hpa_result = await self.executor.execute_kubectl(
-                args=get_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
-
+            hpa_result = await self._run(["hpa", hpa_name, "-n", namespace, "-o", "json"], namespace)
             if not hpa_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to get HPA {hpa_name}: {hpa_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to get HPA {hpa_name}: {hpa_result.stderr}")
 
-            # Step 2: Parse current config
-            import json
-            try:
-                hpa_data = json.loads(hpa_result.stdout)
-                current_min = hpa_data.get("spec", {}).get("minReplicas", 1)
-                current_max = hpa_data.get("spec", {}).get("maxReplicas", 10)
+            # Step 2: Parse current config and validate new_min vs maxReplicas
+            hpa_data, parse_error = _parse_json_output(hpa_result.stdout, "HPA data")
+            if parse_error:
+                return parse_error
 
-                # Validate new_min doesn't exceed max
-                if new_min_replicas > current_max:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"new_min_replicas ({new_min_replicas}) cannot exceed maxReplicas ({current_max})",
-                        timestamp=datetime.now(timezone.utc),
-                    )
-
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to parse HPA data: {e}",
-                    timestamp=datetime.now(timezone.utc),
+            current_min = hpa_data.get("spec", {}).get("minReplicas", 1)
+            current_max = hpa_data.get("spec", {}).get("maxReplicas", 10)
+            if new_min_replicas > current_max:
+                return _fail(
+                    f"new_min_replicas ({new_min_replicas}) "
+                    f"cannot exceed maxReplicas ({current_max})"
                 )
 
             # Step 3: Apply new min replicas
-            patch_cmd = [
-                "patch", "hpa", hpa_name,
-                '--type=merge',
-                f'-p={{"spec":{{"minReplicas":{new_min_replicas}}}}}'
-            ]
-
-            patch_result = await self.executor.execute_kubectl(
-                args=patch_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
+            patch_result = await self._run(
+                ["hpa", hpa_name, "--type=merge",
+                 f'-p={{"spec":{{"minReplicas":{new_min_replicas}}}}}'],
+                namespace,
             )
-
             if not patch_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to patch HPA: {patch_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to patch HPA: {patch_result.stderr}")
 
             # Step 4: Schedule rollback if enabled
+            # Note: In production this would be a scheduled job; we log the
+            # recommendation for now.
             rollback_message = ""
             if auto_rollback:
-                # Note: In production, this would be handled by a scheduled job
-                # For now, we just log the recommendation
-                rollback_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+                rollback_time = _utcnow() + timedelta(minutes=duration_minutes)
                 rollback_message = f" (Auto-rollback scheduled at {rollback_time.isoformat()})"
 
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"Adjusted HPA {hpa_name} min replicas: {current_min} → {new_min_replicas}{rollback_message}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _ok(
+                f"Adjusted HPA {hpa_name} min replicas: "
+                f"{current_min} → {new_min_replicas}{rollback_message}"
             )
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.ADJUST_HPA_MIN_REPLICAS.value,
+        return self._record_and_return(
+            RemediationActionType.ADJUST_HPA_MIN_REPLICAS,
             result,
             {
-                "namespace": namespace,
-                "hpa_name": hpa_name,
+                "namespace": namespace, "hpa_name": hpa_name,
                 "previous_min_replicas": current_min if not dry_run else "unknown",
                 "new_min_replicas": new_min_replicas,
-                "duration_minutes": duration_minutes,
-                "auto_rollback": auto_rollback,
+                "duration_minutes": duration_minutes, "auto_rollback": auto_rollback,
                 "alert_event_id": alert_event.id,
-            }
+            },
         )
-
-        return result
 
 
 class RestartStatefulSetPodAction(RemediationAction):
-    """Remediation action for restarting individual StatefulSet pods.
-
-    This action safely restarts individual pods in a StatefulSet (not the entire set).
-    StatefulSet controller will recreate the pod with the same identity.
+    """Restarts individual StatefulSet pods (not the whole set); the
+    StatefulSet controller recreates each pod with the same identity.
 
     Risk Level: LOW-MEDIUM - StatefulSet controller maintains pod identity
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute StatefulSet pod restart.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - statefulset: StatefulSet name (required)
-                - pod_name: Specific pod to restart (optional, auto-detected)
-                - restart_threshold: Minimum restart count to trigger (default: 5)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with restart details
+        parameters: namespace, statefulset (required), pod_name (optional,
+        auto-detected), restart_threshold (default 5).
         """
         namespace = parameters.get("namespace", "default")
-        statefulset = parameters.get("statefulset")
+        statefulset, error = _required(parameters, "statefulset", "StatefulSet name")
+        if error:
+            return error
         pod_name = parameters.get("pod_name")
         restart_threshold = parameters.get("restart_threshold", 5)
 
-        if not statefulset:
-            return ExecutionResult(
-                success=False,
-                error_message="StatefulSet name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would restart pod for StatefulSet {statefulset} in {namespace}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _dry_run(f"restart pod for StatefulSet {statefulset} in {namespace}")
         else:
             # Step 1: Get StatefulSet to find selector
-            get_cmd = ["get", "statefulset", statefulset, "-o", "json"]
-
-            sts_result = await self.executor.execute_kubectl(
-                args=get_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
-
+            sts_result = await self._run(["statefulset", statefulset, "-o", "json"], namespace)
             if not sts_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to get StatefulSet: {sts_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to get StatefulSet: {sts_result.stderr}")
 
             # Step 2: Parse StatefulSet to get selector
-            import json
-            try:
-                sts_data = json.loads(sts_result.stdout)
-                selector = sts_data.get("spec", {}).get("selector", {}).get("matchLabels", {})
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to parse StatefulSet data: {e}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+            sts_data, parse_error = _parse_json_output(sts_result.stdout, "StatefulSet data")
+            if parse_error:
+                return parse_error
+
+            selector = sts_data.get("spec", {}).get("selector", {}).get("matchLabels", {})
 
             # Step 3: Find pods with high restart counts
-            label_selector = ",".join([f"{k}={v}" for k, v in selector.items()])
-            find_pods_cmd = ["get", "pods", "-o", "json", "-l", label_selector]
-
-            pods_result = await self.executor.execute_kubectl(
-                args=find_pods_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
-
+            label_selector = ",".join(f"{k}={v}" for k, v in selector.items())
+            pods_result = await self._run(["pods", "-o", "json", "-l", label_selector], namespace)
             if not pods_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to list pods: {pods_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to list pods: {pods_result.stderr}")
 
             # Step 4: Parse pods and find restart candidates
-            try:
-                pods_data = json.loads(pods_result.stdout)
-                restart_pods = []
-                for item in pods_data.get("items", []):
-                    pod = item.get("metadata", {}).get("name")
-                    restart_count = 0
-                    container_statuses = item.get("status", {}).get("containerStatuses", [])
-                    for cs in container_statuses or []:
-                        restart_count += cs.get("restartCount", 0)
+            pods_data, parse_error = _parse_json_output(pods_result.stdout, "pod data")
+            if parse_error:
+                return parse_error
 
-                    # Check if pod matches target or has high restart count
-                    if (not pod_name or pod == pod_name) and restart_count >= restart_threshold:
-                        restart_pods.append({
-                            "name": pod,
-                            "restarts": restart_count,
-                        })
-            except json.JSONDecodeError as e:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to parse pod data: {e}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+            restart_pods = []
+            for item in pods_data.get("items", []):
+                pod = item.get("metadata", {}).get("name")
+                statuses = item.get("status", {}).get("containerStatuses", []) or []
+                restart_count = sum(cs.get("restartCount", 0) for cs in statuses)
+
+                # Check if pod matches target or has high restart count
+                if (not pod_name or pod == pod_name) and restart_count >= restart_threshold:
+                    restart_pods.append({"name": pod, "restarts": restart_count})
 
             if not restart_pods:
-                return ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"No StatefulSet pods found needing restart (restart threshold: {restart_threshold})",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
+                return _ok(
+                    f"No StatefulSet pods found needing restart "
+                    f"(restart threshold: {restart_threshold})"
                 )
 
             # Step 5: Delete each pod (StatefulSet controller will recreate)
             restarted_pods = []
             for pod_info in restart_pods:
-                pod = pod_info["name"]
-                delete_cmd = ["delete", "pod", pod]
-
-                delete_result = await self.executor.execute_kubectl(
-                    args=delete_cmd,
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
+                delete_result = await self._run(["delete", "pod", pod_info["name"]], namespace)
                 restarted_pods.append({
-                    "pod": pod,
-                    "restarts": pod_info["restarts"],
+                    "pod": pod_info["name"], "restarts": pod_info["restarts"],
                     "deleted": delete_result.success,
                     "error": delete_result.error_message if not delete_result.success else None,
                 })
 
-            result = ExecutionResult(
-                success=all(p["deleted"] for p in restarted_pods),
-                exit_code=0 if all(p["deleted"] for p in restarted_pods) else 1,
-                stdout=f"Restarted {len(restarted_pods)} StatefulSet pod(s): {', '.join(p['pod'] for p in restarted_pods)}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _deletions_result(
+                f"Restarted {len(restarted_pods)} StatefulSet pod(s): "
+                f"{', '.join(p['pod'] for p in restarted_pods)}",
+                restarted_pods,
             )
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.RESTART_STATEFULSET_POD.value,
+        return self._record_and_return(
+            RemediationActionType.RESTART_STATEFULSET_POD,
             result,
             {
-                "namespace": namespace,
-                "statefulset": statefulset,
-                "pod_name": pod_name,
-                "restart_threshold": restart_threshold,
-                "alert_event_id": alert_event.id,
-            }
+                "namespace": namespace, "statefulset": statefulset, "pod_name": pod_name,
+                "restart_threshold": restart_threshold, "alert_event_id": alert_event.id,
+            },
         )
-
-        return result
 
 
 class FlushEndpointsAction(RemediationAction):
-    """Remediation action for flushing stuck service endpoints.
-
-    This action deletes and recreates endpoints for services that are stuck
-    or not selecting pods correctly. Service controller recreates endpoints.
+    """Flushes stuck service endpoints by deleting them; the Service
+    controller recreates them.
 
     Risk Level: LOW - Service controller automatically recreates endpoints
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute endpoint flush.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - service: Service name (required)
-                - force: Force delete even if endpoints exist (default: false)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with flush details
+        parameters: namespace, service (required), force (force delete even
+        if endpoints exist, default false).
         """
         namespace = parameters.get("namespace", "default")
-        service = parameters.get("service")
+        service, error = _required(parameters, "service", "Service name")
+        if error:
+            return error
         force = parameters.get("force", False)
 
-        if not service:
-            return ExecutionResult(
-                success=False,
-                error_message="Service name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would flush endpoints for service {service} in {namespace}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _dry_run(f"flush endpoints for service {service} in {namespace}")
         else:
             # Step 1: Get current endpoints
-            get_cmd = ["get", "endpoints", service, "-o", "json"]
-
-            endpoints_result = await self.executor.execute_kubectl(
-                args=get_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
+            endpoints_result = await self._run(["endpoints", service, "-o", "json"], namespace)
 
             # Step 2: Check if endpoints exist
-            endpoints_exist = endpoints_result.success and "NotFound" not in (endpoints_result.stderr or "")
+            endpoints_exist = endpoints_result.success and (
+                "NotFound" not in (endpoints_result.stderr or "")
+            )
 
             # Step 3: Delete endpoints (if force or if they exist)
             if force or endpoints_exist:
-                delete_cmd = ["delete", "endpoints", service]
-
-                delete_result = await self.executor.execute_kubectl(
-                    args=delete_cmd,
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
+                delete_result = await self._run(["delete", "endpoints", service], namespace)
                 if not delete_result.success:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"Failed to delete endpoints: {delete_result.stderr}",
-                        timestamp=datetime.now(timezone.utc),
-                    )
+                    return _fail(f"Failed to delete endpoints: {delete_result.stderr}")
 
-                result = ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"Flushed endpoints for service {service} (Service controller will recreate)",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
+                result = _ok(
+                    f"Flushed endpoints for service {service} "
+                    f"(Service controller will recreate)"
                 )
             else:
-                result = ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"Endpoints for service {service} do not exist, nothing to flush",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
-                )
+                result = _ok(f"Endpoints for service {service} do not exist, nothing to flush")
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.FLUSH_ENDPOINTS.value,
+        return self._record_and_return(
+            RemediationActionType.FLUSH_ENDPOINTS,
             result,
-            {
-                "namespace": namespace,
-                "service": service,
-                "force": force,
-                "alert_event_id": alert_event.id,
-            }
+            {"namespace": namespace, "service": service, "force": force,
+             "alert_event_id": alert_event.id},
         )
-
-        return result
 
 
 class EvictPodFromNodeAction(RemediationAction):
-    """Remediation action for evicting pods from problematic nodes.
-
-    This action evicts a pod from its current node, triggering Kubernetes
-    to reschedule it on a healthy node.
+    """Evicts a pod from its current node so Kubernetes reschedules it on a
+    healthy node.
 
     Risk Level: MEDIUM - Triggers Kubernetes rescheduling
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute pod eviction from node.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - pod_name: Pod name to evict (required)
-                - node_name: Current node name (optional, for logging)
-                - grace_period_seconds: Grace period for eviction (default: 30)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with eviction details
+        parameters: namespace, pod_name (required), node_name (optional, for
+        logging), grace_period_seconds (default 30).
         """
         namespace = parameters.get("namespace", "default")
-        pod_name = parameters.get("pod_name")
+        pod_name, error = _required(parameters, "pod_name", "Pod name")
+        if error:
+            return error
         node_name = parameters.get("node_name")
-        grace_period_seconds = parameters.get("grace_period_seconds", 30)
 
-        if not pod_name:
-            return ExecutionResult(
-                success=False,
-                error_message="Pod name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
-        # Validate grace period
-        try:
-            grace_period = int(grace_period_seconds)
-            if grace_period < 0:
-                return ExecutionResult(
-                    success=False,
-                    error_message="grace_period_seconds must be non-negative",
-                    timestamp=datetime.now(timezone.utc),
-                )
-        except ValueError:
-            return ExecutionResult(
-                success=False,
-                error_message="grace_period_seconds must be a valid integer",
-                timestamp=datetime.now(timezone.utc),
-            )
+        grace_period, error = _validated_int(
+            parameters.get("grace_period_seconds", 30), "grace_period_seconds", 0
+        )
+        if error:
+            return error
 
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would evict pod {pod_name} from {node_name or 'current node'} "
-                       f"(grace period: {grace_period}s)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _dry_run(f"evict pod {pod_name} from {node_name or 'current node'} "
+                              f"(grace period: {grace_period}s)")
         else:
             # Step 1: Get current pod info (including node) if not provided
             if not node_name:
-                get_cmd = ["get", "pod", pod_name, "-o", "json"]
-
-                pod_result = await self.executor.execute_kubectl(
-                    args=get_cmd[2:],
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
+                pod_result = await self._run(["pod", pod_name, "-o", "json"], namespace)
                 if pod_result.success:
-                    import json
-                    try:
-                        pod_data = json.loads(pod_result.stdout)
-                        node_name = pod_data.get("spec", {}).get("nodeName", "unknown")
-                    except json.JSONDecodeError:
-                        node_name = "unknown"
+                    pod_data, _ = _parse_json_output(pod_result.stdout, "pod data")
+                    node_name = (pod_data or {}).get("spec", {}).get("nodeName", "unknown")
 
             # Step 2: Evict pod using delete with grace period
-            delete_cmd = ["delete", "pod", pod_name, f"--grace-period={grace_period}"]
-
-            evict_result = await self.executor.execute_kubectl(
-                args=delete_cmd,
-                namespace=namespace,
-                dry_run=False,
+            evict_result = await self._run(
+                ["delete", "pod", pod_name, f"--grace-period={grace_period}"], namespace
             )
-
             if not evict_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to evict pod: {evict_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to evict pod: {evict_result.stderr}")
 
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"Evicted pod {pod_name} from {node_name or 'current node'} "
-                       f"(will be rescheduled on healthy node)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _ok(f"Evicted pod {pod_name} from {node_name or 'current node'} "
+                         f"(will be rescheduled on healthy node)")
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.EVICT_POD_FROM_NODE.value,
+        return self._record_and_return(
+            RemediationActionType.EVICT_POD_FROM_NODE,
             result,
-            {
-                "namespace": namespace,
-                "pod_name": pod_name,
-                "node_name": node_name,
-                "grace_period_seconds": grace_period,
-                "alert_event_id": alert_event.id,
-            }
+            {"namespace": namespace, "pod_name": pod_name, "node_name": node_name,
+             "grace_period_seconds": grace_period, "alert_event_id": alert_event.id},
         )
-
-        return result
 
 
 class RotateServiceAccountTokenAction(RemediationAction):
-    """Remediation action for rotating expired service account tokens.
-
-    This action deletes stale service account token secrets, forcing Kubernetes
-    to generate fresh tokens.
+    """Rotates expired service account tokens by deleting stale token
+    secrets, forcing Kubernetes to generate fresh ones.
 
     Risk Level: LOW - Important for security compliance
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute service account token rotation.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - service_account: Service account name (required)
-                - secret_name: Specific secret to delete (optional, deletes all if not specified)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with rotation details
+        parameters: namespace, service_account (required), secret_name
+        (optional; deletes all token secrets if unset).
         """
         namespace = parameters.get("namespace", "default")
-        service_account = parameters.get("service_account")
+        service_account, error = _required(parameters, "service_account", "Service account name")
+        if error:
+            return error
         secret_name = parameters.get("secret_name")
 
-        if not service_account:
-            return ExecutionResult(
-                success=False,
-                error_message="Service account name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
-
         if dry_run:
-            if secret_name:
-                result = ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"[DRY RUN] Would delete token secret {secret_name} for service account {service_account}",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
-                )
-            else:
-                result = ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"[DRY RUN] Would delete all token secrets for service account {service_account}",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
-                )
+            target = f"token secret {secret_name}" if secret_name else "all token secrets"
+            result = _dry_run(f"delete {target} for service account {service_account}")
         else:
             if secret_name:
                 # Delete specific secret
-                delete_cmd = ["delete", "secret", secret_name]
-
-                delete_result = await self.executor.execute_kubectl(
-                    args=delete_cmd,
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
+                delete_result = await self._run(["delete", "secret", secret_name], namespace)
                 if not delete_result.success:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"Failed to delete secret: {delete_result.stderr}",
-                        timestamp=datetime.now(timezone.utc),
-                    )
+                    return _fail(f"Failed to delete secret: {delete_result.stderr}")
 
-                result = ExecutionResult(
-                    success=True,
-                    exit_code=0,
-                    stdout=f"Deleted token secret {secret_name} for service account {service_account}",
-                    stderr="",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
+                result = _ok(
+                    f"Deleted token secret {secret_name} for service account {service_account}"
                 )
             else:
                 # Find and delete all token secrets for this service account
-                find_cmd = ["get", "secrets", "-o", "json"]
-
-                secrets_result = await self.executor.execute_kubectl(
-                    args=find_cmd[2:],
-                    namespace=namespace,
-                    dry_run=False,
-                )
-
+                secrets_result = await self._run(["secrets", "-o", "json"], namespace)
                 if not secrets_result.success:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"Failed to list secrets: {secrets_result.stderr}",
-                        timestamp=datetime.now(timezone.utc),
-                    )
+                    return _fail(f"Failed to list secrets: {secrets_result.stderr}")
 
-                # Parse secrets and find token secrets for this service account
-                import json
-                try:
-                    secrets_data = json.loads(secrets_result.stdout)
-                    token_secrets = []
-                    for item in secrets_data.get("items", []):
-                        secret = item.get("metadata", {}).get("name")
-                        secret_type = item.get("type", "")
-                        annotations = item.get("metadata", {}).get("annotations", {})
+                secrets_data, parse_error = _parse_json_output(
+                    secrets_result.stdout, "secrets data"
+                )
+                if parse_error:
+                    return parse_error
 
-                        # Check if this is a service account token secret
-                        if secret_type == "kubernetes.io/service-account-token":
-                            sa_annotation = annotations.get("kubernetes.io/service-account.name")
-                            if sa_annotation == service_account:
-                                token_secrets.append(secret)
-                except json.JSONDecodeError as e:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"Failed to parse secrets data: {e}",
-                        timestamp=datetime.now(timezone.utc),
-                    )
+                token_secrets = [
+                    item.get("metadata", {}).get("name")
+                    for item in secrets_data.get("items", [])
+                    if item.get("type", "") == "kubernetes.io/service-account-token"
+                    and item.get("metadata", {}).get("annotations", {}).get(
+                        "kubernetes.io/service-account.name"
+                    ) == service_account
+                ]
 
                 if not token_secrets:
-                    return ExecutionResult(
-                        success=True,
-                        exit_code=0,
-                        stdout=f"No token secrets found for service account {service_account}",
-                        stderr="",
-                        duration_seconds=0.0,
-                        timestamp=datetime.now(timezone.utc),
-                    )
+                    return _ok(f"No token secrets found for service account {service_account}")
 
                 # Delete each token secret
-                deleted_secrets = []
-                errors = []
-                for secret in token_secrets:
-                    delete_cmd = ["delete", "secret", secret]
-                    delete_result = await self.executor.execute_kubectl(
-                        args=delete_cmd,
-                        namespace=namespace,
-                        dry_run=False,
-                    )
-
-                    if delete_result.success:
-                        deleted_secrets.append(secret)
-                    else:
-                        errors.append(f"{secret}: {delete_result.stderr}")
-
-                result = ExecutionResult(
-                    success=len(errors) == 0,
-                    exit_code=0 if len(errors) == 0 else 1,
-                    stdout=f"Deleted {len(deleted_secrets)} token secret(s) for service account {service_account}: "
-                           f"{', '.join(deleted_secrets)}",
-                    stderr=f"Errors: {errors}" if errors else "",
-                    duration_seconds=0.0,
-                    timestamp=datetime.now(timezone.utc),
-                    error_message=f"Failed to delete {len(errors)} secret(s)" if errors else None,
+                deleted_secrets, errors = await self._run_batch(
+                    {secret: ["delete", "secret", secret] for secret in token_secrets},
+                    namespace,
                 )
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.ROTATE_SERVICE_ACCOUNT_TOKEN.value,
-            result,
-            {
-                "namespace": namespace,
-                "service_account": service_account,
-                "secret_name": secret_name,
-                "alert_event_id": alert_event.id,
-            }
-        )
+                result = _batch_result(
+                    f"Deleted {len(deleted_secrets)} token secret(s) for service account "
+                    f"{service_account}: {', '.join(deleted_secrets)}",
+                    deleted_secrets, errors, "delete", "secret(s)",
+                )
 
-        return result
+        return self._record_and_return(
+            RemediationActionType.ROTATE_SERVICE_ACCOUNT_TOKEN,
+            result,
+            {"namespace": namespace, "service_account": service_account,
+             "secret_name": secret_name, "alert_event_id": alert_event.id},
+        )
 
 
 class RestartDaemonSetAction(RemediationAction):
-    """Remediation action for restarting DaemonSet pods.
-
-    This action performs a rolling restart of a DaemonSet, restarting pods
-    node by node while respecting Pod Disruption Budgets.
+    """Performs a rolling restart of a DaemonSet, node by node, respecting
+    Pod Disruption Budgets.
 
     Risk Level: MEDIUM - Rolling restart respects PDB
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute DaemonSet restart.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Kubernetes namespace (default: default)
-                - daemonset: DaemonSet name (required)
-                - node_selector: Target specific nodes (optional)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with restart details
+        parameters: namespace, daemonset (required), node_selector (optional).
         """
         namespace = parameters.get("namespace", "default")
-        daemonset = parameters.get("daemonset")
+        daemonset, error = _required(parameters, "daemonset", "DaemonSet name")
+        if error:
+            return error
         node_selector = parameters.get("node_selector")
-
-        if not daemonset:
-            return ExecutionResult(
-                success=False,
-                error_message="DaemonSet name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
 
         if dry_run:
             selector_note = f" (nodes: {node_selector})" if node_selector else ""
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would restart DaemonSet {daemonset} in {namespace}{selector_note}",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _dry_run(f"restart DaemonSet {daemonset} in {namespace}{selector_note}")
         else:
             # Execute rollout restart
-            restart_cmd = ["rollout", "restart", "daemonset", daemonset]
-
-            restart_result = await self.executor.execute_kubectl(
-                args=restart_cmd,
-                namespace=namespace,
-                dry_run=False,
+            restart_result = await self._run(
+                ["rollout", "restart", "daemonset", daemonset], namespace
             )
-
             if not restart_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to restart DaemonSet: {restart_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to restart DaemonSet: {restart_result.stderr}")
 
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"Initiated rolling restart for DaemonSet {daemonset} "
-                       f"(restarts pods node-by-node, respecting PDB)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-            )
+            result = _ok(f"Initiated rolling restart for DaemonSet {daemonset} "
+                         f"(restarts pods node-by-node, respecting PDB)")
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.RESTART_DAEMONSET.value,
+        return self._record_and_return(
+            RemediationActionType.RESTART_DAEMONSET,
             result,
-            {
-                "namespace": namespace,
-                "daemonset": daemonset,
-                "node_selector": node_selector,
-                "alert_event_id": alert_event.id,
-            }
+            {"namespace": namespace, "daemonset": daemonset,
+             "node_selector": node_selector, "alert_event_id": alert_event.id},
         )
-
-        return result
 
 
 class TruncateNodeLogsAction(RemediationAction):
-    """Remediation action for truncating excessive log files on nodes.
-
-    This action truncates large log files that may be causing disk pressure.
-    Requires privileged access or DaemonSet-based execution.
+    """Truncates large log files causing disk pressure. Requires privileged
+    access or DaemonSet-based execution.
 
     Risk Level: MEDIUM - Requires proper permissions
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute node log truncation.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - node_name: Node name (required)
-                - log_paths: List of log file patterns (default: ["/var/log/*.log"])
-                - max_size_mb: Max size before truncation (default: 100)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with truncation details
+        parameters: node_name (required), log_paths (default
+        ["/var/log/*.log"]), max_size_mb (default 100).
 
         Note: This action requires a DaemonSet-based approach as direct
         node access is not typically available from control plane.
         """
-        node_name = parameters.get("node_name")
+        node_name, error = _required(parameters, "node_name", "Node name")
+        if error:
+            return error
         log_paths = parameters.get("log_paths", ["/var/log/*.log"])
-        max_size_mb = parameters.get("max_size_mb", 100)
 
-        if not node_name:
-            return ExecutionResult(
-                success=False,
-                error_message="Node name is required",
-                timestamp=datetime.now(timezone.utc),
-            )
+        max_size, error = _validated_int(parameters.get("max_size_mb", 100), "max_size_mb", 1)
+        if error:
+            return error
 
-        # Validate max_size_mb
-        try:
-            max_size = int(max_size_mb)
-            if max_size < 1:
-                return ExecutionResult(
-                    success=False,
-                    error_message="max_size_mb must be at least 1",
-                    timestamp=datetime.now(timezone.utc),
-                )
-        except ValueError:
-            return ExecutionResult(
-                success=False,
-                error_message="max_size_mb must be a valid integer",
-                timestamp=datetime.now(timezone.utc),
-            )
+        paths_str = ", ".join(log_paths) if isinstance(log_paths, list) else log_paths
 
         if dry_run:
-            paths_str = ", ".join(log_paths) if isinstance(log_paths, list) else log_paths
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would truncate log files on {node_name} "
-                       f"(paths: {paths_str}, max_size: {max_size}MB)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _dry_run(
+                f"truncate log files on {node_name} "
+                f"(paths: {paths_str}, max_size: {max_size}MB)"
             )
         else:
-            # This action requires a DaemonSet-based approach
-            # For now, we'll create a job that runs on the specific node
-            job_name = f"log-truncator-{node_name.lower()}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+            # This action requires a DaemonSet-based approach.
+            # For now, we create a job that runs on the specific node.
+            # Note: This is a simplified implementation; in production, you
+            # might want a more robust DaemonSet-based solution.
+            job_name = f"log-truncator-{node_name.lower()}-{_utcnow().strftime('%Y%m%d%H%M%S')}"
+            result = _ok(f"Created job {job_name} to truncate log files on {node_name} "
+                         f"(paths: {paths_str}, max_size: {max_size}MB)")
 
-            # Create a job that truncates logs
-            # Note: This is a simplified implementation
-            # In production, you might want a more robust DaemonSet-based solution
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"Created job {job_name} to truncate log files on {node_name} "
-                       f"(paths: {', '.join(log_paths) if isinstance(log_paths, list) else log_paths}, "
-                       f"max_size: {max_size}MB)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
-                error_message=None,
-            )
-
-        # Record execution
-        self._record_execution(
-            RemediationActionType.TRUNCATE_NODE_LOGS.value,
+        return self._record_and_return(
+            RemediationActionType.TRUNCATE_NODE_LOGS,
             result,
-            {
-                "node_name": node_name,
-                "log_paths": log_paths,
-                "max_size_mb": max_size,
-                "alert_event_id": alert_event.id,
-            }
+            {"node_name": node_name, "log_paths": log_paths, "max_size_mb": max_size,
+             "alert_event_id": alert_event.id},
         )
-
-        return result
 
 
 class RestartIngressControllerAction(RemediationAction):
-    """Remediation action for restarting ingress controller pods.
-
-    This action restarts ingress controller deployment to resolve routing
-    or SSL certificate issues. Affects all traffic.
+    """Restarts the ingress controller deployment to resolve routing or SSL
+    certificate issues. Affects all traffic.
 
     Risk Level: HIGH - Affects all incoming traffic
     """
 
     async def execute(
-        self,
-        alert_event: AlertEvent,
-        parameters: dict[str, Any],
-        dry_run: bool = False,
+        self, alert_event: AlertEvent, parameters: dict[str, Any], dry_run: bool = False
     ) -> ExecutionResult:
         """Execute ingress controller restart.
 
-        Args:
-            alert_event: Alert event with context
-            parameters: Expected keys:
-                - namespace: Ingress namespace (default: ingress-nginx)
-                - deployment: Ingress deployment name (default: ingress-controller)
-                - wait_seconds: Wait for rollout completion (default: 60)
-            dry_run: Validate without executing
-
-        Returns:
-            Execution result with restart details
+        parameters: namespace (default ingress-nginx), deployment (default
+        ingress-controller), wait_seconds (wait for rollout completion,
+        default 60).
         """
         namespace = parameters.get("namespace", "ingress-nginx")
         deployment = parameters.get("deployment", "ingress-controller")
-        wait_seconds = parameters.get("wait_seconds", 60)
 
-        # Validate wait_seconds
-        try:
-            wait_time = int(wait_seconds)
-            if wait_time < 0:
-                return ExecutionResult(
-                    success=False,
-                    error_message="wait_seconds must be non-negative",
-                    timestamp=datetime.now(timezone.utc),
-                )
-        except ValueError:
-            return ExecutionResult(
-                success=False,
-                error_message="wait_seconds must be a valid integer",
-                timestamp=datetime.now(timezone.utc),
-            )
+        wait_time, error = _validated_int(parameters.get("wait_seconds", 60), "wait_seconds", 0)
+        if error:
+            return error
 
         if dry_run:
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"[DRY RUN] Would restart ingress controller {deployment} in {namespace} "
-                       f"(HIGH RISK: affects all traffic)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _dry_run(
+                f"restart ingress controller {deployment} in {namespace} "
+                f"(HIGH RISK: affects all traffic)"
             )
         else:
             # Step 1: Get current deployment to verify it exists
-            get_cmd = ["get", "deployment", deployment, "-o", "json"]
-
-            get_result = await self.executor.execute_kubectl(
-                args=get_cmd[2:],
-                namespace=namespace,
-                dry_run=False,
-            )
-
+            get_result = await self._run(["deployment", deployment, "-o", "json"], namespace)
             if not get_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Ingress controller deployment not found: {get_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Ingress controller deployment not found: {get_result.stderr}")
 
             # Step 2: Execute rollout restart
-            restart_cmd = ["rollout", "restart", "deployment", deployment]
-
-            restart_result = await self.executor.execute_kubectl(
-                args=restart_cmd,
-                namespace=namespace,
-                dry_run=False,
+            restart_result = await self._run(
+                ["rollout", "restart", "deployment", deployment], namespace
             )
-
             if not restart_result.success:
-                return ExecutionResult(
-                    success=False,
-                    error_message=f"Failed to restart ingress controller: {restart_result.stderr}",
-                    timestamp=datetime.now(timezone.utc),
-                )
+                return _fail(f"Failed to restart ingress controller: {restart_result.stderr}")
 
-            result = ExecutionResult(
-                success=True,
-                exit_code=0,
-                stdout=f"Initiated rolling restart for ingress controller {deployment} in {namespace} "
-                       f"(HIGH RISK: affects all traffic, waiting {wait_time}s for rollout)",
-                stderr="",
-                duration_seconds=0.0,
-                timestamp=datetime.now(timezone.utc),
+            result = _ok(
+                f"Initiated rolling restart for ingress controller {deployment} "
+                f"in {namespace} (HIGH RISK: affects all traffic, "
+                f"waiting {wait_time}s for rollout)"
             )
 
-        # Record execution
-        self._record_execution(
-            RemediationActionType.RESTART_INGRESS_CONTROLLER.value,
+        return self._record_and_return(
+            RemediationActionType.RESTART_INGRESS_CONTROLLER,
             result,
-            {
-                "namespace": namespace,
-                "deployment": deployment,
-                "wait_seconds": wait_seconds,
-                "alert_event_id": alert_event.id,
-            }
+            {"namespace": namespace, "deployment": deployment, "wait_seconds": wait_time,
+             "alert_event_id": alert_event.id},
         )
-
-        return result
 
 
 # Action factory
@@ -1965,16 +1207,9 @@ class RemediationActionFactory:
 
     @classmethod
     def create(cls, action_type: RemediationActionType) -> RemediationAction:
-        """Create a remediation action instance.
+        """Create a remediation action instance for the given type.
 
-        Args:
-            action_type: Type of remediation action
-
-        Returns:
-            Remediation action instance
-
-        Raises:
-            ValueError: If action type is unknown
+        Raises ValueError if the action type is unknown.
         """
         action_class = cls._actions.get(action_type)
         if not action_class:

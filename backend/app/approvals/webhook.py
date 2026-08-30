@@ -296,23 +296,18 @@ async def teams_approval_webhook(
         # Get raw body for signature verification
         raw_body = await request.body()
 
-        # Signature verification is REQUIRED in production. S4: the HMAC key is
-        # TEAMS_WEBHOOK_SECRET (dedicated secret, not the webhook URL — a URL
-        # is not a secret). The legacy URL-keyed scheme is accepted with a
-        # deprecation warning for one release, then removed.
-        legacy_key: str | None = None
+        # Signature verification is REQUIRED in production. Phase 13: the
+        # legacy URL-keyed scheme was removed — TEAMS_WEBHOOK_SECRET is the
+        # only HMAC key (a webhook URL is not a secret).
         if settings.TEAMS_WEBHOOK_SECRET:
             hmac_key = settings.TEAMS_WEBHOOK_SECRET
-        elif settings.TEAMS_WEBHOOK_URL:
-            hmac_key = settings.TEAMS_WEBHOOK_URL
-            legacy_key = settings.TEAMS_WEBHOOK_URL
         else:
             hmac_key = None
 
         if settings.ENVIRONMENT == "production" and not hmac_key:
             logger.error(
                 "Teams webhook signature key not configured - rejecting Teams webhook request. "
-                "Set TEAMS_WEBHOOK_SECRET (legacy TEAMS_WEBHOOK_URL keying deprecated)."
+                "Set TEAMS_WEBHOOK_SECRET."
             )
             raise HTTPException(
                 status_code=500,
@@ -330,11 +325,6 @@ async def teams_approval_webhook(
             if not verify_teams_hmac_signature(raw_body, authorization, hmac_key):
                 logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
                 raise HTTPException(status_code=401, detail="Invalid signature")
-            if legacy_key:
-                logger.warning(
-                    "Teams webhook is using the deprecated TEAMS_WEBHOOK_URL-keyed HMAC scheme; "
-                    "set TEAMS_WEBHOOK_SECRET before the shim is removed next release."
-                )
         else:
             logger.warning(
                 f"Teams webhook signature verification disabled (ENVIRONMENT={settings.ENVIRONMENT}). "

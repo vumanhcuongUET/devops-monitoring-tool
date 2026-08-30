@@ -12,7 +12,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.router import api_router
 from app.api.ws.live import manager as ws_manager
 from app.api.ws.live import router as ws_router
-from app.auth import _is_valid_api_key, _is_valid_token
+from app.auth import _is_valid_api_key, decode_token
+from app.users import get_role
 from app.config import settings
 from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import RateLimitMiddleware
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware(BaseHTTPMiddleware):
     """Enforce auth on all routes except whitelisted ones."""
 
-    PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
+    PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/auth/login"}
 
     # Chat-platform webhook paths exempt from bearer/api-key auth. The
     # platforms' own HMAC signature IS the authentication for these paths
@@ -45,16 +46,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path.startswith(self.WEBHOOK_AUTH_PATHS):
             return await call_next(request)
 
-        # Check API key
+        # Check API key (service access — environment-keyed RBAC as before)
         api_key = request.headers.get("X-API-Key")
         if api_key and _is_valid_api_key(api_key):
+            request.state.user = None  # service identity, no per-user RBAC
             return await call_next(request)
 
         # Check Bearer token
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if _is_valid_token(token):
+            payload = decode_token(token)
+            if payload is not None:
+                # Phase 13 identity: user tokens carry a real username that
+                # must still exist (revocation); "service" is the API-key-
+                # minted automation subject with environment-keyed RBAC.
+                sub = payload.get("sub", "service")
+                if sub == "service":
+                    request.state.user = None
+                elif get_role(sub) is not None:
+                    request.state.user = sub
+                else:
+                    logger.warning("Rejected token for revoked/unknown user %r", sub)
+                    return fastapi.responses.JSONResponse(status_code=401, content={"detail": "User no longer exists"})
                 return await call_next(request)
 
         return fastapi.responses.JSONResponse(
@@ -343,15 +357,53 @@ async def create_auth_token():
 
 @app.post("/auth/refresh", include_in_schema=True)
 async def refresh_auth_token(request: Request):
-    """Exchange a still-valid bearer token for a fresh one (sliding session)."""
-    from app.auth import _is_valid_token, create_token
+    """Exchange a still-valid bearer token for a fresh one (sliding session).
+
+    Phase 13: refreshed token keeps the SAME subject — user tokens stay user
+    tokens, service tokens stay service tokens.
+    """
+    from app.auth import create_token, decode_token
+    from app.users import get_role
 
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:] if auth_header.lower().startswith("bearer ") else ""
-    if settings.AUTH_ENABLED and not _is_valid_token(token):
+    payload = decode_token(token)
+    if settings.AUTH_ENABLED and payload is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if settings.AUTH_ENABLED:
+        sub = payload.get("sub", "service")
+        if sub != "service" and get_role(sub) is None:
+            logger.warning("Token refresh for revoked/unknown user %r", sub)
+            raise HTTPException(status_code=401, detail="User no longer exists")
+    sub = payload.get("sub", "service") if payload else "service"
     return {
-        "access_token": create_token(),
+        "access_token": create_token(sub),
         "token_type": "bearer",
         "expires_in": settings.AUTH_TOKEN_TTL_SECONDS,
+    }
+
+
+@app.post("/auth/login", include_in_schema=True)
+async def login(request: Request):
+    """Username/password login — mints a user token (sub=<username>).
+
+    Phase 13 per-user identity: the token subject IS the authenticated
+    user; middleware propagates it as request.state.user and per-user RBAC
+    applies. Public path (login IS the authentication).
+    """
+    from app.auth import create_token
+    from app.users import verify_login
+
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    role = verify_login(username, password)
+    if role is None:
+        logger.warning("Failed login for %r", username or "<empty>")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {
+        "access_token": create_token(username),
+        "token_type": "bearer",
+        "expires_in": settings.AUTH_TOKEN_TTL_SECONDS,
+        "role": role,
     }

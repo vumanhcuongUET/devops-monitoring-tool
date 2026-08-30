@@ -1,10 +1,11 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppShell } from './components/layout/AppShell'
 import { LoadingSkeleton } from './components/common/LoadingSkeleton'
 import { useAlertNotifications } from './hooks/useWebSocket'
+import { getAuthStatus } from './api/client'
 
 // Code split pages with lazy loading
 // Pages export named symbols (except Skills/Governance) — wrap for React.lazy
@@ -21,6 +22,7 @@ const SloPage = lazy(() => named(import('./pages/SloPage'), 'SloPage'))
 const ActionsPage = lazy(() => named(import('./pages/ActionsPage'), 'ActionsPage'))  // Phase 2
 const SkillsPage = lazy(() => import('./pages/SkillsPage'))  // Phase 3
 const GovernanceDashboard = lazy(() => import('./pages/GovernanceDashboard'))  // Phase 3
+const LoginPage = lazy(() => import('./pages/LoginPage'))
 
 // Loading fallback for lazy-loaded components
 function PageLoader() {
@@ -33,6 +35,23 @@ function PageLoader() {
 
 function App() {
   useAlertNotifications()
+
+  // Phase 13: gate the whole app behind login; a token-expired event from the
+  // api client drops back to the login screen.
+  const [authed, setAuthed] = useState(() => getAuthStatus().isAuthenticated)
+  useEffect(() => {
+    const onAuthRequired = () => setAuthed(false)
+    window.addEventListener('auth-required', onAuthRequired)
+    return () => window.removeEventListener('auth-required', onAuthRequired)
+  }, [])
+
+  if (!authed) {
+    return (
+      <ErrorBoundary>
+        <LoginPage onLogin={() => setAuthed(true)} />
+      </ErrorBoundary>
+    )
+  }
 
   return (
     <ErrorBoundary>

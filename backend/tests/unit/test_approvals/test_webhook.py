@@ -556,8 +556,9 @@ class TestTeamsApprovalWebhook:
         assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_teams_webhook_legacy_url_key_accepted_with_warning(self, mock_request):
-        """S4 deprecation shim: legacy URL-keyed HMAC still accepted (non-prod branch here)."""
+    async def test_teams_webhook_legacy_url_key_rejected_in_production(self, mock_request):
+        """Phase 13: TEAMS_WEBHOOK_URL is no longer an HMAC key — production
+        fails hard even when only the legacy URL is configured."""
         import hashlib
         import hmac as hmac_module
 
@@ -566,30 +567,29 @@ class TestTeamsApprovalWebhook:
         legacy_url = "https://outlook.office.com/webhook"
         sig = "sha256=" + hmac_module.new(legacy_url.encode(), body, hashlib.sha256).hexdigest()
 
-        with patch("app.approvals.webhook.settings") as mock_settings_class, \
-             patch("app.approvals.webhook.logger") as mock_logger:
-            mock_settings_class.ENVIRONMENT = "development"
+        with patch("app.approvals.webhook.settings") as mock_settings_class:
+            mock_settings_class.ENVIRONMENT = "production"
             mock_settings_class.TEAMS_WEBHOOK_SECRET = ""
             mock_settings_class.TEAMS_WEBHOOK_URL = legacy_url
 
             with pytest.raises(HTTPException) as exc_info:
                 await teams_approval_webhook(mock_request, authorization=sig)
 
-        # Passed the signature gate via the legacy key; fails later on missing actionId
-        assert exc_info.value.status_code == 400
-        mock_logger.warning.assert_called()
-        """Test production requires Authorization header."""
+        assert exc_info.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_teams_webhook_missing_authorization_returns_401(self, mock_request):
+        """Production with secret configured requires the Authorization header."""
         mock_request.body.return_value = b'{"test": "data"}'
 
         with patch("app.approvals.webhook.settings") as mock_settings_class:
             mock_settings_class.ENVIRONMENT = "production"
-            mock_settings_class.TEAMS_WEBHOOK_URL = "https://outlook.office.com/webhook"
+            mock_settings_class.TEAMS_WEBHOOK_SECRET = "dedicated-teams-secret"
 
             with pytest.raises(HTTPException) as exc_info:
                 await teams_approval_webhook(mock_request, authorization=None)
 
         assert exc_info.value.status_code == 401
-
     @pytest.mark.asyncio
     async def test_teams_webhook_invalid_signature_returns_401(self, mock_request):
         """Test invalid signature returns 401."""

@@ -24,11 +24,6 @@ const tokenConfig: Partial<TokenManagerConfig> = {
 // Initialize token manager
 const tokenManager = getTokenManager(tokenConfig);
 
-// API key from environment (for development)
-const getApiKey = (): string | undefined => {
-  return import.meta.env.VITE_API_KEY;
-};
-
 export const api: AxiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 15000,
@@ -48,11 +43,6 @@ api.interceptors.request.use(
       return config;
     }
 
-    // Priority 2: Fall back to API key (for development)
-    const apiKey = getApiKey();
-    if (apiKey) {
-      config.headers['X-API-Key'] = apiKey;
-    }
 
     return config;
   },
@@ -95,32 +85,6 @@ api.interceptors.response.use(
         tokenManager.clear();
       }
 
-      // Try to get new token with API key
-      const apiKey = getApiKey();
-      if (apiKey) {
-        try {
-          const response = await axios.post(`${API_URL}/auth/token`, {}, {
-            headers: { 'X-API-Key': apiKey },
-            withCredentials: true, // Enable cookies
-          });
-
-          const { access_token, expires_in } = response.data;
-
-          // Store in token manager
-          tokenManager.setToken({
-            accessToken: access_token,
-            expiresAt: Date.now() + (expires_in || 900) * 1000,
-            tokenType: 'Bearer',
-          });
-
-          // Retry original request
-          originalRequest.headers.Authorization = `Bearer ${access_token}`;
-          return api(originalRequest);
-        } catch (tokenError) {
-          console.error('Failed to get new token:', tokenError);
-          tokenManager.clear();
-        }
-      }
     }
 
     return Promise.reject(error);
@@ -210,32 +174,6 @@ if (typeof window !== 'undefined') {
 // ============================================
 export { tokenManager, tokenConfig };
 
-/**
- * Initialize authentication with API key
- * Call this on app startup to get initial token
- */
-export async function initializeAuth(): Promise<void> {
-  const apiKey = getApiKey();
-
-  if (apiKey && !tokenManager.isTokenValid()) {
-    try {
-      const response = await axios.post(`${API_URL}/auth/token`, {}, {
-        headers: { 'X-API-Key': apiKey },
-        withCredentials: true,
-      });
-
-      const { access_token, expires_in } = response.data;
-
-      tokenManager.setToken({
-        accessToken: access_token,
-        expiresAt: Date.now() + (expires_in || 900) * 1000,
-        tokenType: 'Bearer',
-      });
-    } catch (error) {
-      console.error('Failed to initialize auth:', error);
-    }
-  }
-}
 
 /**
  * Logout and clear tokens

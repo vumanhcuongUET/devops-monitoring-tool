@@ -137,6 +137,15 @@ async def approve_action(
     """
     try:
         engine = get_action_engine()
+        # Phase 13: authenticated identity wins over client-asserted body value
+        user = getattr(request.state, "user", None)
+        if user:
+            if body.approved_by and body.approved_by != user:
+                logger.warning(
+                    "approved_by %r overridden by authenticated user %r",
+                    body.approved_by, user,
+                )
+            body.approved_by = user
         action = await engine.approve_action(action_id, body)
 
         # Broadcast WebSocket event
@@ -167,6 +176,15 @@ async def reject_action(
     """
     try:
         engine = get_action_engine()
+        # Phase 13: authenticated identity wins over client-asserted body value
+        user = getattr(request.state, "user", None)
+        if user:
+            if body.rejected_by and body.rejected_by != user:
+                logger.warning(
+                    "rejected_by %r overridden by authenticated user %r",
+                    body.rejected_by, user,
+                )
+            body.rejected_by = user
         action = await engine.reject_action(action_id, body)
 
         # Broadcast WebSocket event
@@ -198,6 +216,15 @@ async def execute_action(
     """
     try:
         engine = get_action_engine()
+        # Phase 13: authenticated identity wins over client-asserted body value
+        user = getattr(request.state, "user", None)
+        if user:
+            if body.executed_by and body.executed_by != user:
+                logger.warning(
+                    "executed_by %r overridden by authenticated user %r",
+                    body.executed_by, user,
+                )
+            body.executed_by = user
         action = await engine.execute_action(action_id, body)
 
         # Broadcast WebSocket event

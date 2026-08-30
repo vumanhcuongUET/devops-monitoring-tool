@@ -276,3 +276,22 @@ def get_permission_summary(environment: str = "production") -> dict:
         "permissions": [p.value for p in permissions],
         "risk_breakdown": risk_counts,
     }
+
+
+# Phase 13: per-user roles narrow the environment matrix (never widen).
+# No local role (Slack attributions, "service" tokens) → no narrowing.
+def role_allows(role: str, required: AIPermission, environment: str) -> bool:
+    """Whether a user role permits the required permission in an env.
+
+    admin → full environment matrix. operator → full in dev/staging,
+    view+scale only in production. viewer → view-only everywhere.
+    """
+    if role == "admin":
+        return True
+    if role == "operator":
+        if environment in ("development", "staging"):
+            return True
+        return required in (AIPermission.VIEW, AIPermission.SCALE)
+    if role == "viewer":
+        return required == AIPermission.VIEW
+    return False

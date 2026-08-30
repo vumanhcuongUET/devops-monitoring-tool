@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     ALLOWED_WEBHOOK_IPS: list[str] = []  # IP whitelist for webhooks (empty = allow all)
 
     # Teams Approval
-    TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for signature verification (legacy HMAC key, deprecated)
+    TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for card delivery (no longer an HMAC key — Phase 13)
     TEAMS_WEBHOOK_SECRET: str = ""  # Dedicated HMAC secret for Teams webhook verification
 
     # Phase 12 Sprint 3: OPA enforcement (default off — evaluation API only).

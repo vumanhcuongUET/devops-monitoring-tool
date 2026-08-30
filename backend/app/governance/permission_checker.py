@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.governance.ai_rbac import (
+    role_allows,
     AIPermission,
     check_permission,
     get_action_risk_level,
@@ -139,7 +140,19 @@ class AIPermissionChecker:
         risk_level = get_action_risk_level(required)
 
         # Check base permission
-        base_allowed, _, base_reason = check_permission(action, env)
+        base_allowed, _, _ = check_permission(action, env)
+
+        # Phase 13: an authenticated user's role narrows the environment
+        # matrix (never widens). Labels without a local role — Slack
+        # attributions, "service" tokens — behave exactly as before.
+        denial_reason = None
+        if user and user != "service":
+            from app.users import get_role
+
+            role = get_role(user)
+            if role is not None and not role_allows(role, required, env):
+                base_allowed = False
+                denial_reason = f"Role {role!r} does not allow '{action}' in {env}"
 
         # Determine if approval is required
         requires_approval = not base_allowed
@@ -148,7 +161,7 @@ class AIPermissionChecker:
         if base_allowed:
             reason = f"Action '{action}' allowed in {env} ({risk_level} risk)"
         else:
-            reason = f"Action '{action}' requires human approval in {env}"
+            reason = denial_reason or f"Action '{action}' requires human approval in {env}"
 
         # Create result
         result = PermissionCheckResult(

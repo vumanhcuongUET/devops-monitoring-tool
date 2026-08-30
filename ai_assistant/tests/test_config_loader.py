@@ -3,7 +3,6 @@ Tests for config_loader module.
 """
 
 import pytest
-from pathlib import Path
 from core.config_loader import (
     load_config,
     load_query_def,

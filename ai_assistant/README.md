@@ -3,7 +3,7 @@
 > **Phase 14 cleanup (2026-08-30):** the flag-off backend adapter layer
 > (`services/`), Redis cache/single-flight, and the retry/circuit-breaker
 > modules were removed — they had no production callers. The structure
-> section below predates that cleanup and may still mention them.
+> tree above reflects the post-cleanup layout.
 
 
 Config-driven monitoring assistant for Claude CLI. Ask natural language questions about system status — Claude queries ELK, Prometheus, and APM automatically using Python scripts.
@@ -55,26 +55,15 @@ ai_assistant/
 │   ├── global.yaml                  # Default endpoints & settings
 │   └── features.yaml               # Feature flags & optimization config
 ├── core/                            # Core infrastructure modules
-│   ├── audit.py                    # Audit logging with tamper-evident chain hashing
-│   ├── cache.py                     # Multi-layer caching (SimpleCache, RedisCache)
-│   ├── redis_cache.py               # Redis distributed cache
-│   ├── single_flight.py             # Query deduplication (local, Redis)
-│   ├── redis_single_flight.py       # Redis-based distributed single-flight
-│   ├── retry.py                     # Retry logic with circuit breaker
-│   ├── security.py                  # Input validation, rate limiting, sanitization
-│   ├── sync_bridge.py               # Async/sync bridge for backend adapters
+│   ├── audit.py                    # Append-only audit log with hash chaining
+│   ├── cache.py                     # In-memory cache (SimpleCache, TTL + LRU caps)
+│   ├── single_flight.py             # Concurrent-identical-query deduplication (in-process)
+│   ├── output_optimizer.py          # Result truncation/compaction for LLM output
+│   ├── security.py                  # Input validation & sanitization
 │   ├── logging_config.py            # Structured logging & metrics
 │   └── config_loader.py             # Configuration & template loading
-├── services/                        # Backend service adapters
-│   ├── elasticsearch_adapter.py     # Elasticsearch client with fallback
-│   ├── prometheus_adapter.py        # Prometheus client with fallback
-│   ├── apm_adapter.py               # APM client for error transactions
-│   ├── kubernetes_adapter.py       # Kubernetes client for pod/status
-│   └── optimizer_adapter.py        # Query optimizer client
-├── docs/                            # Documentation
-│   ├── SECURITY.md                  # Threat model & security documentation
-│   ├── API.md                       # API documentation for adapters & utilities
-│   └── MIGRATION_GUIDE.md           # v1 to v2 migration guide
+├── docs/                            # Documentation (pre-Phase-14; adapter-era
+│   └── ...                          # sections are historical)
 ├── templates/
 │   └── system-status.yaml           # Report sections & display order
 ├── queries/

@@ -189,7 +189,7 @@ See `docs/agents/domain.md`.
 
 ### Skills Library
 
-44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 13) 21
+44 skills are registered across 10 categories. **As of 2026-08-30 (Phase 14) 22
 are real** — they read live data injected via `context["clients"]` by the skills API
 and refuse loudly (errors, not fake data) when a client is missing:
 `devops_deployment_health_check` (K8s), `devops_resource_optimizer` (Prometheus),
@@ -202,9 +202,12 @@ of uploaded content), plus batch 3: `observability_metrics_analyzer`,
 `monitoring_sli_calculator` (Prometheus), `reliability_scaling_analyzer` (K8s),
 `reliability_sla_compliance` + `observability_slo_tracker` (SloClient),
 `observability_tracing_analyzer` + `reliability_dlq_monitor` (Elasticsearch/APM),
-and `code_complexity_analyzer` + `code_duplication_detector` +
-`code_smell_detector` (static AST lint of uploaded Python). The remaining **23 are
-stubs** (`STUB_SKILLS` in `app/skills/registry.py`): `execute()` refuses to run so
+`code_complexity_analyzer` + `code_duplication_detector` +
+`code_smell_detector` (static AST lint of uploaded Python), and
+`performance_load_test_analyzer` (parses uploaded k6/Locust artifacts,
+Phase 14). The remaining **22 are
+stubs** — metadata-only catalog entries (`app/skills/catalog_stub.py`,
+one class for all of them): `execute()` refuses to run so
 no fabricated data is ever returned, and the UI marks them "Coming soon". They are
 a roadmap, not working features.
 

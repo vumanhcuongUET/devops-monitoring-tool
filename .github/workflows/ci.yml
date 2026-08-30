@@ -183,7 +183,10 @@ jobs:
         run: |
           cd ai_assistant
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio ruff
+
+      - name: Lint (ruff)
+        run: cd ai_assistant && ruff check .
 
       - name: Run tests
         run: |

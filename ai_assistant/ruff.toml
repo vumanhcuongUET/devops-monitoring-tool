@@ -1,0 +1,18 @@
+# Same blocking gate as backend/ruff.toml (Phase 14): error-class pyflakes
+# + bugbear. Style sets stay advisory until the backlog is fixed.
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = [
+    "B008", # function call in default arg — DI idiom
+    "F811", # redefined-while-unused — test mock idiom
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402", "B011", "F841"]
+"tools/run_query_v2.py" = ["E402"] # sys.path bootstrap must precede core.* imports
+
+[lint.isort]
+known-first-party = ["core", "tools", "config"]

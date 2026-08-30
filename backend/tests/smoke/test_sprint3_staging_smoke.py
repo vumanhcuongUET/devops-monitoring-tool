@@ -13,6 +13,18 @@ Date: 2026-08-24
 """
 
 import os
+
+import pytest
+
+# Live-stack guard (Phase 14): these exercise a running deployment
+# (staging URL / local uvicorn). Enable with LIVE_STACK=1.
+pytestmark = pytest.mark.skipif(
+    os.environ.get("LIVE_STACK") != "1",
+    reason="requires a live stack; set LIVE_STACK=1 to run",
+)
+
+
+import os
 import time
 
 # Staging environment URL

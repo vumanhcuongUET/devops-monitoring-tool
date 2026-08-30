@@ -6,7 +6,7 @@ while preserving critical information.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 # Lazy imports
 def _get_logger():

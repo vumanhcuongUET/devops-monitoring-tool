@@ -15,7 +15,6 @@ import argparse
 import json
 import os
 import sys
-import yaml
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -33,21 +32,16 @@ from core.config_loader import (
     load_config,
     load_query_def,
     render_template,
-    get_feature_flags,
     is_feature_enabled
 )
 from core.logging_config import (
     setup_logging,
-    get_logger,
-    log_context,
     track_time,
-    track_counter,
-    get_metrics,
-    CredentialSanitizer
+    get_metrics
 )
 from core.audit import get_audit_logger, AuditLogEntry
-from core.cache import cached, get_global_cache, get_cache_stats
-from core.single_flight import single_flight, get_global_single_flight
+from core.cache import cached, get_cache_stats
+from core.single_flight import single_flight
 from core.output_optimizer import get_output_optimizer
 
 # Setup logging

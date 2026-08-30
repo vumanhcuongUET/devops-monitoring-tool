@@ -4,16 +4,13 @@ Tests for logging_config module.
 
 import pytest
 import logging
-from unittest.mock import patch, MagicMock
 
 from core.logging_config import (
-    LogContext,
     get_log_context,
     set_log_context,
     log_context,
     CredentialSanitizer,
     MetricsCollector,
-    get_metrics,
     setup_logging,
 )
 

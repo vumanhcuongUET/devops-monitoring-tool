@@ -4,7 +4,6 @@ Security utilities for AI Assistant.
 Provides rate limiting, input validation, and security checks.
 """
 
-import hashlib
 import re
 import time
 from collections import defaultdict

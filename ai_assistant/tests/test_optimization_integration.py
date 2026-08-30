@@ -4,16 +4,14 @@ Integration tests for token optimization features.
 Tests caching, single-flight deduplication, and output optimization.
 """
 
-import json
 import pytest
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Import modules to test
 from core.cache import SimpleCache, cached, cache_key_from_args
 from core.single_flight import SingleFlight, single_flight
 from core.output_optimizer import OutputOptimizer
-from core.config_loader import is_feature_enabled, get_feature_flags
 
 
 class TestCacheIntegration:

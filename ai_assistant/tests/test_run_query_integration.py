@@ -8,8 +8,6 @@ Tests the full query execution flow including:
 """
 
 import pytest
-import json
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Mock requests before importing run_query_v2 (which imports requests at module level)

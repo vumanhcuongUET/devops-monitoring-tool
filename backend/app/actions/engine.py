@@ -221,31 +221,37 @@ class ActionEngine:
         )
         return action
 
-    def _check_decision_permission(self, state: dict, user: str) -> None:
+    def _check_decision_permission(
+        self, state: dict, user: str, auth_user: str | None = None
+    ) -> None:
         """Phase 12 S6: the decision-maker must hold `approve` for the env.
 
-        Shared by approve and reject: both are approval-flow decisions, so
-        both require the `approve` permission for the action's environment.
+        Shared by approve and reject. `auth_user` (middleware-authenticated
+        identity) drives per-user RBAC narrowing; the raw attribution label
+        must never — otherwise an automation label colliding with a local
+        username would silently change permission decisions.
         """
         env = (state.get("context") or {}).get("environment", "development")
         result = self.permission_checker.check(
             action="approve",
             environment=env,
             project=state.get("project"),
-            user=user,
+            user=auth_user,
         )
         if not result.allowed:
             raise PermissionError(
                 f"User '{user}' lacks 'approve' permission in {env}: {result.reason}"
             )
 
-    def _check_approval_integrity(self, state: dict, approver: str) -> None:
+    def _check_approval_integrity(
+        self, state: dict, approver: str, auth_user: str | None = None
+    ) -> None:
         """Phase 12 S6: block self-approval and permission-less approvers.
 
         - Self-approval (approver == creator attribution) is blocked unless
           settings.ALLOW_SELF_APPROVAL is set.
         - The approver must hold the `approve` permission for the action's
-          environment (RBAC: dev/staging only).
+          environment; narrowing uses auth_user when provided (Phase 13).
         """
         created_by = state.get("created_by")
 
@@ -259,10 +265,19 @@ class ActionEngine:
                 f"Self-approval blocked: {approver} created action and ALLOW_SELF_APPROVAL is off"
             )
 
-        self._check_decision_permission(state, approver)
+        self._check_decision_permission(state, approver, auth_user)
 
-    async def approve_action(self, action_id: str, request: ApproveActionRequest) -> Action:
-        """Approve an action for execution."""
+    async def approve_action(
+        self,
+        action_id: str,
+        request: ApproveActionRequest,
+        auth_user: str | None = None,
+    ) -> Action:
+        """Approve an action for execution.
+
+        auth_user: authenticated identity from the API layer; drives RBAC
+        narrowing only — attribution still records request.approved_by.
+        """
         # Get current state
         state = await self.approval_tracker.get(action_id)
         if not state:
@@ -272,7 +287,7 @@ class ActionEngine:
             raise ValueError(f"Action {action_id} is not pending (current: {state.get('status')})")
 
         # Phase 12 S6: approval integrity — self-approval ban + approver permission check.
-        self._check_approval_integrity(state, request.approved_by)
+        self._check_approval_integrity(state, request.approved_by, auth_user)
 
         # Update status
         await self.approval_tracker.set_status(
@@ -312,8 +327,17 @@ class ActionEngine:
         })
         return Action(**action_kwargs)
 
-    async def reject_action(self, action_id: str, request: RejectActionRequest) -> Action:
-        """Reject an action."""
+    async def reject_action(
+        self,
+        action_id: str,
+        request: RejectActionRequest,
+        auth_user: str | None = None,
+    ) -> Action:
+        """Reject an action.
+
+        auth_user: authenticated identity from the API layer; drives RBAC
+        narrowing only — attribution still records request.rejected_by.
+        """
         # Get current state
         state = await self.approval_tracker.get(action_id)
         if not state:
@@ -325,7 +349,7 @@ class ActionEngine:
         # S6 (security recheck F1): reject is an approval-flow decision too —
         # it requires the `approve` permission. Self-reject stays allowed:
         # a creator cancelling their own pending request gains no privilege.
-        self._check_decision_permission(state, request.rejected_by)
+        self._check_decision_permission(state, request.rejected_by, auth_user)
 
         # Update status
         await self.approval_tracker.set_status(
@@ -366,7 +390,12 @@ class ActionEngine:
         })
         return Action(**action_kwargs)
 
-    async def execute_action(self, action_id: str, request: ExecuteActionRequest) -> Action:
+    async def execute_action(
+        self,
+        action_id: str,
+        request: ExecuteActionRequest,
+        auth_user: str | None = None,
+    ) -> Action:
         """Execute an approved action with RBAC permission checking."""
         # Get current state
         state = await self.approval_tracker.get(action_id)
@@ -445,7 +474,7 @@ class ActionEngine:
             command=command,
             environment=environment,
             project=project,
-            user=request.executed_by,
+            user=auth_user,  # narrowing by authenticated identity only
         )
 
         if not permission_result.allowed:

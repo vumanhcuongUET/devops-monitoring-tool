@@ -51,8 +51,9 @@ class ResourceOptimizerSkill(BaseSkill):
         """
         try:
             days = parameters.get("days", 7)
+            namespace = parameters.get("namespace")
 
-            resources = await self._fetch_resource_metrics(project, days, context)
+            resources = await self._fetch_resource_metrics(project, days, context, namespace)
             over_provisioned = self._find_over_provisioned(resources)
             under_provisioned = self._find_under_provisioned(resources)
             monthly_savings = self._calculate_savings(over_provisioned)
@@ -104,6 +105,7 @@ class ResourceOptimizerSkill(BaseSkill):
                 commands=[
                     "# Update deployment resources",
                     f"kubectl set resources deployment {resource['deployment']} "
+                    f"-n {resource['namespace']} "
                     f"--requests={resource['recommended_requests']}",
                 ],
             ))
@@ -114,11 +116,13 @@ class ResourceOptimizerSkill(BaseSkill):
         project: str,
         days: int,
         context: dict[str, Any] | None,
+        namespace: str | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch per-pod usage vs requests from Prometheus (Phase 13).
 
         The prometheus client comes from context["clients"]["prometheus"],
-        injected by the skills API.
+        injected by the skills API. `namespace` scopes the analysis; without
+        it the whole cluster is analyzed (projects are not namespaces).
         """
         clients = (context or {}).get("clients") or {}
         prom = clients.get("prometheus")
@@ -127,6 +131,7 @@ class ResourceOptimizerSkill(BaseSkill):
                 "No Prometheus in context['clients']['prometheus'] — skill requires Prometheus"
             )
         window = f"{max(days, 1)}d"
+        selector = f'{{namespace="{namespace}"}}' if namespace else ""
 
         async def q(expr):
             try:
@@ -135,17 +140,20 @@ class ResourceOptimizerSkill(BaseSkill):
                 return []  # missing series degrades to "unknown", never fails the run
 
         usage_cpu = await q(
-            "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\"}["
-            + window + "]))"
+            "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\""
+            + selector + "}[" + window + "]))"
         )
         usage_mem = await q(
-            'sum by (namespace, pod) (container_memory_working_set_bytes{container!=""})'
+            'sum by (namespace, pod) (container_memory_working_set_bytes{container!=""'
+            + selector + "})"
         )
         req_cpu = await q(
-            'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="cpu"})'
+            'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="cpu"'
+            + selector + "})"
         )
         req_mem = await q(
-            'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="memory"})'
+            'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="memory"'
+            + selector + "})"
         )
 
         def index(rows):
@@ -169,6 +177,8 @@ class ResourceOptimizerSkill(BaseSkill):
                 "namespace": ns,
                 "pod": pod,
                 "name": pod,
+                # deployment guess from pod name — wrong for StatefulSets
+                # (pg-0 stays pg-0); command checks will surface that
                 "deployment": pod.rsplit("-", 2)[0] if pod.count("-") >= 2 else pod,
                 "cpu_usage": round(cpu_u, 4),
                 "mem_usage_bytes": round(mem_u, 1),

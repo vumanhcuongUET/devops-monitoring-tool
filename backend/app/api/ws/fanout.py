@@ -21,6 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 CHANNEL = "ws:live:fanout"
+RECONNECT_SECONDS = 3
 
 
 def fanout_enabled() -> bool:
@@ -69,6 +70,9 @@ async def subscribe_loop(on_event) -> None:
             await pubsub.aclose()
             raise
         except Exception as e:
+            # close the abandoned pubsub before reconnecting — otherwise every
+            # disconnect cycle leaks a pooled connection
+            await pubsub.aclose()
             logger.warning("WS fanout subscriber disconnected (%s); reconnecting", e)
-            await asyncio.sleep(3)
+            await asyncio.sleep(RECONNECT_SECONDS)
 

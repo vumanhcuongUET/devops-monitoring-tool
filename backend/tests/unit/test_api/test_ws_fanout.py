@@ -107,3 +107,34 @@ async def test_broadcast_falls_back_to_local_when_not_published(monkeypatch):
 
     ws.send_text.assert_awaited_once()
     assert json.loads(ws.send_text.await_args.args[0]) == {"type": "alert"}
+
+
+@pytest.mark.asyncio
+async def test_subscribe_loop_closes_pubsub_on_reconnect(monkeypatch):
+    """A dropped connection must aclose the old pubsub, not leak it."""
+
+    class FlakyPubSub(FakePubSub):
+        async def listen(self):
+            await asyncio.sleep(0)
+            raise ConnectionError("dropped")
+            yield  # pragma: no cover
+
+    pubsubs = []
+
+    class Client:
+        def pubsub(self):
+            ps = FlakyPubSub([])
+            pubsubs.append(ps)
+            return ps
+
+    monkeypatch.setattr("app.redis_client.get_redis", lambda: Client())
+    monkeypatch.setattr("app.api.ws.fanout.RECONNECT_SECONDS", 0.01)
+
+    task = asyncio.create_task(subscribe_loop(lambda evt: None))
+    await asyncio.sleep(0.08)  # enough for two failed cycles
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(pubsubs) >= 2          # reconnected after the drop
+    assert all(ps.closed for ps in pubsubs)  # nothing leaked

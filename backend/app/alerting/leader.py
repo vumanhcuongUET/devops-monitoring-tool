@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 LEADER_TTL_SECONDS = 30
 RENEW_INTERVAL_SECONDS = 10
 ACQUIRE_RETRY_SECONDS = 5
+# Transient Redis errors: tolerate this many consecutive renew failures before
+# dropping leadership — one timeout must not cancel a healthy engine. Three
+# misses (~30s) still expires inside the lock TTL.
+MAX_MISSED_RENEWS = 3
 
 # Compare-and-expire: no gap between ownership check and expiry extension,
 # so a lock that expired and was re-acquired by another pod can never be
@@ -82,16 +86,17 @@ class RedisLeaderLock:
             return False
 
     async def renew(self) -> bool:
-        """Extend the lock if and only if we still own it. False on any error."""
-        try:
-            return bool(
-                await self._get_client().eval(
-                    _RENEW_SCRIPT, 1, self.key, self._identity, self.ttl * 1000
-                )
+        """Extend the lock if and only if we still own it.
+
+        False = ownership genuinely lost (Lua returned 0). Redis errors raise
+        so the caller can apply its own grace policy instead of treating a
+        transient timeout as leadership loss.
+        """
+        return bool(
+            await self._get_client().eval(
+                _RENEW_SCRIPT, 1, self.key, self._identity, self.ttl * 1000
             )
-        except Exception as e:
-            logger.warning("Leader lock renew failed (%s): %s", self.key, e)
-            return False
+        )
 
     async def release(self) -> None:
         """Release the lock if and only if we still own it."""
@@ -122,7 +127,20 @@ async def run_as_leader(
         logger.info("Leader lock %s acquired by %s", lock.key, name)
         inner = asyncio.create_task(task_factory())
         try:
-            while await lock.renew():
+            missed = 0
+            while True:
+                try:
+                    if not await lock.renew():
+                        break  # ownership genuinely lost
+                    missed = 0
+                except Exception as e:
+                    missed += 1
+                    logger.warning(
+                        "Leader lock renew error (%s), miss %d/%d: %s",
+                        lock.key, missed, MAX_MISSED_RENEWS, e,
+                    )
+                    if missed >= MAX_MISSED_RENEWS:
+                        break
                 await asyncio.sleep(lock.renew_interval)
         finally:
             inner.cancel()
@@ -133,3 +151,5 @@ async def run_as_leader(
             await lock.release()
 
         logger.warning("Leader lock %s lost by %s; retrying", lock.key, name)
+        # backoff before re-acquiring: no hot acquire loop after a drop
+        await asyncio.sleep(ACQUIRE_RETRY_SECONDS)

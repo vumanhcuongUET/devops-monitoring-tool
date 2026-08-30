@@ -73,7 +73,7 @@ def test_scrypt_format(user_store):
 async def test_login_success_returns_user_token(client, user_store, monkeypatch):
     monkeypatch.setattr(settings, "AUTH_ENABLED", True)
     _mkuser("carol", "pw", "operator")
-    resp = await client.post("/auth/login", json={"username": "carol", "password": "pw"})
+    resp = await client.post("/api/v1/auth/login", json={"username": "carol", "password": "pw"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["token_type"] == "bearer"
@@ -86,7 +86,7 @@ async def test_login_success_returns_user_token(client, user_store, monkeypatch)
 async def test_login_wrong_password_401(client, user_store, monkeypatch):
     monkeypatch.setattr(settings, "AUTH_ENABLED", True)
     _mkuser("carol", "pw")
-    resp = await client.post("/auth/login", json={"username": "carol", "password": "bad"})
+    resp = await client.post("/api/v1/auth/login", json={"username": "carol", "password": "bad"})
     assert resp.status_code == 401
 
 
@@ -96,7 +96,7 @@ async def test_refresh_keeps_user_subject(client, user_store):
 
     create_user("erin", "pw", "viewer")
     resp = await client.post(
-        "/auth/refresh", headers={"Authorization": f"Bearer {_tok('erin')}"}
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {_tok('erin')}"}
     )
     assert resp.status_code == 200
     assert decode_token(resp.json()["access_token"])["sub"] == "erin"
@@ -108,7 +108,7 @@ async def test_refresh_revoked_user_401(client, user_store):
     create_user("frank", "pw")
     tok = _tok("frank")
     delete_user("frank")
-    resp = await client.post("/auth/refresh", headers={"Authorization": f"Bearer {tok}"})
+    resp = await client.post("/api/v1/auth/refresh", headers={"Authorization": f"Bearer {tok}"})
     assert resp.status_code == 401
 
 
@@ -174,3 +174,26 @@ def test_permission_checker_narrows_by_role(user_store):
     # service identity: unchanged behavior
     result = checker.check("delete", environment="development", user="service")
     assert result.allowed
+
+
+async def test_login_malformed_json_400(client):
+    resp = await client.post(
+        "/api/v1/auth/login", content=b"{not-json", headers={"Content-Type": "application/json"}
+    )
+    assert resp.status_code == 400
+
+
+def test_store_cache_sees_external_writes(user_store):
+    """mtime cache must invalidate when the file changes underneath."""
+    from app.users import get_role, create_user
+
+    import json as _json
+
+    create_user("kim", "pw", "viewer")
+    assert get_role("kim") == "viewer"
+
+    data = _json.loads(user_store.read_text())
+    data["kim"]["role"] = "admin"
+    user_store.write_text(_json.dumps(data))
+
+    assert get_role("kim") == "admin"

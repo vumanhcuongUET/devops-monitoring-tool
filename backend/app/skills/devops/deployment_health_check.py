@@ -44,7 +44,8 @@ class DeploymentHealthCheckSkill(BaseSkill):
         """Check deployment health.
 
         Args:
-            project: Project name
+            project: Project name (informational — scope via the
+                `namespace` parameter; projects are not namespaces here)
             parameters: Check parameters
                 - namespace: Namespace to check (default: all)
                 - deployment: Specific deployment (optional)
@@ -144,6 +145,10 @@ class DeploymentHealthCheckSkill(BaseSkill):
         if k8s is None:
             raise RuntimeError(
                 "No Kubernetes client in context['clients']['k8s'] — skill requires a live K8s connection"
+            )
+        if not getattr(k8s, "available", True):
+            raise RuntimeError(
+                "Kubernetes API unavailable — cannot distinguish 'cluster down' from 'no deployments'"
             )
         deployments = await k8s.list_deployments(namespace)
         if deployment:

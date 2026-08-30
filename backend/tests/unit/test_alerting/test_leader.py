@@ -47,12 +47,14 @@ async def test_renew_owned_and_not_owned():
 
 
 @pytest.mark.asyncio
-async def test_renew_error_returns_false():
+async def test_renew_error_raises_for_caller_grace():
+    """Redis errors propagate so run_as_leader can apply its grace policy."""
     client = MagicMock()
     client.eval = AsyncMock(side_effect=ConnectionError("redis down"))
     lock = _lock(client)
 
-    assert await lock.renew() is False
+    with pytest.raises(ConnectionError):
+        await lock.renew()
 
 
 @pytest.mark.asyncio
@@ -131,4 +133,33 @@ async def test_polls_until_acquired_then_leads(monkeypatch):
     await _run_and_cancel(lock, started)
 
     assert started == [1]
+    assert lock.released is True
+
+
+class FlakyRenewLock(FakeLock):
+    """Renew raises transient errors before finally reporting ownership loss."""
+
+    def __init__(self, errors_before_loss):
+        super().__init__(acquire_results=[True, False], renew_results=[True])
+        self._errors = errors_before_loss
+
+    async def renew(self):
+        await asyncio.sleep(0)
+        if self._errors > 0:
+            self._errors -= 1
+            raise ConnectionError("flaky redis")
+        return False
+
+
+@pytest.mark.asyncio
+async def test_transient_renew_errors_do_not_drop_leadership(monkeypatch):
+    """One or two Redis timeouts must not cancel a running engine."""
+    monkeypatch.setattr("app.alerting.leader.ACQUIRE_RETRY_SECONDS", 0.01)
+    monkeypatch.setattr("app.alerting.leader.MAX_MISSED_RENEWS", 3)
+    lock = FlakyRenewLock(errors_before_loss=2)
+    started = []
+
+    await _run_and_cancel(lock, started)
+
+    assert started == [1]       # engine kept running through the errors
     assert lock.released is True

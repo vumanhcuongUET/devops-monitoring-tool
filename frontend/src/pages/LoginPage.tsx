@@ -18,7 +18,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     setBusy(true)
     setError(null)
     try {
-      const { data } = await api.post('/auth/login', { username, password })
+      const { data } = await api.post('/api/v1/auth/login', { username, password })
       tokenManager.setToken({
         accessToken: data.access_token,
         expiresAt: Date.now() + (data.expires_in || 900) * 1000,

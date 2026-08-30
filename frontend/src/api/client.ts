@@ -104,7 +104,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
   try {
     // Call backend refresh endpoint
-    const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
+    const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {}, {
       withCredentials: true, // Send httpOnly cookie
       headers: {
         ...(tokenManager.getAccessToken()

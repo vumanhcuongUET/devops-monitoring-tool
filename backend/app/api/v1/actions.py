@@ -146,7 +146,7 @@ async def approve_action(
                     body.approved_by, user,
                 )
             body.approved_by = user
-        action = await engine.approve_action(action_id, body)
+        action = await engine.approve_action(action_id, body, auth_user=user)
 
         # Broadcast WebSocket event
         await manager.broadcast({
@@ -185,7 +185,7 @@ async def reject_action(
                     body.rejected_by, user,
                 )
             body.rejected_by = user
-        action = await engine.reject_action(action_id, body)
+        action = await engine.reject_action(action_id, body, auth_user=user)
 
         # Broadcast WebSocket event
         await manager.broadcast({
@@ -225,7 +225,7 @@ async def execute_action(
                     body.executed_by, user,
                 )
             body.executed_by = user
-        action = await engine.execute_action(action_id, body)
+        action = await engine.execute_action(action_id, body, auth_user=user)
 
         # Broadcast WebSocket event
         await manager.broadcast({

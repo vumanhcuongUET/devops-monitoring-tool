@@ -41,6 +41,12 @@ class KubernetesClient:
     def _safe(self) -> bool:
         return self._available and self.core is not None
 
+    @property
+    def available(self) -> bool:
+        """Whether the K8s API is usable (Phase 13: lets skills tell
+        'cluster unreachable' apart from 'zero deployments')."""
+        return self._safe()
+
     async def list_pods(self, namespace: str | None = None) -> list[dict[str, Any]]:
         if not self._safe():
             return []

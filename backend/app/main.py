@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware(BaseHTTPMiddleware):
     """Enforce auth on all routes except whitelisted ones."""
 
-    PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/auth/login"}
+    PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/api/v1/auth/login"}
 
     # Chat-platform webhook paths exempt from bearer/api-key auth. The
     # platforms' own HMAC signature IS the authentication for these paths
@@ -344,7 +344,7 @@ async def health():
     }
 
 
-@app.post("/auth/token", include_in_schema=True)
+@app.post("/api/v1/auth/token", include_in_schema=True)
 async def create_auth_token():
     """Generate a new bearer token. Requires API key in header (enforced by middleware)."""
     from app.auth import create_token
@@ -355,7 +355,7 @@ async def create_auth_token():
     }
 
 
-@app.post("/auth/refresh", include_in_schema=True)
+@app.post("/api/v1/auth/refresh", include_in_schema=True)
 async def refresh_auth_token(request: Request):
     """Exchange a still-valid bearer token for a fresh one (sliding session).
 
@@ -383,7 +383,7 @@ async def refresh_auth_token(request: Request):
     }
 
 
-@app.post("/auth/login", include_in_schema=True)
+@app.post("/api/v1/auth/login", include_in_schema=True)
 async def login(request: Request):
     """Username/password login — mints a user token (sub=<username>).
 
@@ -394,10 +394,16 @@ async def login(request: Request):
     from app.auth import create_token
     from app.users import verify_login
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception as err:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from err
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
-    role = verify_login(username, password)
+    # scrypt burns real CPU — keep it off the event loop
+    role = await asyncio.to_thread(verify_login, username, password)
     if role is None:
         logger.warning("Failed login for %r", username or "<empty>")
         raise HTTPException(status_code=401, detail="Invalid credentials")

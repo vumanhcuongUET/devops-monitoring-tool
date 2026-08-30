@@ -17,7 +17,7 @@ async def client():
 
 async def test_token_response_includes_ttl(client, monkeypatch):
     monkeypatch.setattr(settings, "API_KEYS", ["test-key-123"], raising=False)
-    resp = await client.post("/auth/token", headers={"X-API-Key": "test-key-123"})
+    resp = await client.post("/api/v1/auth/token", headers={"X-API-Key": "test-key-123"})
     assert resp.status_code == 200
     body = resp.json()
     assert _is_valid_token(body["access_token"])
@@ -26,7 +26,7 @@ async def test_token_response_includes_ttl(client, monkeypatch):
 
 async def test_refresh_with_valid_token(client):
     resp = await client.post(
-        "/auth/refresh", headers={"Authorization": f"Bearer {create_token()}"}
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {create_token()}"}
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -35,10 +35,10 @@ async def test_refresh_with_valid_token(client):
 
 
 async def test_refresh_with_invalid_token_rejected(client):
-    resp = await client.post("/auth/refresh", headers={"Authorization": "Bearer nope"})
+    resp = await client.post("/api/v1/auth/refresh", headers={"Authorization": "Bearer nope"})
     assert resp.status_code == 401
 
 
 async def test_refresh_without_token_rejected(client):
-    resp = await client.post("/auth/refresh")
+    resp = await client.post("/api/v1/auth/refresh")
     assert resp.status_code == 401

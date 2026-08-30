@@ -36,8 +36,18 @@ class ConnectionManager:
                 if auth.startswith("Bearer "):
                     token = auth[7:]
             if token:
-                from app.auth import _is_valid_api_key, _is_valid_token
-                if not (_is_valid_token(token) or _is_valid_api_key(token)):
+                from app.auth import _is_valid_api_key, decode_token
+                from app.users import get_role
+
+                payload = decode_token(token)
+                if payload is None:
+                    api_key_ok = _is_valid_api_key(token)
+                else:
+                    # user tokens must reference a live user (revocation),
+                    # "service" tokens are API-key-minted automation
+                    sub = payload.get("sub", "service")
+                    api_key_ok = sub == "service" or get_role(sub) is not None
+                if not api_key_ok:
                     await ws.close(code=4403, reason="Unauthorized")
                     return False
             else:

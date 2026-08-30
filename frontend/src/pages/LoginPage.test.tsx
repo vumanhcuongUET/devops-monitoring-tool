@@ -21,7 +21,7 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(onLogin).toHaveBeenCalled());
-    expect(post).toHaveBeenCalledWith('/auth/login', { username: 'carol', password: 'pw' });
+    expect(post).toHaveBeenCalledWith('/api/v1/auth/login', { username: 'carol', password: 'pw' });
   });
 
   it('shows an error on 401', async () => {

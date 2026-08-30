@@ -55,20 +55,38 @@ def _verify_password(password: str, stored: str) -> bool:
         return False
 
 
+_cache: dict | None = None
+_cache_mtime: float | None = None
+
+
 def _load_users() -> dict:
-    if not USERS_FILE.exists():
-        return {}
+    """Read the store with an mtime cache — the auth middleware calls this on
+    every request, so full read+parse per call is not acceptable. stat() only
+    when the cached mtime matches."""
+    global _cache, _cache_mtime
     try:
-        return json.loads(USERS_FILE.read_text())
+        mtime = USERS_FILE.stat().st_mtime
+    except OSError:
+        if _cache is not None and _cache_mtime is None:
+            return _cache  # stat failed but we cached a version — keep serving
+        return {}
+    if _cache is not None and _cache_mtime == mtime:
+        return _cache
+    try:
+        _cache = json.loads(USERS_FILE.read_text())
+        _cache_mtime = mtime
     except (json.JSONDecodeError, OSError) as e:
         logger.error("User store unreadable (%s): %s", USERS_FILE, e)
-        return {}
+        return _cache or {}
+    return _cache
 
 
 def _save_users(users: dict) -> None:
+    global _cache, _cache_mtime
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     USERS_FILE.write_text(json.dumps(users, indent=2))
     os.chmod(USERS_FILE, 0o600)
+    _cache, _cache_mtime = users, USERS_FILE.stat().st_mtime
 
 
 def create_user(username: str, password: str, role: str = "operator") -> None:

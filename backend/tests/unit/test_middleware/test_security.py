@@ -1,6 +1,4 @@
-"""Unit tests for Security Headers Middleware with CSP nonce support."""
-
-import re
+"""Unit tests for Security Headers Middleware."""
 
 import pytest
 from starlette.applications import Starlette
@@ -30,110 +28,87 @@ def test_app():
 
 
 @pytest.fixture
-def client_with_nonce(test_app):
-    """Create test client with nonce-based CSP enabled."""
-    # Add middleware with nonce support
+def client(test_app):
+    """Create test client with security headers middleware."""
     app = test_app
-    app.add_middleware(SecurityHeadersMiddleware, use_nonce=True)
+    app.add_middleware(SecurityHeadersMiddleware)
     return TestClient(app)
-
-
-@pytest.fixture
-def client_without_nonce(test_app):
-    """Create test client without nonce-based CSP."""
-    app = test_app
-    app.add_middleware(SecurityHeadersMiddleware, use_nonce=False)
-    return TestClient(app)
-
-
-class TestCSPEnvironmentBased:
-    """Test CSP policies based on environment."""
-
-    def test_development_csp(self, client_with_nonce):
-        """Test CSP policy for development environment."""
-        response = client_with_nonce.get(
-            "/",
-            headers={"x-environment": "development"}
-        )
-
-        csp = response.headers["Content-Security-Policy"]
-
-        # Development might have more relaxed policies
-        assert csp
-
-    def test_production_csp(self, client_with_nonce):
-        """Test CSP policy for production environment."""
-        response = client_with_nonce.get(
-            "/",
-            headers={"x-environment": "production"}
-        )
-
-        csp = response.headers["Content-Security-Policy"]
-
-        # Production should have strict policies
-        assert "default-src 'self'" in csp
-        assert "script-src" in csp
-
-        # If nonce is enabled, unsafe-inline should not be present for scripts
-        if "nonce-" in csp:
-            # Check that script-src doesn't have unsafe-inline
-            script_src_match = re.search(r'script-src\s+([^;]+)', csp)
-            if script_src_match:
-                script_src = script_src_match.group(1)
-                # In production with nonce, unsafe-inline should NOT be present
-                assert "'unsafe-inline'" not in script_src
 
 
 class TestCSPPolicies:
     """Test individual CSP directives."""
 
-    def test_default_src_policy(self, client_with_nonce):
+    def test_default_src_policy(self, client):
         """Test default-src directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "default-src 'self'" in csp
 
-    def test_connect_src_policy(self, client_with_nonce):
+    def test_connect_src_policy(self, client):
         """Test connect-src directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "connect-src 'self'" in csp
 
-    def test_img_src_policy(self, client_with_nonce):
+    def test_img_src_policy(self, client):
         """Test img-src directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "img-src" in csp
         assert "'self'" in csp
         assert "data:" in csp
 
-    def test_frame_ancestors_policy(self, client_with_nonce):
+    def test_frame_ancestors_policy(self, client):
         """Test frame-ancestors directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "frame-ancestors 'none'" in csp
 
-    def test_base_uri_policy(self, client_with_nonce):
+    def test_base_uri_policy(self, client):
         """Test base-uri directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "base-uri 'self'" in csp
 
-    def test_form_action_policy(self, client_with_nonce):
+    def test_form_action_policy(self, client):
         """Test form-action directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "form-action 'self'" in csp
 
-    def test_upgrade_insecure_requests(self, client_with_nonce):
+    def test_upgrade_insecure_requests(self, client):
         """Test upgrade-insecure-requests directive."""
-        response = client_with_nonce.get("/")
+        response = client.get("/")
         csp = response.headers["Content-Security-Policy"]
 
         assert "upgrade-insecure-requests" in csp
+
+    def test_production_csp_no_unsafe_inline(self, client):
+        """Test production CSP has no unsafe-inline."""
+        middleware = SecurityHeadersMiddleware(client.app)
+        csp = middleware._build_csp_policy(environment="production")
+
+        assert "default-src 'self'" in csp
+        assert "script-src" in csp
+        assert "'unsafe-inline'" not in csp
+
+    def test_security_headers_added(self, client):
+        """Test core security headers on every response."""
+        response = client.get("/")
+
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["X-XSS-Protection"] == "1; mode=block"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+    def test_api_cache_control(self, client):
+        """Test API responses get no-store cache control."""
+        response = client.get("/api/test")
+
+        assert "no-store" in response.headers["Cache-Control"]

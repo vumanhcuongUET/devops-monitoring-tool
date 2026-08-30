@@ -83,3 +83,12 @@ loaded by `load_kube_config()` / `load_incluster_config()`.
   and the gate commit fc86ec4.
 
 E2E also added a tampered-signature regression guard for the Slack webhook.
+
+## Update 2026-08-30 — CSP nonce control removed
+
+The nonce-based CSP documented above was deleted in the Phase 12 follow-up pass
+(CSPNonceManager, `use_nonce`, `X-CSP-Nonce` — dead code: the backend serves no HTML,
+so a per-request nonce never reached any inline script, and the id(request)-keyed map
+was the very leak this review fixed). Production now serves the stricter static
+`script-src 'self'` (no nonce, no unsafe-inline; dev keeps `unsafe-inline`).
+See `backend/app/middleware/security.py`. The review findings above are historical.

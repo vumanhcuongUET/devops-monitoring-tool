@@ -6,7 +6,6 @@ kubernetes==32.*
 httpx[http2]==0.28.*
 pyyaml==6.*
 websockets==14.*
-python-telegram-bot==21.*
 anthropic==0.40.*
 
 # Phase 9: Redis for distributed state

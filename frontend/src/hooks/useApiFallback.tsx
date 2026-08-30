@@ -20,7 +20,7 @@
  * ```
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import {
   EmptyState,
@@ -147,10 +147,10 @@ export function useApiFallback({
   // Empty arrays (isEmpty=true) are valid for many APIs (no alerts, etc.) - don't show fallback by default
   const shouldShowFallback = isError || (isEmpty && fallbackType === "no-data");
 
-  const handleRetry = () => {
+  const handleRetry = useCallback(() => {
     reset();
     onRetry?.();
-  };
+  }, [reset, onRetry]);
 
   const fallbackComponent = useMemo(() => {
     if (!shouldShowFallback) {

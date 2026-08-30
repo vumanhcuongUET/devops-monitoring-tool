@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.services.__tests__.data_generator import TestDataGenerator
+from tests.unit.test_optimization.data_generator import TestDataGenerator
 from app.services.anomaly_detector import (
     AnomalyDetector,
     AnomalyScore,

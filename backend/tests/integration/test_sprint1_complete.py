@@ -13,7 +13,7 @@ from datetime import datetime
 import pytest
 
 from app.models.triage_card import SeverityLevel
-from app.services.__tests__.data_generator import TestDataGenerator
+from tests.unit.test_optimization.data_generator import TestDataGenerator
 from app.services.token_optimizer import OptimizationConfig, TokenOptimizer
 
 

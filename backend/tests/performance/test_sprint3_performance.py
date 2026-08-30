@@ -27,7 +27,7 @@ import pytest
 
 from app.actions.chain_monitor import ChainEvent, get_chain_monitor
 from app.actions.rate_limiter import RateLimitConfig, get_rate_limiter
-from app.middleware.security import CSPNonceManager, SecurityHeadersMiddleware
+from app.middleware.security import SecurityHeadersMiddleware
 
 
 class PerformanceMetrics:
@@ -282,58 +282,27 @@ class TestChainMonitoringPerformance:
         metrics.assert_mean_under(1.0)  # Mean should be < 1ms
 
 
-class TestCSPNoncePerformance:
-    """Performance tests for CSP nonce generation."""
-
-    def test_nonce_generation_performance(self):
-        """Test CSP nonce generation performance."""
-        nonce_manager = CSPNonceManager()
-
-        metrics = PerformanceMetrics("nonce_generation")
-        iterations = 10000
-
-        for _ in range(iterations):
-            start = time.perf_counter()
-
-            nonce = nonce_manager.generate_nonce()
-
-            duration = (time.perf_counter() - start) * 1000
-            metrics.record(duration)
-
-            # Verify nonce is valid
-            assert nonce
-            assert len(nonce) > 10
-
-        stats = metrics.get_stats()
-        print(f"\nNonce Generation Performance (10,000 iterations): {stats}")
-
-        # Nonce generation should be very fast
-        metrics.assert_max(1.0)  # No single generation should take > 1ms
-        metrics.assert_mean_under(0.1)  # Mean should be < 0.1ms
+class TestCSPPerformance:
+    """Performance tests for CSP policy building."""
 
     def test_csp_policy_building_performance(self):
         """Test CSP policy building performance."""
-        middleware = SecurityHeadersMiddleware(app=None, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(app=None)
 
         metrics = PerformanceMetrics("csp_policy_build")
         iterations = 1000
 
-        test_nonce = "test-nonce-value-12345"
-
         for _ in range(iterations):
             start = time.perf_counter()
 
-            policy = middleware._build_csp_policy(
-                nonce=test_nonce,
-                environment="production"
-            )
+            policy = middleware._build_csp_policy(environment="production")
 
             duration = (time.perf_counter() - start) * 1000
             metrics.record(duration)
 
             # Verify policy is valid
             assert "default-src" in policy
-            assert f"'nonce-{test_nonce}'" in policy
+            assert "script-src 'self'" in policy
 
         stats = metrics.get_stats()
         print(f"\nCSP Policy Building Performance: {stats}")

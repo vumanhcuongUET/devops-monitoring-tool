@@ -294,9 +294,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Phase 8: Enable nonce-based CSP for enhanced security
-# use_nonce=True enables per-request nonce generation for inline scripts
-app.add_middleware(SecurityHeadersMiddleware, use_nonce=True)
+# Phase 8: security headers + CSP (no nonce — frontend is a static build, no inline scripts)
+app.add_middleware(SecurityHeadersMiddleware)
 # Phase 9: Support Redis-based rate limiting
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20, use_redis=settings.RATE_LIMIT_USE_REDIS)
 app.add_middleware(AuthMiddleware)

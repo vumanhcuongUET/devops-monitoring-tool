@@ -1,6 +1,4 @@
-"""Security headers middleware for HTTP response hardening with nonce-based CSP."""
-
-import secrets
+"""Security headers middleware for HTTP response hardening."""
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -9,81 +7,31 @@ from starlette.responses import Response
 from app.config import settings
 
 
-class CSPNonceManager:
-    """Manage CSP nonces for inline script and style authorization."""
-
-    def __init__(self):
-        """Initialize the nonce manager."""
-        self._request_nonce: dict[int, str] = {}
-
-    def generate_nonce(self) -> str:
-        """Generate a cryptographically secure random nonce.
-
-        Returns:
-            Base64-encoded random nonce
-        """
-        return secrets.token_urlsafe(16)
-
-    def get_request_nonce(self, request: Request) -> str:
-        """Get or create a nonce for the current request.
-
-        Args:
-            request: The current HTTP request
-
-        Returns:
-            The nonce for this request
-        """
-        # Use id(request) as a unique identifier per request
-        request_id = id(request)
-
-        if request_id not in self._request_nonce:
-            self._request_nonce[request_id] = self.generate_nonce()
-
-        return self._request_nonce[request_id]
-
-    def cleanup_request(self, request: Request) -> None:
-        """Clean up nonce for a completed request.
-
-        Args:
-            request: The completed request
-        """
-        request_id = id(request)
-        self._request_nonce.pop(request_id, None)
-
-
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all HTTP responses with nonce-based CSP.
+    """Add security headers to all HTTP responses.
 
     Headers added:
     - X-Content-Type-Options: nosniff - Prevent MIME type sniffing
     - X-Frame-Options: DENY - Prevent clickjacking
     - X-XSS-Protection: 1; mode=block - Enable XSS filter
-    - Content-Security-Policy: Restrict resource loading with nonce support
-    - Strict-Transport-Security: Enforce HTTPS (only in production)
+    - Content-Security-Policy: Restrict resource loading
+    - Strict-Transport-Security: Enforce HTTPS (only over https)
     - Referrer-Policy: Control referrer information leakage
     - Permissions-Policy: Restrict browser features
     """
 
-    def __init__(self, app, use_nonce: bool = True):
+    def __init__(self, app):
         """Initialize the security middleware.
 
         Args:
             app: The ASGI application
-            use_nonce: Enable nonce-based CSP (default: True)
         """
         super().__init__(app)
-        self.use_nonce = use_nonce
-        self.nonce_manager = CSPNonceManager() if use_nonce else None
 
-    def _build_csp_policy(
-        self,
-        nonce: str | None = None,
-        environment: str = "production",
-    ) -> str:
+    def _build_csp_policy(self, environment: str = "production") -> str:
         """Build Content-Security-Policy header.
 
         Args:
-            nonce: Optional nonce for inline scripts
             environment: Environment name (development/staging/production)
 
         Returns:
@@ -96,30 +44,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "font-src 'self' data:",
         ]
 
-        # Script source with nonce or hashes
-        script_src = ["script-src 'self'"]
-
-        if nonce:
-            script_src.append(f"'nonce-{nonce}'")
-
         # In development, allow unsafe-inline for easier debugging
-        if environment == "development" and not nonce:
-            script_src.append("'unsafe-inline'")
-
-        directives.append(" ".join(script_src))
-
-        # Style source
-        style_src = ["style-src 'self'"]
-
-        if nonce:
-            # Nonce can also be used for inline styles
-            style_src.append(f"'nonce-{nonce}'")
-
-        # In development, allow unsafe-inline for styles
         if environment == "development":
-            style_src.append("'unsafe-inline'")
-
-        directives.append(" ".join(style_src))
+            directives.append("script-src 'self' 'unsafe-inline'")
+            directives.append("style-src 'self' 'unsafe-inline'")
+        else:
+            directives.append("script-src 'self'")
+            directives.append("style-src 'self'")
 
         # Additional directives
         directives.extend([
@@ -141,24 +72,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         Returns:
             HTTP response with security headers
         """
-        # Get or create nonce for this request
-        nonce = None
-        if self.use_nonce and self.nonce_manager:
-            nonce = self.nonce_manager.get_request_nonce(request)
-
         # Environment comes from server config, never from client-controlled headers.
         environment = getattr(request.state, "environment", settings.ENVIRONMENT)
 
-        # Process the request. Cleanup must run even when the downstream app
-        # raises, or the id(request)-keyed nonce map grows without bound.
-        try:
-            response: Response = await call_next(request)
-        finally:
-            if self.use_nonce and self.nonce_manager:
-                self.nonce_manager.cleanup_request(request)
+        response: Response = await call_next(request)
 
-        # Build CSP policy with nonce
-        csp_policy = self._build_csp_policy(nonce=nonce, environment=environment)
+        # Build CSP policy
+        csp_policy = self._build_csp_policy(environment=environment)
 
         # Apply security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -188,15 +108,4 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
 
-        # Pass nonce to frontend via response header for single-page apps
-        # The frontend can read this header and use it for inline scripts
-        if nonce:
-            response.headers["X-CSP-Nonce"] = nonce
-
-        # Clean up nonce after request is complete
-        if self.use_nonce and self.nonce_manager:
-            self.nonce_manager.cleanup_request(request)
-
         return response
-
-

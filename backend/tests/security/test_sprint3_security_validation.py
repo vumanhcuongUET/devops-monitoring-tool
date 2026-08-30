@@ -31,13 +31,10 @@ class TestCSPSecurityValidation:
 
     def test_csp_blocks_unsafe_scripts(self):
         """Verify CSP policy blocks unauthorized scripts."""
-        middleware = SecurityHeadersMiddleware(app=None, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(app=None)
 
         # Build production CSP
-        policy = middleware._build_csp_policy(
-            nonce="test-nonce",
-            environment="production"
-        )
+        policy = middleware._build_csp_policy(environment="production")
 
         # Should NOT allow unsafe-inline
         assert "'unsafe-inline'" not in policy
@@ -45,40 +42,30 @@ class TestCSPSecurityValidation:
         # Should allow only specific sources
         assert "default-src 'self'" in policy
         assert "script-src 'self'" in policy
-        assert "'nonce-test-nonce'" in policy
 
     def test_csp_in_development_allows_unsafe_inline(self):
         """Verify development mode allows unsafe-inline for debugging."""
-        middleware = SecurityHeadersMiddleware(app=None, use_nonce=False)
+        middleware = SecurityHeadersMiddleware(app=None)
 
-        policy = middleware._build_csp_policy(
-            nonce=None,
-            environment="development"
-        )
+        policy = middleware._build_csp_policy(environment="development")
 
         # Development should allow unsafe-inline
         assert "'unsafe-inline'" in policy
 
     def test_csp_restricts_frame_ancestors(self):
         """Verify CSP prevents clickjacking via frame-ancestors."""
-        middleware = SecurityHeadersMiddleware(app=None, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(app=None)
 
-        policy = middleware._build_csp_policy(
-            nonce="test-nonce",
-            environment="production"
-        )
+        policy = middleware._build_csp_policy(environment="production")
 
         # Should block all framing
         assert "frame-ancestors 'none'" in policy
 
     def test_csp_restricts_form_action(self):
         """Verify CSP restricts form submissions to same origin."""
-        middleware = SecurityHeadersMiddleware(app=None, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(app=None)
 
-        policy = middleware._build_csp_policy(
-            nonce="test-nonce",
-            environment="production"
-        )
+        policy = middleware._build_csp_policy(environment="production")
 
         # Should restrict form-action to self
         assert "form-action 'self'" in policy
@@ -440,7 +427,7 @@ class TestSecurityHeadersValidation:
             return JSONResponse({"status": "ok"})
 
         test_app = Starlette(routes=[Route("/test", test_endpoint)])
-        middleware = SecurityHeadersMiddleware(test_app, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(test_app)
 
         client = TestClient(middleware)
         response = client.get("/test")
@@ -475,7 +462,7 @@ class TestSecurityHeadersValidation:
             return JSONResponse({"data": "sensitive"})
 
         test_app = Starlette(routes=[Route("/api/data", api_endpoint)])
-        middleware = SecurityHeadersMiddleware(test_app, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(test_app)
 
         client = TestClient(middleware)
         response = client.get("/api/data")
@@ -517,12 +504,9 @@ class TestSecurityAcceptanceCriteria:
 
     def test_csp_passes_validation(self):
         """Acceptance: CSP passes validation."""
-        middleware = SecurityHeadersMiddleware(app=None, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(app=None)
 
-        policy = middleware._build_csp_policy(
-            nonce="test-nonce",
-            environment="production"
-        )
+        policy = middleware._build_csp_policy(environment="production")
 
         # Should have proper CSP structure
         assert "default-src 'self'" in policy

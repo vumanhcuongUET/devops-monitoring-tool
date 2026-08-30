@@ -241,7 +241,7 @@ export function useLLMStream(): LLMStreamResult {
         error: error.message || 'Unknown error occurred',
       }));
     }
-  }, []);
+  }, [abort]);
 
   useEffect(() => {
     streamQueryRef.current = streamQuery;

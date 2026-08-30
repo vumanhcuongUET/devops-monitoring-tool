@@ -287,52 +287,24 @@ class TestActionChainingIntegration:
         assert events[1].event_type == "exceeded"
 
 
-class TestCSPNonceIntegration:
-    """Integration tests for CSP nonce-based headers."""
+class TestCSPIntegration:
+    """Integration tests for CSP headers."""
 
-    def test_nonce_generation_and_usage(self):
-        """Test that nonces are generated and used correctly."""
+    def test_csp_policy_production(self):
+        """Test CSP policy in production: 'self' only, no unsafe-inline, no nonce."""
+        middleware = SecurityHeadersMiddleware(app)
 
-        # Create middleware with nonce enabled
-        middleware = SecurityHeadersMiddleware(app, use_nonce=True)
+        policy = middleware._build_csp_policy(environment="production")
 
-        # Test nonce manager
-        nonce_manager = middleware.nonce_manager
-
-        # Generate a nonce
-        nonce1 = nonce_manager.generate_nonce()
-        assert nonce1
-        assert len(nonce1) > 10  # Should be reasonable length
-
-        # Generate another nonce (should be different)
-        nonce2 = nonce_manager.generate_nonce()
-        assert nonce2 != nonce1
-
-    def test_csp_policy_with_nonce(self):
-        """Test CSP policy generation with nonce."""
-        middleware = SecurityHeadersMiddleware(app, use_nonce=True)
-
-        # Get policy with nonce
-        test_nonce = "abc123test"
-        policy = middleware._build_csp_policy(
-            nonce=test_nonce,
-            environment="production"
-        )
-
-        # Should contain nonce
-        assert f"'nonce-{test_nonce}'" in policy
-
-        # Should NOT contain unsafe-inline in production
+        assert "script-src 'self'" in policy
+        assert "'nonce-" not in policy
         assert "'unsafe-inline'" not in policy
 
     def test_csp_policy_development_mode(self):
         """Test CSP policy in development mode allows unsafe-inline."""
-        middleware = SecurityHeadersMiddleware(app, use_nonce=False)
+        middleware = SecurityHeadersMiddleware(app)
 
-        policy = middleware._build_csp_policy(
-            nonce=None,
-            environment="development"
-        )
+        policy = middleware._build_csp_policy(environment="development")
 
         # Development should allow unsafe-inline
         assert "'unsafe-inline'" in policy
@@ -349,7 +321,7 @@ class TestCSPNonceIntegration:
             return JSONResponse({"message": "test"})
 
         test_app = Starlette(routes=[Route("/", homepage)])
-        middleware = SecurityHeadersMiddleware(test_app, use_nonce=True)
+        middleware = SecurityHeadersMiddleware(test_app)
 
         # Make request
         from starlette.testclient import TestClient
@@ -636,7 +608,7 @@ def app_with_security_middleware():
     ])
 
     # Wrap with security middleware
-    secured_app = SecurityHeadersMiddleware(test_app, use_nonce=True)
+    secured_app = SecurityHeadersMiddleware(test_app)
 
     return secured_app
 
@@ -679,19 +651,6 @@ class TestSecurityHeadersIntegration:
         # API responses should not be cached
         cache_control = response.headers.get("Cache-Control")
         assert "no-store" in cache_control or "no-cache" in cache_control
-
-    @pytest.mark.asyncio
-    async def test_nonce_header_present(self, app_with_security_middleware):
-        """Test that nonce is passed to frontend via header."""
-        from starlette.testclient import TestClient
-
-        client = TestClient(app_with_security_middleware)
-        response = client.get("/test")
-
-        # Nonce should be present in response header
-        nonce = response.headers.get("X-CSP-Nonce")
-        assert nonce
-        assert len(nonce) > 10
 
 
 if __name__ == "__main__":

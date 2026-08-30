@@ -24,6 +24,50 @@ env:
 
 jobs:
   # =============================================================================
+  # Kubernetes Manifest Validation
+  # =============================================================================
+  # Lightweight syntax gate: every YAML under k8s/ must parse (multi-document
+  # files included) and contain only mapping documents. No kustomization
+  # files exist in k8s/, so there is no kustomize build to run.
+  manifests-validate:
+    name: Validate k8s Manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Parse all k8s manifests
+        run: |
+          python - <<'EOF'
+          import glob
+          import yaml
+
+          files = sorted(glob.glob('k8s/**/*.yaml', recursive=True))
+          assert files, "no k8s manifests found"
+          docs = 0
+          for path in files:
+              with open(path) as fh:
+                  for doc in yaml.safe_load_all(fh):
+                      # None = empty document from a trailing "---" separator
+                      # (legal, kubectl tolerates it); anything else must be a mapping.
+                      assert doc is None or isinstance(doc, dict), \
+                          f"{path}: non-mapping document ({type(doc).__name__})"
+                      docs += doc is not None
+          print(f"OK: parsed {docs} documents across {len(files)} manifest files")
+          EOF
+
+
+  # =============================================================================
   # Backend Linting
   # =============================================================================
   backend-lint:
@@ -354,17 +398,20 @@ jobs:
 
       - name: Deploy to staging
         run: |
-          kubectl set image deployment/backend \
+          # Deployment/container names from k8s/staging/*.yaml (namespace
+          # devops-monitor-staging). Tag matches docker/metadata-action
+          # `type=sha,prefix={{branch}}-` from the build-and-push job.
+          kubectl set image deployment/backend-staging \
             backend=ghcr.io/${{ github.repository }}/backend:staging-$(git rev-parse --short HEAD) \
-            -n devops-monitoring
-          kubectl set image deployment/frontend \
+            -n devops-monitor-staging
+          kubectl set image deployment/frontend-staging \
             frontend=ghcr.io/${{ github.repository }}/frontend:staging-$(git rev-parse --short HEAD) \
-            -n devops-monitoring
+            -n devops-monitor-staging
 
       - name: Verify deployment
         run: |
-          kubectl rollout status deployment/backend -n devops-monitoring --timeout=5m
-          kubectl rollout status deployment/frontend -n devops-monitoring --timeout=5m
+          kubectl rollout status deployment/backend-staging -n devops-monitor-staging --timeout=5m
+          kubectl rollout status deployment/frontend-staging -n devops-monitor-staging --timeout=5m
 
 
   # =============================================================================
@@ -390,20 +437,26 @@ jobs:
 
       - name: Deploy to production
         run: |
-          kubectl set image deployment/backend \
-            backend=ghcr.io/${{ github.repository }}/backend:latest \
-            -n devops-monitoring
-          kubectl set image deployment/frontend \
-            frontend=ghcr.io/${{ github.repository }}/frontend:latest \
-            -n devops-monitoring
+          # Deployment/container names from k8s/backend/deployment.yaml and
+          # k8s/frontend/deployment.yaml (namespace devops-monitor, from
+          # k8s/namespace.yaml). Deploy the immutable sha tag the build just
+          # pushed (docker/metadata-action `type=sha,prefix={{branch}}-`),
+          # never the mutable :latest.
+          kubectl set image deployment/monitor-backend \
+            backend=ghcr.io/${{ github.repository }}/backend:main-$(git rev-parse --short HEAD) \
+            -n devops-monitor
+          kubectl set image deployment/monitor-frontend \
+            frontend=ghcr.io/${{ github.repository }}/frontend:main-$(git rev-parse --short HEAD) \
+            -n devops-monitor
 
       - name: Verify deployment
         run: |
-          kubectl rollout status deployment/backend -n devops-monitoring --timeout=5m
-          kubectl rollout status deployment/frontend -n devops-monitoring --timeout=5m
+          kubectl rollout status deployment/monitor-backend -n devops-monitor --timeout=5m
+          kubectl rollout status deployment/monitor-frontend -n devops-monitor --timeout=5m
 
       - name: Run smoke tests
         run: |
-          # Basic health check
+          # /health is the app's health route (backend/app/main.py) and is
+          # unauthenticated (listed in PUBLIC_PATHS).
           kubectl run smoke-test --image=curlimages/curl:latest --rm -i --restart=Never \
-            -- curl -f http://backend.devops-monitoring.svc.cluster.local:8000/api/v1/health || exit 1
+            -- curl -f http://monitor-backend.devops-monitor.svc.cluster.local:8000/health || exit 1

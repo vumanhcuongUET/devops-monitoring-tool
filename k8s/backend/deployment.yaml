@@ -5,8 +5,10 @@ metadata:
   namespace: devops-monitor
 spec:
   # H1 (Phase 12): scaling past 1 replica is now supported — flip
-  # ALERT_ENGINE_LEADER_LOCK and WS_FANOUT_USE_REDIS to "true" in
-  # monitor-backend-config (Redis required; see docs/deployment-guide-k8s-swarm.md).
+  # ALERT_STATE_USE_REDIS, APPROVAL_STATE_USE_REDIS, ALERT_ENGINE_LEADER_LOCK
+  # and WS_FANOUT_USE_REDIS to "true" in monitor-backend-config and set
+  # REDIS_HOST/REDIS_PASSWORD in monitor-backend-secrets first
+  # (see docs/deployment-guide-k8s-swarm.md).
   # The data/ PVC is ReadWriteOnce: for >1 replica, switch it to RWX so the
   # alert-rule/SLO-config edit endpoints work on every pod.
   replicas: 1
@@ -27,7 +29,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backend
-          image: your-registry/devops-monitor-backend:latest
+          # Matches what CI builds and pushes: ghcr.io/${{ github.repository }}/backend
+          # (.github/workflows/ci.yml build-and-push job; GHCR lowercases the owner).
+          image: ghcr.io/vumanhcuonguet/devops-monitoring-tool/backend:latest
           ports:
             - containerPort: 8000
           envFrom:
@@ -37,11 +41,11 @@ spec:
                 name: monitor-backend-secrets
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 250m
+              memory: 256Mi
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: "1"
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -72,12 +76,22 @@ spec:
           volumeMounts:
             - name: alert-data
               mountPath: /app/data
+            - name: configs
+              mountPath: /app/configs
             - name: tmp
               mountPath: /tmp
       volumes:
+        # alert-data: durable file state (DATA_DIR=/app/data) — users, alert
+        # rules/state/history, SLO configs, approvals, audit log.
         - name: alert-data
           persistentVolumeClaim:
             claimName: alert-data-pvc
+        # configs: writable scratch for the config subsystem
+        # (CONFIG_STORAGE_PATH=/app/configs) under the read-only root
+        # filesystem. Ephemeral on pod recreation — the checked-in configs/
+        # tree in the repo remains the source of truth.
+        - name: configs
+          emptyDir: {}
         - name: tmp
           emptyDir: {}
 ---

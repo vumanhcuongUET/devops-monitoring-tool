@@ -6,6 +6,8 @@ services:
     profiles: ["redis"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
     restart: unless-stopped
     deploy:
       resources:
@@ -64,6 +66,7 @@ services:
 
 volumes:
   alert-data:
+  redis-data:
 
 networks:
   backend-net:

@@ -15,7 +15,17 @@ data:
   ALERT_CHECK_INTERVAL_SECONDS: "30"
   CORS_ORIGINS: '["http://localhost"]'
   REQUEST_TIMEOUT_SECONDS: "5"
-  # Phase 12 H1: multi-replica safety (require Redis in monitor-backend-secrets).
-  # Keep "false" while replicas=1; set both to "true" before scaling >= 2.
+  # File-backed state (users, alert rules/state/history, SLO configs,
+  # approvals, audit log) lives on the alert-data PVC mounted at /app/data.
+  DATA_DIR: "/app/data"
+  # Config subsystem store (versions, audit); scratch emptyDir at /app/configs
+  # keeps it writable under the read-only root filesystem.
+  CONFIG_STORAGE_PATH: "/app/configs"
+  # Phase 12 H1: multi-replica safety (requires Redis — set REDIS_HOST and
+  # REDIS_PASSWORD in monitor-backend-secrets first). Keep all "false" while
+  # replicas=1; set them ALL to "true" before scaling >= 2 (and switch the
+  # alert-data PVC to ReadWriteMany — see k8s/backend/deployment.yaml).
+  ALERT_STATE_USE_REDIS: "false"
+  APPROVAL_STATE_USE_REDIS: "false"
   ALERT_ENGINE_LEADER_LOCK: "false"
   WS_FANOUT_USE_REDIS: "false"

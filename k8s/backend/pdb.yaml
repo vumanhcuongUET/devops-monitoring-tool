@@ -1,14 +1,8 @@
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: monitor-backend-pdb
-  namespace: devops-monitor
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: monitor-backend
----
+# Frontend only. The backend deployment runs a single replica (its state PVC
+# is ReadWriteOnce; see k8s/backend/deployment.yaml), so a backend PDB with
+# minAvailable: 1 would block ALL voluntary evictions (node drains) — it was
+# removed deliberately. Re-add one only after scaling the backend to >= 2
+# replicas with the Redis flags enabled.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

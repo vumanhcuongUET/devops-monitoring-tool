@@ -78,6 +78,40 @@ class AlertEngine:
 
     async def _check_all(self, app_state):
         rules = load_rules()
+        enabled = [r for r in rules if r.enabled]
+
+        # ---- Fetch layer: one shared client call per (source, fetch key) ----
+        # Previously every rule issued its own ES/APM/Prometheus/K8s request
+        # each cycle. Now rules are grouped per source behind a shared fetch
+        # (one ES error-count query, one APM summary, one Prometheus call per
+        # distinct metric expr — cached per cycle — and one K8s list per pod /
+        # deployment batch), and every rule in the group evaluates against the
+        # shared payload. Rules whose metric cannot be expressed as a shared
+        # query fall back to the per-rule fetchers below.
+        groups: dict[tuple[str, str], list] = {}
+        for rule in enabled:
+            key = self._batch_key(rule)
+            if key is None:
+                continue  # not batchable -> per-rule fallback
+            groups.setdefault((rule.source, key), []).append(rule)
+
+        payloads: dict[tuple[str, str], object] = {}
+        failed_batches: set[tuple[str, str]] = set()
+        for group_key, group_rules in groups.items():
+            try:
+                payloads[group_key] = await self._fetch_shared(app_state, group_key)
+            except Exception as e:
+                # Phase 14 residual #2 semantics, batched: a failed fetch
+                # must not look like "no data". One counter bump + one log
+                # line per failed batch (same `source` label); every rule in
+                # the batch is skipped this cycle.
+                ALERT_EVAL_ERRORS.labels(group_key[0]).inc()
+                logger.warning(
+                    "Metric fetch failed for %d rule(s) (source=%s, fetch=%s): %s",
+                    len(group_rules), group_key[0], group_key[1], e,
+                )
+                failed_batches.add(group_key)
+
         metric_fetchers = {
             "elasticsearch": self._fetch_elasticsearch,
             "apm": self._fetch_apm,
@@ -85,24 +119,30 @@ class AlertEngine:
             "kubernetes": self._fetch_kubernetes,
         }
 
-        for rule in rules:
-            if not rule.enabled:
-                continue
+        for rule in enabled:
             fetcher = metric_fetchers.get(rule.source)
             if not fetcher:
                 continue
-            try:
-                value = await fetcher(app_state, rule)
-            except Exception as e:
-                # Phase 14 residual #2: a failed fetch used to be a bare
-                # `continue` — rules silently going dark looked identical to
-                # "no data". Count it so alert_eval_errors_total can page.
-                ALERT_EVAL_ERRORS.labels(rule.source).inc()
-                logger.warning(
-                    "Metric fetch failed for rule %s (source=%s): %s",
-                    rule.id, rule.source, e,
-                )
-                continue
+            key = self._batch_key(rule)
+            if key is not None:
+                group_key = (rule.source, key)
+                if group_key in failed_batches:
+                    continue  # already counted + logged once for the batch
+                value = self._extract_value(rule, key, payloads[group_key])
+            else:
+                # Fallback: metric not expressible as a shared query.
+                try:
+                    value = await fetcher(app_state, rule)
+                except Exception as e:
+                    # Phase 14 residual #2: a failed fetch used to be a bare
+                    # `continue` — rules silently going dark looked identical to
+                    # "no data". Count it so alert_eval_errors_total can page.
+                    ALERT_EVAL_ERRORS.labels(rule.source).inc()
+                    logger.warning(
+                        "Metric fetch failed for rule %s (source=%s): %s",
+                        rule.id, rule.source, e,
+                    )
+                    continue
 
             breached = self._evaluate(rule.condition, value, rule.threshold)
 
@@ -128,6 +168,89 @@ class AlertEngine:
         # — ALERT_EVAL_ERRORS covers those separately). time_absent-style
         # alerting on this gauge detects a hung/cancelled engine.
         ALERT_ENGINE_LAST_SUCCESS.set(time.time())
+
+    # Metrics each source can serve from one shared fetch per cycle.
+    ES_ERROR_METRIC = "error_count_5m"
+    PROM_METRICS = ("cpu_percent", "memory_percent")
+    K8S_POD_METRICS = ("pods_failed", "pods_crashloop", "pod_restart_count")
+
+    def _batch_key(self, rule) -> str | None:
+        """Return the shared-fetch key for a rule, or None if the rule must
+        keep its own per-rule fetch (fallback path)."""
+        if rule.source == "elasticsearch":
+            # Single fixed-window error-count query covers every ES rule.
+            return rule.metric if rule.metric == self.ES_ERROR_METRIC else None
+        if rule.source == "apm":
+            # Every APM metric is a key into one summary document.
+            return "__summary__"
+        if rule.source == "prometheus":
+            # One query per distinct metric expr, cached for the cycle.
+            return rule.metric if rule.metric in self.PROM_METRICS else None
+        if rule.source == "kubernetes":
+            if rule.metric in self.K8S_POD_METRICS:
+                return "list_pods"
+            if rule.metric == "deployments_unavailable":
+                return "list_deployments"
+            return None
+        return None
+
+    async def _fetch_shared(self, app_state, group_key: tuple[str, str]):
+        """Fetch the shared payload for a (source, fetch key) batch."""
+        source, key = group_key
+        if source == "elasticsearch":
+            es = app_state.es_client
+            return float(await es.get_error_count(minutes=5))
+        if source == "apm":
+            apm = app_state.apm_client
+            return await apm.get_summary()
+        if source == "prometheus":
+            prom = app_state.prometheus_client
+            if key == "cpu_percent":
+                return await prom.get_cpu_percent()
+            if key == "memory_percent":
+                return await prom.get_memory_percent()
+        elif source == "kubernetes":
+            k8s = app_state.k8s_client
+            if key == "list_pods":
+                return await k8s.list_pods()
+            if key == "list_deployments":
+                return await k8s.list_deployments()
+        raise ValueError(f"Unknown fetch batch: source={source} key={key}")
+
+    def _extract_value(self, rule, key: str, payload) -> float:
+        """Derive a rule's metric value from the shared batch payload.
+
+        Pure per-rule evaluation logic — identical expressions to the
+        per-rule fetchers, just applied to shared data.
+        """
+        if rule.source == "elasticsearch":
+            return float(payload)
+        if rule.source == "apm":
+            return float(payload.get(rule.metric, 0))
+        if rule.source == "prometheus":
+            return float(payload)
+        if rule.source == "kubernetes":
+            if key == "list_pods":
+                pods = payload
+                if rule.metric == "pods_failed":
+                    return float(sum(1 for p in pods if p["status"] in ("Failed", "Unknown")))
+                if rule.metric == "pods_crashloop":
+                    # Enhanced: Detect CrashLoopBackOff by restart count
+                    restart_threshold = rule.labels.get("restart_threshold", 5)
+                    return float(sum(
+                        1 for p in pods
+                        if p.get("restarts", 0) >= restart_threshold
+                        or p["status"] in ("CrashLoopBackOff", "Error")
+                    ))
+                if rule.metric == "pod_restart_count":
+                    # Total restart count across all pods
+                    return float(sum(p.get("restarts", 0) for p in pods))
+            if key == "list_deployments":
+                deps = payload
+                return float(sum(1 for d in deps if d["available"] < d["replicas"]))
+        raise ValueError(
+            f"Cannot extract metric {rule.metric!r} from batch {rule.source}/{key}"
+        )
 
     def _evaluate(self, condition: str, value: float, threshold: float) -> bool:
         ops = {"gt": lambda v, t: v > t, "gte": lambda v, t: v >= t, "lt": lambda v, t: v < t, "lte": lambda v, t: v <= t, "eq": lambda v, t: v == t}

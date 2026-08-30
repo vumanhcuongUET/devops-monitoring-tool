@@ -1,6 +1,4 @@
 import asyncio
-import json
-import os
 import uuid
 from datetime import datetime, timezone
 
@@ -9,38 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.models.slo import SloApiDetail, SloConfig, SloDashboard, SloResult
 from app.security import validate_identifier
 from app.services.slo_client import SloClient
+from app.services.slo_config_store import load_configs as _load_configs
+from app.services.slo_config_store import save_configs as _save_configs
 
 router = APIRouter(prefix="/slo", tags=["slo"])
-
-CONFIGS_FILE = "data/slo_configs.json"
-DEFAULT_CONFIGS_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "alerting", "default_slo_configs.yaml")
-
-
-def _load_configs() -> list[dict]:
-    if os.path.exists(CONFIGS_FILE):
-        with open(CONFIGS_FILE) as f:
-            return json.load(f)
-    return _load_defaults()
-
-
-def _load_defaults() -> list[dict]:
-    import yaml
-    yaml_path = os.path.join(os.path.dirname(__file__), "..", "..", "alerting", "default_slo_configs.yaml")
-    if not os.path.exists(yaml_path):
-        return []
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-    configs = []
-    for i, c in enumerate(data.get("slo_configs", [])):
-        c.setdefault("id", f"default-{i}")
-        configs.append(c)
-    return configs
-
-
-def _save_configs(configs: list[dict]):
-    os.makedirs(os.path.dirname(CONFIGS_FILE), exist_ok=True)
-    with open(CONFIGS_FILE, "w") as f:
-        json.dump(configs, f, indent=2, ensure_ascii=False)
 
 
 def _get_slo_client(request: Request) -> SloClient:

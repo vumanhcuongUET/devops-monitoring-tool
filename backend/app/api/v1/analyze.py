@@ -539,7 +539,9 @@ async def _get_alerts_context(es_client, project: str, time_delta: timedelta, se
         import os
         from datetime import datetime, timezone
 
-        history_file = "data/alert_history.json"
+        from app.config import settings
+        from pathlib import Path
+        history_file = str(Path(settings.DATA_DIR) / "alert_history.json")
         if not os.path.exists(history_file):
             return []
 

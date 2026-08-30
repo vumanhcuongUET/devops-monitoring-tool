@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
+import pathlib
 
 from app.models.alerts import (
     AlertRule,
@@ -11,9 +12,11 @@ from app.models.alerts import (
     NamespaceAlertStats,
 )
 
+from app.config import settings as _settings
+
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-RULES_FILE = "data/alert_rules.json"
+RULES_FILE = str(pathlib.Path(_settings.DATA_DIR) / "alert_rules.json")
 
 # Phase 14 security: rule mutation is operator+ work. API-key (service)
 # requests carry request.state.user = None and stay allowed.
@@ -99,7 +102,7 @@ async def delete_rule(rule_id: str, request: Request):
 
 @router.get("/history")
 async def get_history():
-    history_file = "data/alert_history.json"
+    history_file = str(pathlib.Path(_settings.DATA_DIR) / "alert_history.json")
     if not os.path.exists(history_file):
         return []
     with open(history_file) as f:

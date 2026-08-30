@@ -71,6 +71,9 @@ class SkillRegistry:
     """
 
     MAX_HISTORY_SIZE = 5000  # Maximum skill execution history entries to keep
+    # Phase 14: cap in-memory results (they were never evicted — a slow
+    # memory leak in long-running processes). FIFO by insertion order.
+    MAX_RESULTS_SIZE = 500
 
     def __init__(self):
         """Initialize the skill registry."""
@@ -262,6 +265,10 @@ class SkillRegistry:
             # Store result
             result.skill_id = skill_id
             self._results[execution_id] = result
+            if len(self._results) > self.MAX_RESULTS_SIZE:
+                excess = len(self._results) - self.MAX_RESULTS_SIZE
+                for old_id in list(self._results)[:excess]:
+                    del self._results[old_id]
             self._status[skill_id] = SkillStatus.COMPLETED
 
             # Log to history

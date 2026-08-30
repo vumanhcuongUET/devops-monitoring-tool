@@ -113,7 +113,7 @@ class SLOTrackerSkill(BaseSkill):
 
     def _load_configs(self, service: str) -> list:
         """SLO configs for one service (or all enabled when service empty)."""
-        from app.api.v1.slo import _load_configs
+        from app.services.slo_config_store import load_configs as _load_configs
         from app.models.slo import SloConfig
 
         raw = _load_configs()

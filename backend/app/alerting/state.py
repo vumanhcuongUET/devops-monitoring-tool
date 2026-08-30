@@ -2,9 +2,11 @@ import json
 import os
 from datetime import datetime, timezone
 from typing import Any
+import pathlib
 
-STATE_FILE = "data/alert_state.json"
-HISTORY_FILE = "data/alert_history.json"
+from app.config import settings as _settings
+STATE_FILE = str(pathlib.Path(_settings.DATA_DIR) / "alert_state.json")
+HISTORY_FILE = str(pathlib.Path(_settings.DATA_DIR) / "alert_history.json")
 
 
 class AlertStateTracker:

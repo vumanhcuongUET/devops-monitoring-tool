@@ -45,12 +45,17 @@ class FeedbackEvent:
 class FeedbackCollector:
     """Collects and stores feedback for continuous learning."""
 
-    def __init__(self, storage_path: str = "data/feedback_history.json"):
+    def __init__(self, storage_path: str | None = None):
         """Initialize feedback collector.
 
         Args:
-            storage_path: Path to feedback history file
+            storage_path: Path to feedback history file (defaults to
+                settings.DATA_DIR/feedback_history.json)
         """
+        if storage_path is None:
+            from app.config import settings
+
+            storage_path = str(Path(settings.DATA_DIR) / "feedback_history.json")
         self.storage_path = Path(storage_path)
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._feedback: dict[str, list[FeedbackEvent]] = defaultdict(list)

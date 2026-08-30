@@ -291,7 +291,7 @@ async def test_sla_compliance_real_results(monkeypatch):
 
     skill = SLAComplianceSkill()
     monkeypatch.setattr(
-        "app.api.v1.slo._load_configs",
+        "app.services.slo_config_store.load_configs",
         lambda: [c.model_dump() for c in _slo_configs()],
     )
     result = await skill.analyze("", {}, _ctx(slo=FakeSloClient()))
@@ -307,7 +307,7 @@ async def test_observability_slo_tracker_shares_real_data(monkeypatch):
 
     skill = SLOTrackerSkill()
     monkeypatch.setattr(
-        "app.api.v1.slo._load_configs",
+        "app.services.slo_config_store.load_configs",
         lambda: [c.model_dump() for c in _slo_configs()],
     )
     result = await skill.analyze("good", {}, _ctx(slo=FakeSloClient()))

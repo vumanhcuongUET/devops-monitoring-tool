@@ -56,7 +56,7 @@ class SLAComplianceSkill(BaseSkill):
                     "a live SLO data source"
                 )
 
-            from app.api.v1.slo import _load_configs
+            from app.services.slo_config_store import load_configs as _load_configs
             from app.models.slo import SloConfig
 
             configs = [

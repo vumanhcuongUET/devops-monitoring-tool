@@ -1,4 +1,5 @@
 import secrets
+from pathlib import Path
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -129,6 +130,15 @@ class Settings(BaseSettings):
     # Connection Pool Settings
     PROM_MAX_CONNECTIONS: int = 20
     K8S_MAX_CONNECTIONS: int = 10
+
+    # Phase 14: canonical locations for file-backed state and the config
+    # subsystem. Anchored to the source tree (not CWD — running uvicorn from
+    # the repo root used to silently create a second, empty data/ tree) and
+    # overridable for containers via env: DATA_DIR / CONFIG_STORAGE_PATH.
+    # The config tree ships at the repo root; in containers it must be
+    # mounted and pointed at explicitly (startup degrades gracefully if not).
+    DATA_DIR: str = str(Path(__file__).resolve().parents[1] / "data")
+    CONFIG_STORAGE_PATH: str = str(Path(__file__).resolve().parents[2] / "configs")
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

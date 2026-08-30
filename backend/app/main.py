@@ -172,51 +172,63 @@ async def lifespan(app: FastAPI):
     app.state.approval_tracker = approval_tracker
     logger.info(f"Phase 2: Action Engine initialized with {'Redis' if settings.APPROVAL_STATE_USE_REDIS else 'file-based'} approval state")
 
-    # Phase 7 Sprint 4: Initialize Configuration Management
+    # Phase 7 Sprint 4: Initialize Configuration Management.
+    # Phase 14: paths come from settings (anchored to the backend root, not
+    # CWD or __file__/../../.. which resolved to /configs inside the
+    # container and crashed startup under a read-only root filesystem), and
+    # the whole subsystem degrades gracefully like the DB block below — a
+    # missing/unwritable config store must not kill the app.
     import os
-    config_storage_path = os.path.join(os.path.dirname(__file__), "..", "..", "configs")
+    config_storage_path = settings.CONFIG_STORAGE_PATH
     config_schema_path = os.path.join(config_storage_path, "global", "schemas")
 
-    # Initialize config components
-    config_validator = ConfigValidator(schema_path=config_schema_path)
-    config_security = ConfigSecurity()
+    try:
+        # Initialize config components
+        config_validator = ConfigValidator(schema_path=config_schema_path)
+        config_security = ConfigSecurity()
 
-    # Initialize version manager
-    config_version_manager = ConfigVersionManager(
-        storage_path=config_storage_path,
-        git_ops=None  # Will be initialized if needed
-    )
+        # Initialize version manager
+        config_version_manager = ConfigVersionManager(
+            storage_path=config_storage_path,
+            git_ops=None  # Will be initialized if needed
+        )
 
-    # Initialize audit logger
-    config_audit_logger = AuditLogger(storage_path=config_storage_path)
+        # Initialize audit logger
+        config_audit_logger = AuditLogger(storage_path=config_storage_path)
 
-    # Initialize GitOps manager (optional - requires Git repository)
-    config_git_ops = None
-    git_repo_path = os.getcwd()
-    if os.path.exists(os.path.join(git_repo_path, ".git")):
-        try:
-            config_git_ops = GitOpsManager(repo_path=git_repo_path, auto_push=False)
-            logger.info("GitOps manager initialized")
-        except Exception as e:
-            logger.warning(f"GitOps manager initialization failed: {e}")
+        # Initialize GitOps manager (optional - requires Git repository)
+        config_git_ops = None
+        git_repo_path = os.getcwd()
+        if os.path.exists(os.path.join(git_repo_path, ".git")):
+            try:
+                config_git_ops = GitOpsManager(repo_path=git_repo_path, auto_push=False)
+                logger.info("GitOps manager initialized")
+            except Exception as e:
+                logger.warning(f"GitOps manager initialization failed: {e}")
 
-    # Inject into API
-    config_api.set_config_instances(
-        validator=config_validator,
-        version_manager=config_version_manager,
-        git_ops=config_git_ops,
-        audit_logger=config_audit_logger,
-        security=config_security
-    )
+        # Inject into API
+        config_api.set_config_instances(
+            validator=config_validator,
+            version_manager=config_version_manager,
+            git_ops=config_git_ops,
+            audit_logger=config_audit_logger,
+            security=config_security
+        )
 
-    # Store in app state
-    app.state.config_validator = config_validator
-    app.state.config_version_manager = config_version_manager
-    app.state.config_audit_logger = config_audit_logger
-    app.state.config_security = config_security
-    app.state.config_git_ops = config_git_ops
+        # Store in app state
+        app.state.config_validator = config_validator
+        app.state.config_version_manager = config_version_manager
+        app.state.config_audit_logger = config_audit_logger
+        app.state.config_security = config_security
+        app.state.config_git_ops = config_git_ops
 
-    logger.info("Phase 7 Sprint 4: Configuration Management initialized")
+        logger.info("Phase 7 Sprint 4: Configuration Management initialized")
+    except Exception as e:
+        logger.warning(
+            "Configuration management disabled (storage path %s unusable: %s) — "
+            "set CONFIG_STORAGE_PATH to a writable, mounted directory",
+            config_storage_path, e,
+        )
 
     # Phase 10 Sprint 1: Optional PostgreSQL persistence layer
     app.state.db_enabled = False

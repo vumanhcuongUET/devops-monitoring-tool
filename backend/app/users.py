@@ -20,9 +20,11 @@ import secrets
 import time
 from pathlib import Path
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
-USERS_FILE = Path("data/users.json")
+USERS_FILE = Path(settings.DATA_DIR) / "users.json"
 VALID_ROLES = ("admin", "operator", "viewer")
 
 _SCRYPT_N = 2**14

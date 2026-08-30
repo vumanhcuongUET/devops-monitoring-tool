@@ -5,14 +5,17 @@ import os
 from datetime import datetime, timezone
 
 import httpx
+import pathlib
 
 from app.config import settings
 from app.models.slo import SloConfig
 from app.services.slo_client import SloClient
 
+from app.config import settings as _settings
+
 logger = logging.getLogger(__name__)
 
-LAST_REPORT_FILE = "data/slo_last_report.json"
+LAST_REPORT_FILE = str(pathlib.Path(_settings.DATA_DIR) / "slo_last_report.json")
 
 
 class SloReporter:
@@ -54,7 +57,7 @@ class SloReporter:
         return True
 
     async def _send_daily_report(self, app_state):
-        from app.api.v1.slo import _load_configs
+        from app.services.slo_config_store import load_configs as _load_configs
 
         configs_raw = _load_configs()
         configs = [SloConfig(**c) for c in configs_raw if c.get("enabled", True)]

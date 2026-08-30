@@ -5,6 +5,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+import pathlib
 
 from app.models.audit import (
     AuditEntry,
@@ -14,16 +15,29 @@ from app.models.audit import (
     ChainOfThoughtEntry,
 )
 
-AUDIT_LOG_FILE = "data/audit_log.json"
-MAX_ENTRIES = 1000
+from app.config import settings as _settings
+AUDIT_LOG_FILE = str(pathlib.Path(_settings.DATA_DIR) / "audit_log.jsonl")
+# Pre-Phase-14 format (whole-file JSON list, rewritten on every event)
+LEGACY_AUDIT_LOG_FILE = str(pathlib.Path(_settings.DATA_DIR) / "audit_log.json")
+# Rotate the append-only log once it exceeds this size; retention is no
+# longer a silent trim to the last N entries.
+ROTATION_SIZE_BYTES = 50 * 1024 * 1024
+# In-memory tail cap for query()/history reads (does not delete anything).
+MAX_ENTRIES = 10000
 
 
 class AuditLogger:
-    """Audit logger for tracking all actions with Chain of Thought."""
+    """Audit logger for tracking all actions with Chain of Thought.
+
+    Phase 14: the log is append-only JSON-lines with size-based rotation.
+    The old format rewrote the entire file on every event (corrupt-on-crash,
+    O(file) per append) and silently truncated history to 1000 entries.
+    """
 
     def __init__(self, max_entries: int = MAX_ENTRIES):
         self._max_entries = max_entries
         self._ensure_log_dir()
+        self._migrate_legacy_log()
 
     def log_event(
         self,
@@ -255,34 +269,69 @@ class AuditLogger:
         """Ensure the audit log directory exists."""
         os.makedirs(os.path.dirname(AUDIT_LOG_FILE), exist_ok=True)
 
+    def _migrate_legacy_log(self):
+        """One-time conversion of the old whole-file JSON list to JSONL.
+
+        Only when both files live in the same directory — a patched/test
+        AUDIT_LOG_FILE must never ingest the real legacy log.
+        """
+        if os.path.exists(AUDIT_LOG_FILE) or not os.path.exists(LEGACY_AUDIT_LOG_FILE):
+            return
+        if os.path.dirname(os.path.abspath(AUDIT_LOG_FILE)) != os.path.dirname(
+            os.path.abspath(LEGACY_AUDIT_LOG_FILE)
+        ):
+            return
+        try:
+            with open(LEGACY_AUDIT_LOG_FILE) as f:
+                data = json.load(f)
+            with open(AUDIT_LOG_FILE, "a") as f:
+                for entry in reversed(data):  # legacy list was newest-first
+                    f.write(json.dumps(entry, default=str) + "\n")
+        except (json.JSONDecodeError, OSError) as e:
+            # Never block startup on a bad legacy file; it stays untouched.
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Legacy audit log migration skipped: %s", e
+            )
+
     def _load_entries(self) -> list[AuditEntry]:
-        """Load all audit entries from the log file."""
+        """Load the most recent audit entries (oldest first) from the JSONL log.
+
+        Reads are bounded to the last `max_entries` lines for memory; the
+        file itself is never trimmed (retention is size-based rotation).
+        """
         if not os.path.exists(AUDIT_LOG_FILE):
             return []
 
+        entries: list[AuditEntry] = []
         try:
             with open(AUDIT_LOG_FILE) as f:
-                data = json.load(f)
-                return [AuditEntry(**entry) for entry in data]
-        except (json.JSONDecodeError, ValueError):
-            # Corrupt log file, start fresh
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(AuditEntry(**json.loads(line)))
+                    except (json.JSONDecodeError, ValueError):
+                        continue  # skip corrupt line, keep the rest
+        except OSError:
             return []
+        return entries[-self._max_entries:]
 
     def _append_entry(self, entry: AuditEntry):
-        """Append an entry to the log file with rotation."""
-        entries = self._load_entries()
-
-        # Add new entry at the beginning
-        entries.insert(0, entry)
-
-        # Trim to max entries
-        if len(entries) > self._max_entries:
-            entries = entries[: self._max_entries]
-
-        # Write back to file
+        """Append one entry as a JSONL line; rotate on size threshold."""
         self._ensure_log_dir()
-        with open(AUDIT_LOG_FILE, "w") as f:
-            json.dump([e.model_dump() for e in entries], f, indent=2, default=str)
+        line = json.dumps(entry.model_dump(mode="json"), default=str)
+        with open(AUDIT_LOG_FILE, "a") as f:
+            f.write(line + "\n")
+
+        if os.path.getsize(AUDIT_LOG_FILE) > ROTATION_SIZE_BYTES:
+            rotated = AUDIT_LOG_FILE + ".1"
+            try:
+                os.replace(AUDIT_LOG_FILE, rotated)
+            except OSError:
+                pass  # rotation is best-effort; appends continue
 
 
 # Singleton instance

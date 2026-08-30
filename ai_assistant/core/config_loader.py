@@ -107,9 +107,8 @@ def load_feature_flags() -> Dict[str, Any]:
     """
     features_path = ROOT / "config" / "features.yaml"
     if not features_path.exists():
-        # Default: backend integration disabled, optimization enabled
+        # Default: optimization enabled
         return {
-            "backend_integration": {"enabled": False, "services": {}, "fallback_on_error": True},
             "optimization": {
                 "cache_enabled": True,
                 "cache_ttl_seconds": 60,
@@ -161,16 +160,16 @@ def is_feature_enabled(feature_path: str) -> bool:
     Check if a specific feature is enabled.
 
     Args:
-        feature_path: Dot-notation path to feature, e.g., "backend_integration.enabled"
-                      or "backend_integration.services.elasticsearch"
+        feature_path: Dot-notation path to feature, e.g., "optimization.cache_enabled"
+                      or "optimization.parallel_queries"
 
     Returns:
         True if feature is enabled, False otherwise
 
     Examples:
-        >>> is_feature_enabled("backend_integration.enabled")
-        False
         >>> is_feature_enabled("optimization.cache_enabled")
+        True
+        >>> is_feature_enabled("output.use_emoji")
         True
     """
     flags = get_feature_flags()

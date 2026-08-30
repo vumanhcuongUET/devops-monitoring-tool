@@ -3,13 +3,10 @@ Single-flight deduplication for concurrent requests.
 
 Ensures that only one request is made for the same key concurrently.
 Subsequent requests wait for the first to complete.
-
-Supports both in-memory (SingleFlight) and distributed (RedisSingleFlight).
 """
 
-import asyncio
 import threading
-from typing import Any, Callable, Dict, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, TypeVar
 from dataclasses import dataclass
 
 T = TypeVar("T")
@@ -115,16 +112,12 @@ class SingleFlight:
 
 
 # Global single-flight instance
-_global_single_flight: Union[SingleFlight, "RedisSingleFlight"] = None
+_global_single_flight: Optional[SingleFlight] = None
 
 
-def get_global_single_flight() -> Union[SingleFlight, "RedisSingleFlight"]:
+def get_global_single_flight() -> SingleFlight:
     """
-    Get or create global single-flight instance.
-
-    Returns SingleFlight or RedisSingleFlight based on feature flags.
-    RedisSingleFlight is used when optimization.redis_single_flight.enabled = true.
-    Falls back to SingleFlight if Redis is unavailable.
+    Get or create the global in-memory single-flight instance.
     """
     global _global_single_flight
 
@@ -140,21 +133,6 @@ def get_global_single_flight() -> Union[SingleFlight, "RedisSingleFlight"]:
             _get_logger().info("Single-flight disabled")
             return _global_single_flight
 
-        # Check if Redis single-flight is enabled
-        sf_config = flags.get("optimization", {}).get("redis_single_flight", {})
-        if sf_config.get("enabled", False):
-            try:
-                from core.redis_single_flight import RedisSingleFlight
-                _global_single_flight = RedisSingleFlight(
-                    redis_url=sf_config.get("url", "redis://localhost:6379/0"),
-                    fallback_enabled=sf_config.get("fallback_enabled", True)
-                )
-                _get_logger().info("Using Redis single-flight")
-                return _global_single_flight
-            except Exception as e:
-                _get_logger().warning(f"Redis single-flight initialization failed, falling back to in-memory: {e}")
-
-        # Default to in-memory SingleFlight
         _global_single_flight = SingleFlight()
         _get_logger().info("Using in-memory single-flight")
 

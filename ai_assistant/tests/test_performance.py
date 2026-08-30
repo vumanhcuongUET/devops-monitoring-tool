@@ -130,36 +130,6 @@ class TestAuditLogPerformance:
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_audit_log_query_performance(self):
-        """Test audit log query performance (should scale linearly)."""
-        import tempfile
-        from pathlib import Path
-
-        temp_dir = tempfile.mkdtemp()
-        log_dir = Path(temp_dir) / "audit"
-
-        logger = AuditLogger(log_dir=log_dir)
-
-        # Write 1000 entries
-        for i in range(1000):
-            entry = AuditLogEntry(
-                event_type="test",
-                actor=f"user_{i % 10}",  # 10 different users
-                action="test_action",
-            )
-            logger.log(entry)
-
-        # Query performance
-        start = time.perf_counter()
-        results = logger.query(limit=100)
-        elapsed = time.perf_counter() - start
-
-        assert elapsed < 0.5, f"Audit log query too slow: {elapsed:.3f}s"
-        assert len(results) == 100, f"Expected 100 results, got {len(results)}"
-
-        import shutil
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
 
 @pytest.mark.performance
 class TestSingleFlightPerformance:

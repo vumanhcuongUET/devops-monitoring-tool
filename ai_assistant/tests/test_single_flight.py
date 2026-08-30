@@ -5,7 +5,7 @@ Tests for single-flight module.
 import pytest
 import threading
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import importlib
 
 from core.single_flight import SingleFlight, single_flight, get_global_single_flight
@@ -238,59 +238,6 @@ class TestSingleFlightDecorator:
 
 
 @pytest.mark.unit
-class TestRedisSingleFlight:
-    """Tests for RedisSingleFlight."""
-
-    def test_redis_single_flight_import(self):
-        """Test that RedisSingleFlight can be imported."""
-        try:
-            from core.redis_single_flight import RedisSingleFlight
-            assert RedisSingleFlight is not None
-        except ImportError:
-            pytest.skip("redis module not available")
-
-    def test_redis_single_flight_unavailable_with_fallback(self):
-        """Test RedisSingleFlight behavior when Redis unavailable with fallback."""
-        try:
-            from core.redis_single_flight import RedisSingleFlight
-        except ImportError:
-            pytest.skip("redis module not available")
-
-        sf = RedisSingleFlight(
-            redis_url="redis://invalid:9999/0",
-            fallback_enabled=True
-        )
-
-        assert sf.available is False
-
-        # Should execute directly (fallback)
-        call_count = [0]
-        def func():
-            call_count[0] += 1
-            return "result"
-
-        result = sf.execute("test_key", func)
-        assert result == "result"
-        assert call_count[0] == 1
-
-    def test_redis_single_flight_stats_when_unavailable(self):
-        """Test RedisSingleFlight stats when unavailable."""
-        try:
-            from core.redis_single_flight import RedisSingleFlight
-        except ImportError:
-            pytest.skip("redis module not available")
-
-        sf = RedisSingleFlight(
-            redis_url="redis://invalid:9999/0",
-            fallback_enabled=True
-        )
-
-        stats = sf.stats()
-        assert stats["type"] == "redis"
-        assert stats["available"] is False
-
-
-@pytest.mark.unit
 class TestSingleFlightFactory:
     """Tests for single-flight factory pattern."""
 
@@ -302,54 +249,3 @@ class TestSingleFlightFactory:
 
             sf = get_global_single_flight()
             assert isinstance(sf, SingleFlight)
-
-    def test_get_global_single_flight_returns_redis_when_enabled(self):
-        """Test that get_global_single_flight returns RedisSingleFlight when enabled."""
-        # This test verifies the factory pattern attempts to use Redis when enabled
-        # Since we can't easily mock the dynamic import, we verify behavior instead
-
-        import core.single_flight
-
-        # Enable Redis single-flight with invalid URL (will fallback gracefully)
-        flags = {
-            "optimization": {
-                "deduplication_enabled": True,
-                "redis_single_flight": {
-                    "enabled": True,
-                    "url": "redis://invalid:9999/0",  # Invalid URL
-                    "fallback_enabled": True
-                }
-            }
-        }
-
-        with patch("core.config_loader.get_feature_flags", return_value=flags):
-            core.single_flight._global_single_flight = None
-
-            # Should not raise - should fallback gracefully
-            sf = get_global_single_flight()
-            assert sf is not None
-            # Falls back to SingleFlight when Redis unavailable
-            assert isinstance(sf, SingleFlight)
-
-    def test_get_global_single_flight_falls_back_to_memory_when_redis_fails(self):
-        """Test fallback to in-memory when RedisSingleFlight fails."""
-        flags = {
-            "optimization": {
-                "deduplication_enabled": True,
-                "redis_single_flight": {
-                    "enabled": True,
-                    "fallback_enabled": True
-                }
-            }
-        }
-
-        def mock_redis_factory(*args, **kwargs):
-            raise RuntimeError("Redis unavailable")
-
-        with patch("core.config_loader.get_feature_flags", return_value=flags):
-            with patch("core.redis_single_flight.RedisSingleFlight", side_effect=mock_redis_factory):
-                import core.single_flight
-                core.single_flight._global_single_flight = None
-
-                sf = get_global_single_flight()
-                assert isinstance(sf, SingleFlight)

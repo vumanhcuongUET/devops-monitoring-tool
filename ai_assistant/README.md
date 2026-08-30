@@ -1,5 +1,11 @@
 # DevOps AI Monitoring Assistant
 
+> **Phase 14 cleanup (2026-08-30):** the flag-off backend adapter layer
+> (`services/`), Redis cache/single-flight, and the retry/circuit-breaker
+> modules were removed — they had no production callers. The structure
+> section below predates that cleanup and may still mention them.
+
+
 Config-driven monitoring assistant for Claude CLI. Ask natural language questions about system status — Claude queries ELK, Prometheus, and APM automatically using Python scripts.
 
 ---

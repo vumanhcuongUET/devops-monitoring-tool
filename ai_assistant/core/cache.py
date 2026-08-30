@@ -2,7 +2,6 @@
 Result caching for AI Assistant.
 
 Provides simple in-memory caching with TTL for query results.
-Supports both SimpleCache (in-memory) and RedisCache (distributed).
 """
 
 import hashlib
@@ -10,7 +9,7 @@ import json
 import threading
 import time
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -135,16 +134,14 @@ class SimpleCache:
 
 
 # Global cache instance
-_global_cache: Optional[Union[SimpleCache, "RedisCache"]] = None
+_global_cache: Optional[SimpleCache] = None
 
 
-def get_global_cache() -> Union[SimpleCache, "RedisCache"]:
+def get_global_cache() -> SimpleCache:
     """
-    Get or create global cache instance.
+    Get or create the global in-memory cache instance.
 
-    Returns SimpleCache or RedisCache based on feature flags.
-    RedisCache is used when optimization.redis_cache.enabled = true.
-    Falls back to SimpleCache if Redis is unavailable.
+    TTL is taken from optimization.cache_ttl_seconds feature flag.
     """
     global _global_cache
 
@@ -154,23 +151,6 @@ def get_global_cache() -> Union[SimpleCache, "RedisCache"]:
         flags = get_feature_flags()
         opt_config = flags.get("optimization", {})
 
-        # Check if Redis cache is enabled
-        redis_config = opt_config.get("redis_cache", {})
-        if redis_config.get("enabled", False):
-            try:
-                from core.redis_cache import RedisCache
-                _global_cache = RedisCache(
-                    ttl=redis_config.get("ttl_seconds", opt_config.get("cache_ttl_seconds", 60)),
-                    redis_url=redis_config.get("url", "redis://localhost:6379/0"),
-                    key_prefix=redis_config.get("key_prefix", "ai_assistant:"),
-                    fallback_enabled=redis_config.get("fallback_enabled", True)
-                )
-                _get_logger().info("Using Redis cache")
-                return _global_cache
-            except Exception as e:
-                _get_logger().warning(f"Redis cache initialization failed, falling back to SimpleCache: {e}")
-
-        # Default to SimpleCache
         ttl = opt_config.get("cache_ttl_seconds", 60)
         _global_cache = SimpleCache(ttl=ttl)
         _get_logger().info("Using SimpleCache (in-memory)")

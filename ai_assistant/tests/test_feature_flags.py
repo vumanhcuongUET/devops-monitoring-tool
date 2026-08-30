@@ -28,7 +28,7 @@ class TestFeatureFlags:
     def test_load_feature_flags_has_top_level_keys(self):
         """Test that feature flags has expected top-level keys."""
         flags = load_feature_flags()
-        expected_keys = ["backend_integration", "optimization", "output", "query", "monitoring"]
+        expected_keys = ["optimization", "output", "query", "monitoring"]
         for key in expected_keys:
             assert key in flags
 
@@ -40,10 +40,9 @@ class TestFeatureFlags:
         flags2 = get_feature_flags()
         assert flags1 is flags2
 
-    def test_is_feature_enabled_backend_integration(self):
-        """Test checking backend_integration.enabled flag."""
-        # Default should be disabled
-        enabled = is_feature_enabled("backend_integration.enabled")
+    def test_is_feature_enabled_query_flag(self):
+        """Test checking query.validate_time_range flag."""
+        enabled = is_feature_enabled("query.validate_time_range")
         assert isinstance(enabled, bool)
 
     def test_is_feature_enabled_nested_path(self):
@@ -59,7 +58,7 @@ class TestFeatureFlags:
 
     def test_is_feature_enabled_invalid_path(self):
         """Test that invalid intermediate paths return False."""
-        enabled = is_feature_enabled("backend_integration.nonexistent.enabled")
+        enabled = is_feature_enabled("optimization.nonexistent.enabled")
         assert enabled is False
 
     def test_reload_feature_flags(self, tmp_path, monkeypatch):
@@ -67,8 +66,8 @@ class TestFeatureFlags:
         # Create temporary features file
         features_file = tmp_path / "features.yaml"
         features_file.write_text(yaml.dump({
-            "backend_integration": {"enabled": True},
-            "optimization": {"cache_enabled": False}
+            "optimization": {"cache_enabled": False},
+            "output": {"use_emoji": False}
         }))
 
         # Create config subdirectory and move file there
@@ -85,16 +84,12 @@ class TestFeatureFlags:
 
         # Reload and check
         flags = reload_feature_flags()
-        assert flags["backend_integration"]["enabled"] is True
         assert flags["optimization"]["cache_enabled"] is False
+        assert flags["output"]["use_emoji"] is False
 
     def test_feature_flags_default_values(self):
         """Test that default values are set correctly."""
         flags = load_feature_flags()
-
-        # Backend integration should be disabled by default
-        assert flags["backend_integration"]["enabled"] is False
-        assert flags["backend_integration"]["fallback_on_error"] is True
 
         # Optimization should be enabled by default
         assert flags["optimization"]["cache_enabled"] is True
@@ -105,12 +100,15 @@ class TestFeatureFlags:
         assert flags["output"]["use_emoji"] is True
         assert flags["output"]["truncate_results"] is True
 
-    def test_is_feature_enabled_all_services(self):
-        """Test checking all service-specific backend flags."""
-        # These should all be booleans (True when backend enabled, False otherwise)
-        services = ["elasticsearch", "prometheus", "apm", "kubernetes", "optimizer"]
-        for service in services:
-            path = f"backend_integration.services.{service}"
+    def test_is_feature_enabled_optimization_flags(self):
+        """Test checking all optimization feature flags."""
+        paths = [
+            "optimization.cache_enabled",
+            "optimization.deduplication_enabled",
+            "optimization.parallel_queries",
+            "output.optimization_enabled",
+            "query.enforce_timeout",
+        ]
+        for path in paths:
             enabled = is_feature_enabled(path)
-            # When backend_integration.enabled is False, these return False
             assert isinstance(enabled, bool)

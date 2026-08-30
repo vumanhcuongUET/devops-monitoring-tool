@@ -3,18 +3,12 @@
 Cross-platform query runner for DevOps monitoring.
 Executes ELK (Elasticsearch) and Prometheus queries from YAML definitions.
 
-This version integrates with backend service adapters for better performance
-and connection pooling, with graceful fallback to direct HTTP.
-
 Usage:
     python tools/run_query.py --project meinvoice --section errors
     python tools/run_query.py --project meinvoice --section alerts --time-range now-30m
     python tools/run_query.py --project meinvoice --section errors --output pretty
 """
 
-# Lazy annotations: AdapterManager's class-body annotations reference names
-# imported inside a try/except below; Python <= 3.13 evaluates annotations
-# eagerly at import, so a missing adapter must not raise there.
 from __future__ import annotations
 
 import argparse
@@ -24,7 +18,6 @@ import sys
 import yaml
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, Optional
 
 try:
     import requests
@@ -60,108 +53,9 @@ from core.output_optimizer import get_output_optimizer
 # Setup logging
 _logger = setup_logging()
 
-# Optional: Import backend adapters if available
-_ADAPTORS_AVAILABLE = False
-try:
-    from services.elasticsearch_adapter import ElasticsearchAdapter
-    from services.prometheus_adapter import PrometheusAdapter
-    from services.apm_adapter import ApmAdapter
-    from services.k8s_adapter import KubernetesAdapter
-    _ADAPTORS_AVAILABLE = True
-except ImportError:
-    pass
-
 
 # ---------------------------------------------------------------------------
-# Adapter Manager (lazy initialization)
-# ---------------------------------------------------------------------------
-
-class AdapterManager:
-    """
-    Manages backend service adapters with lazy initialization.
-
-    Adapters are only created when first needed, and only if
-    backend_integration is enabled in feature flags.
-    """
-    _instance: Optional['AdapterManager'] = None
-    _elasticsearch: Optional[ElasticsearchAdapter] = None
-    _prometheus: Optional[PrometheusAdapter] = None
-    _apm: Optional[ApmAdapter] = None
-    _kubernetes: Optional[KubernetesAdapter] = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    @classmethod
-    def reset(cls):
-        """Reset singleton (useful for testing)."""
-        cls._instance = None
-        cls._elasticsearch = None
-        cls._prometheus = None
-        cls._apm = None
-        cls._kubernetes = None
-
-    @property
-    def elasticsearch(self) -> Optional[ElasticsearchAdapter]:
-        """Get Elasticsearch adapter (lazy initialization)."""
-        if self._elasticsearch is None and _ADAPTORS_AVAILABLE:
-            if self.is_backend_enabled() and is_feature_enabled(
-                "backend_integration.services.elasticsearch"
-            ):
-                self._elasticsearch = ElasticsearchAdapter(
-                    fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
-                )
-        return self._elasticsearch
-
-    @property
-    def prometheus(self) -> Optional[PrometheusAdapter]:
-        """Get Prometheus adapter (lazy initialization)."""
-        if self._prometheus is None and _ADAPTORS_AVAILABLE:
-            if self.is_backend_enabled() and is_feature_enabled(
-                "backend_integration.services.prometheus"
-            ):
-                self._prometheus = PrometheusAdapter(
-                    fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
-                )
-        return self._prometheus
-
-    @property
-    def apm(self) -> Optional[ApmAdapter]:
-        """Get APM adapter (lazy initialization)."""
-        if self._apm is None and _ADAPTORS_AVAILABLE:
-            if self.is_backend_enabled() and is_feature_enabled(
-                "backend_integration.services.apm"
-            ):
-                self._apm = ApmAdapter(
-                    fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
-                )
-        return self._apm
-
-    @property
-    def kubernetes(self) -> Optional[KubernetesAdapter]:
-        """Get Kubernetes adapter (lazy initialization)."""
-        if self._kubernetes is None and _ADAPTORS_AVAILABLE:
-            if self.is_backend_enabled() and is_feature_enabled(
-                "backend_integration.services.kubernetes"
-            ):
-                self._kubernetes = KubernetesAdapter(
-                    fallback_enabled=is_feature_enabled("backend_integration.fallback_on_error")
-                )
-        return self._kubernetes
-
-    def is_backend_enabled(self) -> bool:
-        """Check if backend integration is globally enabled."""
-        return is_feature_enabled("backend_integration.enabled")
-
-
-# Global adapter manager instance
-_adapters = AdapterManager()
-
-
-# ---------------------------------------------------------------------------
-# HTTP execution (fallback when adapters unavailable)
+# HTTP execution
 # ---------------------------------------------------------------------------
 
 def _auth_headers(auth_env: str | None) -> dict:
@@ -243,34 +137,6 @@ def query_elk_http(source: dict, body: dict, timeout: int) -> dict:
         return {"status": "error", "source": source["name"], "error": str(e), "data": None}
 
 
-def query_elk_adapter(source: dict, body: dict, timeout: int) -> dict:
-    """
-    Execute Elasticsearch query via backend adapter.
-
-    Args:
-        source: Source configuration
-        body: Elasticsearch query body
-        timeout: Request timeout (ignored by adapter, uses its own config)
-
-    Returns:
-        Result dict with status, source, and data
-    """
-    adapter = _adapters.elasticsearch
-    if not adapter or not adapter.available:
-        # Fall back to HTTP
-        return query_elk_http(source, body, timeout)
-
-    try:
-        index = source.get('index', '*')
-        result = adapter.search(index=index, body=body, size=body.get('size', 10))
-        return {"status": "ok", "source": source["name"], "data": result}
-    except Exception as e:
-        # Fall back to HTTP on error
-        if is_feature_enabled("backend_integration.fallback_on_error"):
-            return query_elk_http(source, body, timeout)
-        return {"status": "error", "source": source["name"], "error": str(e), "data": None}
-
-
 def query_prometheus_http(source: dict, promql: str, timeout: int) -> dict:
     """
     Execute Prometheus query via direct HTTP (fallback method).
@@ -311,31 +177,6 @@ def query_prometheus_http(source: dict, promql: str, timeout: int) -> dict:
         return {"status": "error", "source": source["name"], "error": str(e), "data": None}
 
 
-def query_prometheus_adapter(source: dict, promql: str, timeout: int) -> dict:
-    """
-    Execute Prometheus query via backend adapter.
-
-    Args:
-        source: Source configuration
-        promql: PromQL query string
-        timeout: Request timeout (ignored by adapter)
-
-    Returns:
-        Result dict with status, source, and data
-    """
-    adapter = _adapters.prometheus
-    if not adapter or not adapter.available:
-        return query_prometheus_http(source, promql, timeout)
-
-    try:
-        result = adapter.query(promql)
-        return {"status": "ok", "source": source["name"], "data": result}
-    except Exception as e:
-        if is_feature_enabled("backend_integration.fallback_on_error"):
-            return query_prometheus_http(source, promql, timeout)
-        return {"status": "error", "source": source["name"], "error": str(e), "data": None}
-
-
 # ---------------------------------------------------------------------------
 # Query execution dispatcher
 # ---------------------------------------------------------------------------
@@ -343,9 +184,8 @@ def query_prometheus_adapter(source: dict, promql: str, timeout: int) -> dict:
 @single_flight(lambda source, body, timeout: f"elk:{source.get('name')}:{hash(str(body))}")
 def execute_elk_query(source: dict, body: dict, timeout: int) -> dict:
     """
-    Execute Elasticsearch query using best available method.
+    Execute Elasticsearch query via direct HTTP.
 
-    Tries adapter first (if enabled), falls back to HTTP.
     Concurrent requests with same source+body will deduplicate.
 
     Args:
@@ -364,17 +204,10 @@ def execute_elk_query(source: dict, body: dict, timeout: int) -> dict:
         event_type="query",
         action="execute_elk_query",
         resource=source_name,
-        details={"timeout": timeout, "use_backend": _adapters.is_backend_enabled()},
+        details={"timeout": timeout},
     ))
 
-    use_backend = (
-        _adapters.is_backend_enabled() and
-        _ADAPTORS_AVAILABLE and
-        _adapters.elasticsearch and
-        _adapters.elasticsearch.available
-    )
-
-    result = query_elk_adapter(source, body, timeout) if use_backend else query_elk_http(source, body, timeout)
+    result = query_elk_http(source, body, timeout)
 
     # Log query completion
     audit_logger.log(AuditLogEntry(
@@ -391,9 +224,8 @@ def execute_elk_query(source: dict, body: dict, timeout: int) -> dict:
 @single_flight(lambda source, promql, timeout: f"prom:{source.get('name')}:{hash(promql)}")
 def execute_prometheus_query(source: dict, promql: str, timeout: int) -> dict:
     """
-    Execute Prometheus query using best available method.
+    Execute Prometheus query via direct HTTP.
 
-    Tries adapter first (if enabled), falls back to HTTP.
     Concurrent requests with same source+promql will deduplicate.
 
     Args:
@@ -412,17 +244,10 @@ def execute_prometheus_query(source: dict, promql: str, timeout: int) -> dict:
         event_type="query",
         action="execute_prometheus_query",
         resource=source_name,
-        details={"timeout": timeout, "use_backend": _adapters.is_backend_enabled()},
+        details={"timeout": timeout},
     ))
 
-    use_backend = (
-        _adapters.is_backend_enabled() and
-        _ADAPTORS_AVAILABLE and
-        _adapters.prometheus and
-        _adapters.prometheus.available
-    )
-
-    result = query_prometheus_adapter(source, promql, timeout) if use_backend else query_prometheus_http(source, promql, timeout)
+    result = query_prometheus_http(source, promql, timeout)
 
     # Log query completion
     audit_logger.log(AuditLogEntry(

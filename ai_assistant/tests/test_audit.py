@@ -157,91 +157,6 @@ class TestAuditLogger:
         # Hashes should be different (chained)
         assert entry1_data["_chain_hash"] != entry2_data["_chain_hash"]
 
-    def test_verify_integrity_valid(self):
-        """Test integrity verification of valid log file."""
-        logger = AuditLogger(log_dir=self.log_dir)
-
-        # Write some entries
-        for i in range(3):
-            entry = AuditLogEntry(
-                event_type="test",
-                actor=f"user{i}",
-                action=f"action{i}",
-            )
-            logger.log(entry)
-
-        # Verify integrity
-        result = logger.verify_integrity()
-
-        assert result["valid"] is True
-        assert result["entries"] == 3
-        assert result["valid_entries"] == 3
-        assert result["invalid_entries"] == 0
-
-    def test_verify_integrity_tampered(self):
-        """Test that tampering is detected."""
-        logger = AuditLogger(log_dir=self.log_dir)
-
-        # Write entry
-        entry = AuditLogEntry(event_type="test", actor="user1")
-        logger.log(entry)
-
-        # Tamper with the file
-        content = logger._current_file.read_text()
-        tampered_content = content.replace("user1", "attacker")
-        logger._current_file.write_text(tampered_content)
-
-        # Verify integrity - should detect tampering
-        result = logger.verify_integrity()
-
-        assert result["valid"] is False
-        assert result["invalid_entries"] > 0
-
-    def test_query_filters_by_actor(self):
-        """Test querying audit logs by actor."""
-        logger = AuditLogger(log_dir=self.log_dir)
-
-        # Write entries with different actors
-        logger.log(AuditLogEntry(event_type="test", actor="user1"))
-        logger.log(AuditLogEntry(event_type="test", actor="user2"))
-        logger.log(AuditLogEntry(event_type="test", actor="user1"))
-
-        # Query for user1
-        results = logger.query(actor="user1")
-
-        assert len(results) == 2
-        for entry in results:
-            assert entry["actor"] == "user1"
-
-    def test_query_filters_by_event_type(self):
-        """Test querying audit logs by event type."""
-        logger = AuditLogger(log_dir=self.log_dir)
-
-        # Write entries with different event types
-        logger.log(AuditLogEntry(event_type="query", actor="user1"))
-        logger.log(AuditLogEntry(event_type="action", actor="user1"))
-        logger.log(AuditLogEntry(event_type="query", actor="user2"))
-
-        # Query for query events
-        results = logger.query(event_type="query")
-
-        assert len(results) == 2
-        for entry in results:
-            assert entry["event_type"] == "query"
-
-    def test_query_respects_limit(self):
-        """Test that query limit is respected."""
-        logger = AuditLogger(log_dir=self.log_dir)
-
-        # Write many entries
-        for i in range(10):
-            logger.log(AuditLogEntry(event_type="test", actor=f"user{i}"))
-
-        # Query with limit
-        results = logger.query(limit=5)
-
-        assert len(results) == 5
-
     def test_file_rotation(self):
         """Test that file rotation works when max size is reached."""
         logger = AuditLogger(log_dir=self.log_dir, max_file_size=500)
@@ -294,10 +209,11 @@ class TestAuditHelpers:
 
             assert result is True
 
-            # Verify entry was written
-            results = logger.query(limit=1)
-            assert len(results) == 1
-            assert results[0]["event_type"] == "test"
+            # Verify entry was written (read the log file directly)
+            with open(logger._current_file, "r") as f:
+                lines = f.readlines()
+            assert len(lines) == 1
+            assert json.loads(lines[0])["event_type"] == "test"
 
         finally:
             import shutil

@@ -66,8 +66,8 @@ class TestLoadFeatureFlags:
 
         # Should always return a dict, even if file doesn't exist
         assert isinstance(flags, dict)
-        # Should have backend_integration key
-        assert "backend_integration" in flags or flags == {}
+        # Should have optimization key
+        assert "optimization" in flags or flags == {}
 
 
 class TestRenderTemplate:

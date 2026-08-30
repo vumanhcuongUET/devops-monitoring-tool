@@ -1,5 +1,6 @@
 """Unit tests for Autonomous Executor (Phase 4)."""
 
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,6 +13,19 @@ from app.actions.autonomous_executor import (
     get_autonomous_executor,
 )
 from app.models.alerts import AlertEvent, AlertRule, AlertSeverity
+
+
+@pytest.fixture(autouse=True)
+def _isolated_rate_limit_state(tmp_path, monkeypatch):
+    """Point the file-backed rate-limit state at a per-test tmp DATA_DIR.
+
+    AutonomousRateLimiter persists its window to settings.DATA_DIR since
+    Phase 14 (residual 3) — without isolation, recorded executions would
+    leak between tests through the shared state file.
+    """
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DATA_DIR", str(tmp_path))
 
 
 class TestRateLimiter:
@@ -73,6 +87,88 @@ class TestRateLimiter:
         # Should still be allowed (old entry cleaned)
         allowed, _ = limiter.can_execute("delete_crashloop_pod")
         assert allowed is True
+
+
+class TestRateLimiterPersistence:
+    """Phase 14 residual 3: the rate window survives process restarts."""
+
+    def test_new_instance_sees_previous_window(self, tmp_path):
+        """A freshly constructed limiter loads executions recorded before a
+        'restart' (new instance, same DATA_DIR)."""
+        first = RateLimiter(max_per_hour=3)
+        for _ in range(3):
+            first.record_execution("scale_deployment")
+
+        assert (tmp_path / "autonomous_rate_limit.json").exists()
+
+        restarted = RateLimiter(max_per_hour=3)
+        allowed, reason = restarted.can_execute("scale_deployment")
+        assert allowed is False
+        assert "Rate limit exceeded" in reason
+        assert restarted.get_remaining_quota("scale_deployment") == 0
+        # Per-type isolation survives the round-trip too
+        assert restarted.can_execute("restart_deployment") == (True, None)
+
+    def test_window_pruned_after_one_hour(self, tmp_path):
+        """Entries older than the 1h window are dropped on load."""
+        limiter = RateLimiter(max_per_hour=3)
+        limiter.record_execution("scale_deployment")
+        limiter.record_execution("scale_deployment")
+
+        state_file = tmp_path / "autonomous_rate_limit.json"
+        state = json.loads(state_file.read_text())
+        state["execution_times"]["scale_deployment"].append(
+            (datetime.now(timezone.utc) - timedelta(minutes=61)).isoformat()
+        )
+        state_file.write_text(json.dumps(state))
+
+        restarted = RateLimiter(max_per_hour=3)
+        # 2 fresh + 1 stale -> stale pruned, one slot free
+        assert restarted.get_remaining_quota("scale_deployment") == 1
+        assert restarted.can_execute("scale_deployment") == (True, None)
+
+    def test_quota_math_unchanged_by_persistence(self, tmp_path):
+        """Quota arithmetic is identical to the in-memory version."""
+        limiter = RateLimiter(max_per_hour=3)
+        assert limiter.get_remaining_quota("scale_deployment") == 3
+        limiter.record_execution("scale_deployment")
+        assert limiter.get_remaining_quota("scale_deployment") == 2
+        assert limiter.can_execute("scale_deployment") == (True, None)
+
+    def test_cooldown_map_persists(self, tmp_path):
+        """The cooldown map (last execution per type) round-trips through disk."""
+        first = RateLimiter(max_per_hour=3)
+        first.record_execution("scale_deployment")
+
+        restarted = RateLimiter(max_per_hour=3)
+        last = restarted.get_last_execution("scale_deployment")
+        assert last is not None
+        assert last > datetime.now(timezone.utc) - timedelta(minutes=1)
+        assert restarted.get_last_execution("restart_deployment") is None
+
+    def test_executor_hydrates_cooldown_map(self, tmp_path):
+        """AutonomousExecutor bootstraps _last_executions from persisted state,
+        so a restart keeps enforcing per-type cooldowns."""
+        state = {
+            "execution_times": {},
+            "last_executions": {
+                "scale_deployment": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+        (tmp_path / "autonomous_rate_limit.json").write_text(json.dumps(state))
+
+        executor = AutonomousExecutor()
+        assert executor._last_executions["scale_deployment"] > (
+            datetime.now(timezone.utc) - timedelta(minutes=1)
+        )
+
+    def test_corrupt_state_file_starts_empty(self, tmp_path):
+        """A corrupt state file degrades to empty state instead of crashing."""
+        (tmp_path / "autonomous_rate_limit.json").write_text("{not json")
+
+        limiter = RateLimiter(max_per_hour=3)
+        assert limiter.can_execute("scale_deployment") == (True, None)
+        assert limiter.get_remaining_quota("scale_deployment") == 3
 
 
 class TestSafetyChecker:

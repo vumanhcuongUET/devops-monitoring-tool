@@ -117,7 +117,9 @@ class AutonomousExecutor:
         """Initialize autonomous executor."""
         self.rate_limiter = AutonomousRateLimiter(max_per_hour=3)
         self.audit_logger = AuditLogger()
-        self._last_executions: dict[str, datetime] = {}
+        # Cooldown map hydrated from the rate limiter's persisted state so
+        # per-type cooldowns survive restarts (Phase 14 residual 3).
+        self._last_executions: dict[str, datetime] = dict(self.rate_limiter.last_executions)
 
     async def execute_autonomous_action(
         self,

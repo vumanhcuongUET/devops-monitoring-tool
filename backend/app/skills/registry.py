@@ -567,7 +567,8 @@ def _group_reliability_extended(registry: SkillRegistry) -> None:
 
 
 def _group_performance(registry: SkillRegistry) -> None:
-    pass  # all performance skills are catalog stubs
+    from app.skills.performance import LoadTestAnalyzerSkill
+    registry.register(LoadTestAnalyzerSkill)
 
 
 _SKILL_GROUPS = (

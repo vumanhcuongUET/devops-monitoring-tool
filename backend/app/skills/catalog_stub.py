@@ -1,6 +1,6 @@
 """Catalog stub skills (Phase 14 ponytail cut).
 
-The 23 unimplemented skills each used to ship a 300-800 line module whose
+The 22 unimplemented skills each used to ship a 300-800 line module whose
 fabricated-data generators could never run — the registry refuses stubs
 before `analyze()` is called. All that is real about them is the catalog
 metadata (id, name, description, category, priority), which this single
@@ -139,13 +139,9 @@ STUB_CATALOG: dict[str, tuple[str, str, SkillCategory, SkillPriority]] = {
         "Audit SOC2 compliance for security controls",
         SkillCategory.COMPLIANCE, SkillPriority.HIGH,
     ),
-    # performance — needs load-test artifacts / circuit telemetry
-    "performance_load_test_analyzer": (
-        "Performance Load Test Analyzer",
-        "Analyze load test results (Locust/k6), detect regressions, "
-        "estimate capacity, and identify bottlenecks.",
-        SkillCategory.PERFORMANCE, SkillPriority.MEDIUM,
-    ),
+    # performance — needs circuit telemetry
+    # (performance_load_test_analyzer became real: it parses uploaded
+    # k6/locust artifacts — see app/skills/performance/load_test_analyzer.py)
     "performance_circuit_breaker_health": (
         "Performance Circuit Breaker Health",
         "Monitor circuit breaker states, trip patterns, "

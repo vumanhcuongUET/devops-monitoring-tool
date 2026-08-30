@@ -565,4 +565,5 @@ def test_batch3_skills_no_longer_stubbed():
     registry = get_skill_registry()
     for skill_id in promoted:
         assert registry.get_skill(skill_id).implemented is True
-    assert len(STUB_SKILLS) == 23  # 44 registered, 21 implemented
+    # 44 registered, 22 implemented (load-test analyzer promoted in Phase 14)
+    assert len(STUB_SKILLS) == 22

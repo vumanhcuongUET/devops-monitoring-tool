@@ -1,11 +1,22 @@
 """Rate limiter for action execution with time-window tracking."""
 
+import json
+import logging
+import os
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from app.actions.chain_monitor import get_chain_monitor
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Persisted state file for the autonomous rate limiter (under settings.DATA_DIR)
+AUTONOMOUS_RATE_LIMIT_FILE = "autonomous_rate_limit.json"
 
 
 @dataclass
@@ -371,20 +382,145 @@ def get_rate_limiter(config: RateLimitConfig | None = None) -> RateLimiter:
     return _rate_limiter
 
 
+class _AutonomousRateStateStore:
+    """File-backed persistence for :class:`AutonomousRateLimiter`.
+
+    Phase 14 residual 3: autonomous rate-limit windows used to be in-memory
+    only, so a restart reset the quota mid-incident. State lives in a single
+    JSON file under ``settings.DATA_DIR``; it is loaded lazily, pruned to the
+    1h window, and written atomically (tmp file + :func:`os.replace`).
+
+    All callers run on the event-loop thread where sync sections cannot
+    interleave; one plain lock keeps the read-modify-write atomic if a
+    thread runner is ever used. I/O failures degrade to in-memory limiting
+    (logged warning) — they must never block remediation paths.
+    """
+
+    def __init__(self, path: Path):
+        self._path = path
+        self._lock = threading.Lock()
+
+    def load(self) -> tuple[dict[str, list[datetime]], dict[str, datetime]]:
+        """Return ``(execution_times, last_executions)`` from disk.
+
+        Entries older than the 1h window are pruned on load. A missing,
+        corrupt, or unreadable file yields empty state (warning logged) so a
+        bad state file can only loosen history, never crash the executor.
+        """
+        with self._lock:
+            try:
+                raw = json.loads(self._path.read_text())
+            except FileNotFoundError:
+                return defaultdict(list), {}
+            except (OSError, ValueError) as e:
+                logger.warning("Autonomous rate-limit state unreadable (%s); starting empty", e)
+                return defaultdict(list), {}
+
+        if not isinstance(raw, dict):
+            logger.warning("Autonomous rate-limit state has unexpected shape; starting empty")
+            return defaultdict(list), {}
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        execution_times: dict[str, list[datetime]] = defaultdict(list)
+        for action_type, stamps in (raw.get("execution_times") or {}).items():
+            if not isinstance(stamps, list):
+                continue
+            times = sorted(t for ts in stamps if (t := self._parse(ts)) and t > cutoff)
+            if times:
+                execution_times[action_type] = times
+
+        last_executions: dict[str, datetime] = {}
+        for action_type, ts in (raw.get("last_executions") or {}).items():
+            if (t := self._parse(ts)) and t > cutoff:
+                last_executions[action_type] = t
+
+        return execution_times, last_executions
+
+    def save(
+        self,
+        execution_times: dict[str, list[datetime]],
+        last_executions: dict[str, datetime],
+    ) -> None:
+        """Persist both maps atomically (tmp file + os.replace)."""
+        payload = {
+            "execution_times": {
+                action_type: [t.isoformat() for t in sorted(times)]
+                for action_type, times in execution_times.items()
+                if times
+            },
+            "last_executions": {
+                action_type: t.isoformat() for action_type, t in last_executions.items()
+            },
+        }
+        with self._lock:
+            try:
+                self._path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = self._path.with_name(self._path.name + ".tmp")
+                tmp.write_text(json.dumps(payload))
+                os.replace(tmp, self._path)
+            except OSError as e:
+                logger.warning(
+                    "Failed to persist autonomous rate-limit state (%s); "
+                    "in-memory limits remain active", e,
+                )
+
+    @staticmethod
+    def _parse(ts: object) -> datetime | None:
+        if not isinstance(ts, str):
+            return None
+        try:
+            dt = datetime.fromisoformat(ts)
+        except ValueError:
+            return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 class AutonomousRateLimiter:
     """Rate limiter for autonomous actions.
 
     Prevents runaway autonomous execution by limiting actions per time window.
+    Execution timestamps and the per-type cooldown map survive restarts via
+    the file-backed store (Phase 14 residual 3); the public interface is
+    unchanged. A Redis-backed store (``settings.RATE_LIMIT_USE_REDIS``) is
+    deliberately not wired here: this interface is synchronous and the shared
+    Redis client (``app.redis_client.get_redis``) is async — bridging them
+    would mean blocking calls or an interface break.
     """
 
-    def __init__(self, max_per_hour: int = 3):
+    def __init__(self, max_per_hour: int = 3, state_file: Path | None = None):
         """Initialize rate limiter.
 
         Args:
             max_per_hour: Maximum actions per hour per action type
+            state_file: Override for the persisted-state path (defaults to
+                ``settings.DATA_DIR/autonomous_rate_limit.json``)
         """
         self.max_per_hour = max_per_hour
         self._execution_times: dict[str, list[datetime]] = defaultdict(list)
+        # Last successful execution per action type (cooldown map) — the same
+        # data AutonomousExecutor._last_executions holds, persisted together.
+        self._last_executions: dict[str, datetime] = {}
+        self._store = _AutonomousRateStateStore(
+            state_file or Path(settings.DATA_DIR) / AUTONOMOUS_RATE_LIMIT_FILE
+        )
+        self._loaded = False
+
+    def _ensure_loaded(self) -> None:
+        """Lazily hydrate state from disk on first use (not in __init__, so
+        constructing the limiter never touches the filesystem)."""
+        if self._loaded:
+            return
+        self._execution_times, self._last_executions = self._store.load()
+        self._loaded = True
+
+    def _prune(self, now: datetime) -> None:
+        """Drop entries outside the 1h rolling window from both maps."""
+        hour_ago = now - timedelta(hours=1)
+        for action_type, times in self._execution_times.items():
+            self._execution_times[action_type] = [t for t in times if t > hour_ago]
+        self._last_executions = {
+            a: t for a, t in self._last_executions.items() if t > hour_ago
+        }
 
     def can_execute(self, action_type: str) -> tuple[bool, str | None]:
         """Check if action can be executed based on rate limit.
@@ -395,13 +531,11 @@ class AutonomousRateLimiter:
         Returns:
             Tuple of (allowed, reason_if_not_allowed)
         """
+        self._ensure_loaded()
         now = datetime.now(timezone.utc)
-        hour_ago = now - timedelta(hours=1)
 
         # Clean old entries
-        self._execution_times[action_type] = [
-            t for t in self._execution_times[action_type] if t > hour_ago
-        ]
+        self._prune(now)
 
         # Check limit
         if len(self._execution_times[action_type]) >= self.max_per_hour:
@@ -412,10 +546,17 @@ class AutonomousRateLimiter:
     def record_execution(self, action_type: str):
         """Record an action execution for rate limiting.
 
+        Also updates the cooldown map and persists both to disk.
+
         Args:
             action_type: Type of remediation action
         """
-        self._execution_times[action_type].append(datetime.now(timezone.utc))
+        self._ensure_loaded()
+        now = datetime.now(timezone.utc)
+        self._execution_times[action_type].append(now)
+        self._last_executions[action_type] = now
+        self._prune(now)
+        self._store.save(self._execution_times, self._last_executions)
 
     def get_remaining_quota(self, action_type: str) -> int:
         """Get remaining execution quota for an action type.
@@ -426,9 +567,24 @@ class AutonomousRateLimiter:
         Returns:
             Number of remaining executions allowed this hour
         """
-        now = datetime.now(timezone.utc)
-        hour_ago = now - timedelta(hours=1)
-        self._execution_times[action_type] = [
-            t for t in self._execution_times[action_type] if t > hour_ago
-        ]
+        self._ensure_loaded()
+        self._prune(datetime.now(timezone.utc))
         return max(0, self.max_per_hour - len(self._execution_times[action_type]))
+
+    def get_last_execution(self, action_type: str) -> datetime | None:
+        """Get the last recorded execution time for an action type.
+
+        Args:
+            action_type: Type of remediation action
+
+        Returns:
+            Last execution datetime (UTC), or None if none in the window
+        """
+        self._ensure_loaded()
+        return self._last_executions.get(action_type)
+
+    @property
+    def last_executions(self) -> dict[str, datetime]:
+        """Copy of the persisted cooldown map (per action type)."""
+        self._ensure_loaded()
+        return dict(self._last_executions)

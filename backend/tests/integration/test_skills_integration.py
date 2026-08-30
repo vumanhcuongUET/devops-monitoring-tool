@@ -1,7 +1,7 @@
 """Integration tests for the Skills registry contract.
 
-All 44 registered skills are catalog stubs (STUB_SKILLS): execute() must
-refuse so mock data is never returned as analysis. These tests pin that
+44 skills are registered; the stub subset (STUB_SKILLS) must be refused by
+execute() so mock data is never returned as analysis. These tests pin that
 contract — if a new skill lands unflagged, or a stub starts returning
 fabricated data, they fail.
 """
@@ -50,7 +50,8 @@ class TestSkillCatalog:
 
     def test_implemented_only_filter_drops_stubs(self, registry):
         """The honest catalog view: implemented_only returns exactly the real
-        skills (Phase 13 batches 1-3: 21 live-data skills)."""
+        skills (Phase 13 batches 1-3 plus the Phase 14 load-test analyzer:
+        22 live-data skills)."""
         real = registry.list_skills(implemented_only=True)
         assert {m["skill_id"] for m in real} == {
             # batch 1
@@ -77,6 +78,8 @@ class TestSkillCatalog:
             "code_complexity_analyzer",
             "code_duplication_detector",
             "code_smell_detector",
+            # Phase 14: real via uploaded k6/locust artifacts
+            "performance_load_test_analyzer",
         }
 
 

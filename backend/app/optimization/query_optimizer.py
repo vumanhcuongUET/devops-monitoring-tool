@@ -217,7 +217,7 @@ class QueryOptimizer:
         timedelta(days=7): "1h",
     }
 
-    def __init__(self, es_client=None, prom_client=None, k8s_client=None, l2_cache=None):
+    def __init__(self, es_client=None, prom_client=None, k8s_client=None):
         """
         Initialize query optimizer.
 
@@ -225,12 +225,10 @@ class QueryOptimizer:
             es_client: Elasticsearch client
             prom_client: Prometheus client
             k8s_client: Kubernetes client
-            l2_cache: L2 cache instance
         """
         self.es = es_client
         self.prom = prom_client
         self.k8s = k8s_client
-        self.l2_cache = l2_cache
         self.profiler = QueryProfiler()
 
         # Recording rules configuration

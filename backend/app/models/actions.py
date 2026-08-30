@@ -111,6 +111,9 @@ class CreateActionRequest(BaseModel):
     triage_card_id: str = Field(..., description="Source Triage Card ID")
     recommendation_id: str = Field(..., description="Recommendation to convert")
     project: str = Field(..., description="Project/service name")
+    # Phase 12 S6: attribution label for self-approval detection. Not an
+    # authorization identity (single-operator tool — see security review).
+    created_by: str | None = Field(None, description="Attribution: who created the action")
 
 
 class ApproveActionRequest(BaseModel):

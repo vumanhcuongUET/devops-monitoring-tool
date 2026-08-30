@@ -367,3 +367,41 @@ The platform is production-ready from a security perspective. Minor enhancements
 **Next Review**: Post-Phase 4 deployment  
 **Review Team**: Security Engineering  
 **Approval**: ✅ GRANTED
+
+---
+
+## Addendum — Phase 12 Security Enforcement Changes (2026-08-30)
+
+Scope: closing enforcement gaps found in the 2026-08-30 full review. All items tested (fail-first), full unit suite green after each.
+
+### 1. Threat-model decision (S1/S2)
+
+This platform is a **single-operator internal tool**. Concretely:
+
+- **Auth = shared key.** `AUTH_ENABLED` gates on a shared API key / HMAC bearer token. There is no per-user login.
+- **User fields are attribution labels, not authorization.** `executed_by`, `approved_by`, `created_by` record *who did what* for audit purposes. They do not grant or prove identity — a client may assert any value.
+- RBAC authorization is keyed on **environment**, not user: what may run in `production` (view/scale) vs `development` (full admin) is fixed by policy, identical for every caller holding the shared key.
+
+Multi-user identity (login UI, per-user tokens minted server-side, `request.state.user` injected by middleware, `VITE_API_KEY` retired) is deferred to **Phase 13** and is a prerequisite for any multi-user rollout.
+
+### 2. Changes shipped in Phase 12
+
+| ID | Change | Enforcement now |
+|---|---|---|
+| S3 | Webhook auth exemption | `/api/v1/approvals/webhook/*` skips shared-key auth; the platform HMAC signature **is** the authentication (Slack fails hard without `SLACK_SIGNING_SECRET`; Teams fails hard in production without a key — below). All other routes unchanged. |
+| S4 | Teams HMAC key | Signature now keyed by dedicated `TEAMS_WEBHOOK_SECRET` (fail-hard in production when absent). Legacy webhook-URL keying accepted **with deprecation warning for one release**, then removed. Note: this is our own shared-secret HMAC for the Adaptive Card invoke endpoint, not Microsoft's official scheme. |
+| S5 | Executor binary whitelist | `argv[0]` of every executed command must be `kubectl`, `helm`, or `argocd` (shared `ALLOWED_BINARIES` in `app/actions/parser.py`). Unknown binaries are refused before subprocess; the 5-pattern blacklist stays as belt-and-suspenders. |
+| S6 | Approval integrity | Self-approval (approver == creator) is blocked unless `ALLOW_SELF_APPROVAL=true`; approvers must hold the `approve` permission for the action's environment (RBAC: dev/staging only). |
+| B1/B4 | Correctness with security impact | Slack **and Teams** `view_action` endpoints now `await` the async `get_action` (both previously 500'd). The `kubectl config use-context` pre-step is gone — context selection is per-command (`--context`/`--kube-context` flags), so concurrent actions can no longer cross-apply cluster contexts via shared kubeconfig state. |
+| OPA | Flag-gated enforcement | `OPA_ENFORCE=true` (default **off**) puts `opa_client.evaluate_action` in the execute path; a DENY decision blocks. Unreachable OPA degrades to a loud warning, not a hard block. Default posture remains: enforcement = validator + RBAC + approval + rate limiter; OPA endpoint is evaluation. |
+| Time windows | Wired | `TimeWindowEnforcer` now runs in `execute_action`; executions outside the environment's safe window are blocked **and audit-logged** (`blocked_by: time_window`). |
+
+### 3. Known accepted risks (unchanged, now documented)
+
+- `/metrics` and `X-Forwarded-For`: `/metrics` is auth-exempt for Prometheus scraping; client IP logging honors `X-Forwarded-For` and is spoofable in front of untrusted proxies.
+- Frontend bundles `VITE_API_KEY` — acceptable only under the single-operator model above.
+
+### 4. Verification
+
+Gates: compileall / ruff / bandit clean; 744+ unit tests green including new fail-first tests for S3 (middleware), S4 (secret/legacy/prod), S5 (whitelist + stateless argv), S6 (self-approval, prod permission), time-window wiring, OPA flag.
+

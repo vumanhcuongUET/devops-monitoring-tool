@@ -40,7 +40,15 @@ class ElasticsearchClient:
     ) -> tuple[list[dict], int]:
         must = []
         if query and query != "*":
-            must.append({"query_string": {"query": query}})
+            # Phase 12 Sprint 3: bound query breadth to log fields — a bare
+            # query_string would otherwise scan every indexed field.
+            must.append({
+                "query_string": {
+                    "query": query,
+                    "default_field": "message",
+                    "fields": ["message", "log", "service", "level"],
+                }
+            })
         if level:
             must.append({"term": {"level": level.upper()}})
         if service:

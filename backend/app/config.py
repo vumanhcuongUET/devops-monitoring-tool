@@ -85,7 +85,17 @@ class Settings(BaseSettings):
     ALLOWED_WEBHOOK_IPS: list[str] = []  # IP whitelist for webhooks (empty = allow all)
 
     # Teams Approval
-    TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for signature verification
+    TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for signature verification (legacy HMAC key, deprecated)
+    TEAMS_WEBHOOK_SECRET: str = ""  # Dedicated HMAC secret for Teams webhook verification
+
+    # Phase 12 Sprint 3: OPA enforcement (default off — evaluation API only).
+    # When true and OPA is reachable, execute_action denies on OPA DENY.
+    OPA_ENFORCE: bool = False
+
+    # Approvals integrity (Phase 12 S6): allow the creator to approve their own action.
+    # Default False everywhere; flip only in dev where the creator and approver are
+    # the same operator anyway.
+    ALLOW_SELF_APPROVAL: bool = False
 
     # Phase 9: Redis Configuration for Distributed State
     REDIS_HOST: str = "localhost"

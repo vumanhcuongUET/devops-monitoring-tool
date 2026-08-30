@@ -3,6 +3,7 @@
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from app.actions.environment_executor import get_executor
 from app.actions.executor import get_command_executor
@@ -10,12 +11,15 @@ from app.actions.impact_estimator import ImpactLevel, get_impact_estimator
 from app.actions.parser import get_command_parser
 from app.actions.rate_limiter import get_rate_limiter
 from app.actions.rollback_executor import get_rollback_executor
+from app.actions.time_window_enforcer import get_time_window_enforcer
 from app.actions.validator import get_command_validator
 from app.approvals.store import get_approval_history, get_approval_tracker
 from app.audit.logger import get_audit_logger
+from app.models.audit import AuditEventType
 from app.config import settings
 from app.feedback.collector import get_feedback_collector
 from app.governance.permission_checker import get_permission_checker
+from app.governance.opa_client import PolicyDecision, get_opa_client
 from app.models.actions import (
     Action,
     ActionListResponse,
@@ -27,7 +31,7 @@ from app.models.actions import (
     RejectActionRequest,
     RiskLevel,
 )
-from app.models.triage_card import Recommendation
+from app.models.triage_card import Recommendation, SeverityLevel
 from app.registry.loader import get_registry
 
 logger = logging.getLogger(__name__)
@@ -52,7 +56,7 @@ def _action_kwargs_from_state(state: dict, base_kwargs: dict) -> dict:
 class ActionEngine:
     """Engine for managing action lifecycle: create, validate, approve, execute."""
 
-    def __init__(self):
+    def __init__(self, k8s_client: Any | None = None):
         self.parser = get_command_parser()
         self.validator = get_command_validator()
         self.executor = get_command_executor()
@@ -63,6 +67,11 @@ class ActionEngine:
         self.permission_checker = get_permission_checker()
         self.env_aware_executor = get_executor()
         self.feedback = get_feedback_collector()
+        # Real cluster client for impact estimation (Phase 12 B3). Previously
+        # resolved via `from app.main import app_state`, a symbol that never
+        # existed — the import always failed silently and estimation ran on
+        # heuristics alone.
+        self.k8s_client = k8s_client
 
     async def create_action_from_recommendation(
         self,
@@ -109,14 +118,10 @@ class ActionEngine:
 
         # Estimate impact (Phase 8 Day 7) — must precede the approval check below
         impact_estimator = get_impact_estimator()
-        # Try to get k8s client for real impact estimation
-        k8s_client = None
-        try:
-            from app.main import app_state
-            if app_state and app_state.k8s_client:
-                k8s_client = app_state.k8s_client
-        except ImportError:
-            pass
+        # Phase 12 B3: the engine holds the real cluster client (injected via
+        # __init__/lifespan), so impact estimation can query actual resources
+        # instead of silently degrading to heuristics.
+        k8s_client = self.k8s_client
 
         impact_estimate = impact_estimator.estimate(
             action_id=action_id,
@@ -193,6 +198,7 @@ class ActionEngine:
             risk_level=action.risk_level.value,
             estimated_impact=action.estimated_impact,
             context=action.context,
+            created_by=request.created_by,
         )
 
         # Add to history
@@ -215,6 +221,38 @@ class ActionEngine:
         )
         return action
 
+    def _check_approval_integrity(self, state: dict, approver: str) -> None:
+        """Phase 12 S6: block self-approval and permission-less approvers.
+
+        - Self-approval (approver == creator attribution) is blocked unless
+          settings.ALLOW_SELF_APPROVAL is set.
+        - The approver must hold the `approve` permission for the action's
+          environment (RBAC: dev/staging only).
+        """
+        env = (state.get("context") or {}).get("environment", "development")
+        created_by = state.get("created_by")
+
+        if (
+            created_by
+            and approver
+            and approver == created_by
+            and not settings.ALLOW_SELF_APPROVAL
+        ):
+            raise PermissionError(
+                f"Self-approval blocked: {approver} created action and ALLOW_SELF_APPROVAL is off"
+            )
+
+        result = self.permission_checker.check(
+            action="approve",
+            environment=env,
+            project=state.get("project"),
+            user=approver,
+        )
+        if not result.allowed:
+            raise PermissionError(
+                f"Approver '{approver}' lacks 'approve' permission in {env}: {result.reason}"
+            )
+
     async def approve_action(self, action_id: str, request: ApproveActionRequest) -> Action:
         """Approve an action for execution."""
         # Get current state
@@ -224,6 +262,9 @@ class ActionEngine:
 
         if state.get("status") != ActionStatus.PENDING:
             raise ValueError(f"Action {action_id} is not pending (current: {state.get('status')})")
+
+        # Phase 12 S6: approval integrity — self-approval ban + approver permission check.
+        self._check_approval_integrity(state, request.approved_by)
 
         # Update status
         await self.approval_tracker.set_status(
@@ -399,6 +440,44 @@ class ActionEngine:
                 f"Permission denied for action {action_id}: {permission_result.reason}"
             )
 
+        # Optional OPA enforcement (Phase 12 Sprint 3, flag-gated, default off):
+        # when OPA_ENFORCE and the OPA server is reachable, a DENY decision blocks.
+        if settings.OPA_ENFORCE:
+            try:
+                opa_result = await get_opa_client().evaluate_action(
+                    action={"command": command, "id": action_id},
+                    project=project,
+                    environment=environment,
+                    user=request.executed_by,
+                )
+                if opa_result.decision == PolicyDecision.DENY:
+                    violations = [v.description for v in opa_result.violations]
+                    raise PermissionError(
+                        f"Action {action_id} denied by OPA policy: {violations}"
+                    )
+            except PermissionError:
+                raise
+            except Exception as e:
+                # OPA unreachable/misconfigured must not hard-block execution
+                # when enforcement is best-effort; log loudly instead.
+                logger.warning(f"OPA enforcement check failed (allowing): {e}")
+
+        # Time-window enforcement (Phase 12 Sprint 3 — wired into the real path):
+        # executions outside the environment's safe window are blocked + audited.
+        window_result = get_time_window_enforcer().check_time_window(environment=environment)
+        if not window_result.is_allowed:
+            self.audit_logger.log_event(
+                event_type=AuditEventType.VALIDATION_CHECK,
+                user=request.executed_by,
+                action_id=action_id,
+                project=project,
+                success=False,
+                details={"blocked_by": "time_window", "reason": window_result.reason},
+            )
+            raise PermissionError(
+                f"Action {action_id} blocked by time window: {window_result.reason}"
+            )
+
         # Execute the command using environment-aware executor (Phase 3 integration)
         start_time = datetime.now(timezone.utc)
         try:
@@ -410,6 +489,7 @@ class ActionEngine:
                 command=command,
                 environment=env_enum,
                 timeout_seconds=getattr(request, 'timeout_seconds', 30) or 30,
+                dry_run=request.dry_run,
             )
 
             success = result.success
@@ -499,9 +579,34 @@ class ActionEngine:
                         f"Rollback triggered for action {action_id} due to: {triggered_conditions}"
                     )
 
-                    # For now, rollback requires manual approval
-                    # Automatic rollback can be configured via settings
-                    # In production, this would trigger an approval workflow
+                    # Phase 12 Sprint 3: finish the feature — create a real
+                    # PENDING rollback action so it enters the normal approval
+                    # flow (previously this only logged the plan).
+                    rollback_rec = Recommendation(
+                        priority=1,
+                        action=f"Rollback after failed action {action_id}",
+                        command=rollback_plan.rollback_command,
+                        reason=(
+                            f"Automatic rollback triggered by failed action "
+                            f"{action_id}: {triggered_conditions}"
+                        ),
+                        risk=SeverityLevel.HIGH,
+                        estimated_impact="Restores pre-execution state",
+                    )
+                    rollback_request = CreateActionRequest(
+                        triage_card_id=f"rollback-{action_id}",
+                        recommendation_id=f"rollback-{action_id}",
+                        project=project,
+                        created_by=f"rollback:{action_id}",
+                    )
+                    rollback_action = await self.create_action_from_recommendation(
+                        request=rollback_request,
+                        recommendation=rollback_rec,
+                    )
+                    logger.info(
+                        f"Rollback action {rollback_action.id} created "
+                        f"(status={rollback_action.status.value}, pending approval)"
+                    )
 
             # Record action in rate limiter after successful execution (Phase 8)
             if success:
@@ -617,9 +722,13 @@ class ActionEngine:
 _action_engine: ActionEngine | None = None
 
 
-def get_action_engine() -> ActionEngine:
-    """Get or create the singleton ActionEngine instance."""
+def get_action_engine(k8s_client: Any | None = None) -> ActionEngine:
+    """Get or create the singleton ActionEngine instance.
+
+    k8s_client is honored on first construction (later calls return the
+    existing singleton regardless).
+    """
     global _action_engine
     if _action_engine is None:
-        _action_engine = ActionEngine()
+        _action_engine = ActionEngine(k8s_client=k8s_client)
     return _action_engine

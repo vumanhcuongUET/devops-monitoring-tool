@@ -83,6 +83,9 @@
 - [Phase 10 Implementation Plan](phase-10-implementation-plan.md) — 🆕 Detailed daily tasks & deliverables (20 days)
 - [Phase 10 Deployment Guide](phase-10-deployment-guide.md) — Complete deployment guide with resource requirements
 
+### Phase 12: Review Fixes — Real Bugs & Enforcement Gaps 📋 PLANNED (2026-08-30)
+- [Phase 12 Plan](phase-12-review-fixes.md) — 4 real bugs (Slack View 500, dry_run ignored, impact estimator dead path, kubectl use-context race) + security enforcement (webhook-vs-auth conflict, Teams HMAC key, executor whitelist, self-approval) + wire-or-delete for unwired features (time-window, L1/L2/L3 cache, rollback, OPA wording)
+
 **Phase 9 Sprint Breakdown:**
 - ✅ [Sprint 1: State Management & Distributed Systems](phase-9-plan.md#sprint-1-state-management--distributed-systems-days-1-5) - Redis alert/approval state, rate limiting (22/22 passed)
 - ✅ [Sprint 2: Performance & Connection Optimization](phase-9-plan.md#sprint-2-performance--connection-optimization-days-6-10) - Connection pooling, batching, LLM streaming (22/22 passed)

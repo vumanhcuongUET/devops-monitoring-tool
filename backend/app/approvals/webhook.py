@@ -89,24 +89,28 @@ def verify_slack_signature(
 def verify_teams_hmac_signature(
     raw_body: bytes,
     auth_header: str,
-    webhook_url: str,
+    key: str,
 ) -> bool:
-    """Verify Microsoft Teams webhook HMAC signature.
+    """Verify Teams webhook HMAC signature (S4 scheme).
 
-    Teams uses a similar HMAC scheme as Slack.
+    Format: hex(HMAC-SHA256(secret, body)) in the Authorization header as
+    `sha256=<hex>`.
+
+    Note: the legacy scheme keyed the HMAC with the webhook URL — the URL is
+    not a secret, so anyone who knew it could forge valid signatures. This
+    function is key-agnostic; the caller decides the key (secret first,
+    legacy URL only behind the deprecation shim).
 
     Args:
         raw_body: Raw request body bytes
         auth_header: Authorization header value
-        webhook_url: The configured webhook URL
+        key: HMAC key (TEAMS_WEBHOOK_SECRET, or legacy webhook URL)
 
     Returns:
         True if signature is valid
     """
-    # Teams HMAC validation (similar to Slack)
-    # Format: HMAC_sha256(webhook_url, body)
     digest = hmac.new(
-        webhook_url.encode(),
+        key.encode(),
         raw_body,
         hashlib.sha256
     ).hexdigest()
@@ -234,7 +238,7 @@ async def slack_approval_webhook(
 
         elif action_type == "view_action":
             # View action details
-            action_data = engine.get_action(action_id)
+            action_data = await engine.get_action(action_id)
             if not action_data:
                 raise HTTPException(status_code=404, detail="Action not found")
 
@@ -287,15 +291,30 @@ async def teams_approval_webhook(
         # Get raw body for signature verification
         raw_body = await request.body()
 
-        # Signature verification is REQUIRED in production
-        if settings.ENVIRONMENT == "production":
-            if not settings.TEAMS_WEBHOOK_URL:
-                logger.error("TEAMS_WEBHOOK_URL not configured - rejecting Teams webhook request")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Teams webhook signature verification not configured - please set TEAMS_WEBHOOK_URL"
-                )
+        # Signature verification is REQUIRED in production. S4: the HMAC key is
+        # TEAMS_WEBHOOK_SECRET (dedicated secret, not the webhook URL — a URL
+        # is not a secret). The legacy URL-keyed scheme is accepted with a
+        # deprecation warning for one release, then removed.
+        legacy_key: str | None = None
+        if settings.TEAMS_WEBHOOK_SECRET:
+            hmac_key = settings.TEAMS_WEBHOOK_SECRET
+        elif settings.TEAMS_WEBHOOK_URL:
+            hmac_key = settings.TEAMS_WEBHOOK_URL
+            legacy_key = settings.TEAMS_WEBHOOK_URL
+        else:
+            hmac_key = None
 
+        if settings.ENVIRONMENT == "production" and not hmac_key:
+            logger.error(
+                "Teams webhook signature key not configured - rejecting Teams webhook request. "
+                "Set TEAMS_WEBHOOK_SECRET (legacy TEAMS_WEBHOOK_URL keying deprecated)."
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Teams webhook signature verification not configured - please set TEAMS_WEBHOOK_SECRET"
+            )
+
+        if hmac_key:
             if not authorization:
                 logger.error("Authorization header missing - rejecting Teams webhook request")
                 raise HTTPException(
@@ -303,18 +322,18 @@ async def teams_approval_webhook(
                     detail="Authorization header is required for Teams webhook signature verification"
                 )
 
-            if not verify_teams_hmac_signature(raw_body, authorization, settings.TEAMS_WEBHOOK_URL):
+            if not verify_teams_hmac_signature(raw_body, authorization, hmac_key):
                 logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
                 raise HTTPException(status_code=401, detail="Invalid signature")
-        elif settings.TEAMS_WEBHOOK_URL and authorization:
-            # In non-production, verify if configured (optional but recommended)
-            if not verify_teams_hmac_signature(raw_body, authorization, settings.TEAMS_WEBHOOK_URL):
-                logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
-                raise HTTPException(status_code=401, detail="Invalid signature")
+            if legacy_key:
+                logger.warning(
+                    "Teams webhook is using the deprecated TEAMS_WEBHOOK_URL-keyed HMAC scheme; "
+                    "set TEAMS_WEBHOOK_SECRET before the shim is removed next release."
+                )
         else:
             logger.warning(
                 f"Teams webhook signature verification disabled (ENVIRONMENT={settings.ENVIRONMENT}). "
-                "Configure TEAMS_WEBHOOK_URL for production security."
+                "Set TEAMS_WEBHOOK_SECRET for production security."
             )
 
         # Parse Teams Adaptive Card payload
@@ -417,7 +436,7 @@ async def teams_approval_webhook(
 
         elif action_type == "view_action":
             # View action details
-            action_data = engine.get_action(action_id)
+            action_data = await engine.get_action(action_id)
             if not action_data:
                 raise HTTPException(status_code=404, detail="Action not found")
 

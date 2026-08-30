@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-// Mock axios
+// Mock axios — no `post` on purpose: any logout() network call would throw.
 vi.mock('axios', () => ({
   default: {
     create: vi.fn(() => ({
@@ -14,6 +14,12 @@ vi.mock('axios', () => ({
       }
     }))
   }
+}))
+
+// Mock tokenManager so logout()'s clear can be observed.
+vi.mock('../auth/tokenManager', () => ({
+  getTokenManager: vi.fn(() => ({ clear: vi.fn() })),
+  setupTokenRefresh: vi.fn(),
 }))
 
 describe('API Client', () => {
@@ -44,5 +50,13 @@ describe('API Client', () => {
     const axios = (await import('axios')).default
     const instance = (axios.create as ReturnType<typeof vi.fn>).mock.results[0]?.value
     expect(instance?.interceptors.response.use).toBeDefined()
+  })
+
+  it('logout clears the local token and makes no network call (B5)', async () => {
+    const { getTokenManager } = await import('../auth/tokenManager')
+    const { logout } = await import('./client')
+    await logout()
+    const tm = vi.mocked(getTokenManager).mock.results.at(-1)?.value
+    expect(tm?.clear).toHaveBeenCalledTimes(1)
   })
 })

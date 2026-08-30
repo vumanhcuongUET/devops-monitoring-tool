@@ -1,6 +1,6 @@
 """Unit tests for Action Engine."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -321,6 +321,71 @@ class TestActionEngine:
         mock_audit_logger.log_action_approved.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_self_approval_blocked(self, action_engine, mock_approval_tracker):
+        """S6: creator cannot approve their own action (Phase 12)."""
+        mock_approval_tracker.get = AsyncMock(return_value={
+            "id": "act-123",
+            "status": ActionStatus.PENDING,
+            "created_by": "john.doe",
+            "context": {"environment": "development"},
+        })
+        action_engine.permission_checker.check = MagicMock(return_value=MagicMock(allowed=True))
+
+        request = ApproveActionRequest(approved_by="john.doe")
+
+        with pytest.raises(PermissionError, match="Self-approval blocked"):
+            await action_engine.approve_action("act-123", request)
+
+        mock_approval_tracker.set_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_approve_without_permission_in_production_blocked(self, action_engine, mock_approval_tracker):
+        """S6: approver without 'approve' permission in production is blocked."""
+        mock_approval_tracker.get = AsyncMock(return_value={
+            "id": "act-123",
+            "status": ActionStatus.PENDING,
+            "context": {"environment": "production"},
+        })
+        action_engine.permission_checker.check = MagicMock(
+            return_value=MagicMock(allowed=False, reason="read-only env")
+        )
+
+        request = ApproveActionRequest(approved_by="someone.else")
+
+        with pytest.raises(PermissionError, match="lacks 'approve' permission"):
+            await action_engine.approve_action("act-123", request)
+
+        mock_approval_tracker.set_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_approve_in_development_allowed(self, action_engine, mock_approval_tracker):
+        """S6: permitted approver in development passes the integrity check."""
+        mock_approval_tracker.get = AsyncMock(return_value={
+            "id": "act-123",
+            "status": ActionStatus.PENDING,
+            "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL,
+                action="get",
+                resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Check pod status",
+            "description": "Get pod status",
+            "context": {"environment": "development"},
+        })
+        action_engine.permission_checker.check = MagicMock(return_value=MagicMock(allowed=True))
+
+        request = ApproveActionRequest(approved_by="approver.one")
+
+        action = await action_engine.approve_action("act-123", request)
+
+        assert action.status == ActionStatus.APPROVED
+        mock_approval_tracker.set_status.assert_called_once()
+
+
+    @pytest.mark.asyncio
     async def test_approve_action_fails_for_non_pending(
         self,
         action_engine,
@@ -484,8 +549,11 @@ class TestActionEngine:
         # Execute
         action = await action_engine.execute_action("act-123", request)
 
-        # Verify executor called with dry_run
+        # Verify executor called with dry_run — the request flag must reach the
+        # executor, not just the audit log (Phase 12 B2 regression guard).
         action_engine.env_aware_executor.execute.assert_called_once()
+        _, kwargs = action_engine.env_aware_executor.execute.call_args
+        assert kwargs.get("dry_run") is True
 
     @pytest.mark.asyncio
     async def test_execute_action_failure(
@@ -702,3 +770,134 @@ class TestActionEngineSingleton:
 
         assert engine is not None
         assert isinstance(engine, ActionEngine)
+
+
+class TestTimeWindowWiring:
+    """Phase 12 Sprint 3: time-window enforcement is in the execute path."""
+
+    @pytest.mark.asyncio
+    async def test_execution_outside_window_blocked_and_audited(self, action_engine, mock_approval_tracker, mock_audit_logger):
+
+        from app.models.audit import AuditEventType
+
+        window_enforcer = MagicMock()
+        window_enforcer.check_time_window.return_value = MagicMock(
+            is_allowed=False, reason="Not allowed in time window 'business-hours'"
+        )
+
+        state = {
+            "id": "act-123",
+            "status": ActionStatus.APPROVED,
+            "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL, action="get", resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Check pod status",
+            "description": "Get pod status",
+            "context": {"environment": "production"},
+        }
+        mock_approval_tracker.get = AsyncMock(return_value=state)
+
+        with patch("app.actions.engine.get_time_window_enforcer", return_value=window_enforcer):
+            request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+            with pytest.raises(PermissionError, match="time window"):
+                await action_engine.execute_action("act-123", request)
+
+        window_enforcer.check_time_window.assert_called_once()
+        blocked = [
+            c for c in mock_audit_logger.log_event.call_args_list
+            if c.kwargs.get("details", {}).get("blocked_by") == "time_window"
+        ]
+        assert blocked, "time-window block must be audit-logged"
+        assert blocked[0].kwargs["event_type"] == AuditEventType.VALIDATION_CHECK
+
+    @pytest.mark.asyncio
+    async def test_failed_action_creates_pending_rollback_action(self, action_engine, mock_approval_tracker):
+        """Phase 12 Sprint 3: failed execution leaves a PENDING rollback action."""
+        from app.models.actions import ExecutionResult
+
+        state = {
+            "id": "act-fail",
+            "status": ActionStatus.APPROVED,
+            "command": "kubectl apply -f bad.yaml",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL, action="apply", resource_type="configmap",
+            ),
+            "project": "test-project",
+            "title": "Apply config",
+            "description": "Apply config",
+            "context": {"environment": "development"},
+        }
+        mock_approval_tracker.get = AsyncMock(return_value=state)
+
+        action_engine.env_aware_executor.execute = AsyncMock(return_value=ExecutionResult(
+            success=False, exit_code=1, stdout="", stderr="boom", duration_seconds=0.1,
+        ))
+        action_engine.feedback = MagicMock()
+        # Rollback commands are mutating — real validator requires approval for them
+        action_engine.validator.validate.return_value = ValidationResult(
+            is_valid=True, allowed=True, requires_approval=True,
+            reason="mutating", risk_level=RiskLevel.HIGH,
+        )
+
+        request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+        await action_engine.execute_action("act-fail", request)
+
+        statuses = [
+            c.kwargs.get("status") for c in mock_approval_tracker.set_status.call_args_list
+        ]
+        from app.models.actions import ActionStatus as AS
+        assert any(s == AS.PENDING for s in statuses), (
+            "a PENDING rollback action must be created after a failed execution"
+        )
+
+
+class TestOPAEnforcement:
+    """Phase 12 Sprint 3: flag-gated OPA enforcement in the execute path."""
+
+    def _approved_state(self):
+        return {
+            "id": "act-123",
+            "status": ActionStatus.APPROVED,
+            "command": "kubectl get pods",
+            "command_type": CommandType.KUBECTL,
+            "parsed_params": CommandParams(
+                command_type=CommandType.KUBECTL, action="get", resource_type="pod",
+            ),
+            "project": "test-project",
+            "title": "Check pod status",
+            "description": "Get pod status",
+            "context": {"environment": "development"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_opa_deny_blocks_when_enforce_enabled(self, action_engine, mock_approval_tracker):
+        from app.governance.opa_client import PolicyDecision, PolicyEvaluationResult
+
+        mock_approval_tracker.get = AsyncMock(return_value=self._approved_state())
+        opa = MagicMock()
+        opa.evaluate_action = AsyncMock(return_value=PolicyEvaluationResult(decision=PolicyDecision.DENY))
+
+        with patch("app.actions.engine.settings") as mock_settings, \
+             patch("app.actions.engine.get_opa_client", return_value=opa):
+            mock_settings.OPA_ENFORCE = True
+            request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+            with pytest.raises(PermissionError, match="OPA policy"):
+                await action_engine.execute_action("act-123", request)
+
+    @pytest.mark.asyncio
+    async def test_opa_unreachable_does_not_block(self, action_engine, mock_approval_tracker):
+        mock_approval_tracker.get = AsyncMock(return_value=self._approved_state())
+        opa = MagicMock()
+        opa.evaluate_action = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+        with patch("app.actions.engine.settings") as mock_settings, \
+             patch("app.actions.engine.get_opa_client", return_value=opa):
+            mock_settings.OPA_ENFORCE = True
+            request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+            action = await action_engine.execute_action("act-123", request)
+
+        assert action.status == ActionStatus.EXECUTED

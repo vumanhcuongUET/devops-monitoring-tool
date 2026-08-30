@@ -241,17 +241,9 @@ export async function initializeAuth(): Promise<void> {
  * Logout and clear tokens
  */
 export async function logout(): Promise<void> {
-  try {
-    // Call backend logout endpoint (if available)
-    await axios.post(`${API_URL}/auth/logout`, {}, {
-      withCredentials: true,
-    });
-  } catch (error) {
-    console.error('Logout request failed:', error);
-  } finally {
-    // Always clear local token
-    tokenManager.clear();
-  }
+  // No backend logout endpoint exists — tokens are stateless JWTs; clearing
+  // the local token is the whole logout.
+  tokenManager.clear();
 }
 
 /**

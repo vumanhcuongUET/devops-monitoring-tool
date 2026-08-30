@@ -1,4 +1,20 @@
 services:
+  # Optional Redis for distributed state (alert/approval/rate-limit).
+  # Enable with: docker compose --profile redis up
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    networks:
+      - backend-net
+
   backend:
     build:
       context: ./backend

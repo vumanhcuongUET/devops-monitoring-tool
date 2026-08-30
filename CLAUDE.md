@@ -31,7 +31,7 @@ devops_ai_agentics_2026/
 │   ├── alembic/           # DB migrations (PostgreSQL/TimescaleDB)
 │   ├── app/actions/       # Action engine, approvals, remediation, guardrails
 │   ├── app/agents/        # Multi-agent AI architecture (Phase 10)
-│   ├── app/governance/    # RBAC, OPA policy enforcement
+│   ├── app/governance/    # RBAC, OPA policy evaluation (enforcement flag-gated)
 │   ├── app/skills/        # 32-skill analysis library
 │   └── tests/             # unit/ integration/ security/ performance/
 ├── frontend/              # React dashboard UI
@@ -117,7 +117,7 @@ Frontend (React)  ──REST/WebSocket──>  Backend (FastAPI)
     │                                      ├── Skills (32)          → FinOps/Security/DevOps/...
     │                                      │
     │                                      ├── Redis                → alert state, approvals,
-    │                                      │                          rate limits, L2 cache
+    │                                      │                          rate limits
     │                                      └── PostgreSQL + TimescaleDB → metrics history (alembic)
     └── TanStack Query + WebSocket hook (single refcounted /ws/live connection)
 ```
@@ -220,9 +220,16 @@ See `docs/skills-library-catalog.md` for the skill catalog (status noted there).
 - `ai-prod-viewer` - Read-only in production
 - `ai-prod-operator` - Scale-only in production
 
+**Identity model (Phase 12)**: single-operator internal tool — auth is a shared
+API key; `executed_by`/`approved_by`/`created_by` are attribution labels, not
+authorization. RBAC is environment-keyed. Per-user identity is a Phase 13
+candidate. Approval integrity: self-approval blocked (`ALLOW_SELF_APPROVAL`
+escape hatch, default off) and approvers need the `approve` permission for the
+action's environment.
+
 ### OPA Integration
 
-Policy validation using Open Policy Agent:
+OPA policy **evaluation** API (fail-closed evaluation). The default enforcement path is validator + RBAC + approval + rate limiter; `opa_client.evaluate_action` joins the execute path only when `OPA_ENFORCE=true`. Policies:
 - `actions.rego` - Action validation policies
 - `resources.rego` - Resource protection policies
 - `time_windows.rego` - Time-based restriction policies
@@ -235,7 +242,7 @@ The platform has undergone comprehensive security review (Aug 2026) and is **APP
 - Defense-in-depth architecture with 5 layers
 - Command whitelisting and validation
 - Environment-based RBAC
-- OPA policy enforcement
+- OPA policy evaluation (enforcement optional via `OPA_ENFORCE=true`, default off)
 - Comprehensive audit logging
 
 See `docs/security-review-2026-08-20.md` for full security assessment.

@@ -11,6 +11,29 @@ STATE_FILE = "data/approval_state.json"
 HISTORY_FILE = "data/approval_history.json"
 
 
+def build_redis_url(db: int | None = None) -> tuple[str, str, int, str | None]:
+    """Phase 12 Sprint 3: single source for approval-store Redis URLs.
+
+    Returns (url, host, port, password), honoring REDIS_URL when set,
+    falling back to REDIS_HOST/PORT/PASSWORD + REDIS_DB_APPROVALS.
+    """
+    from urllib.parse import urlparse
+
+    from app.config import settings
+
+    if settings.REDIS_URL:
+        parsed = urlparse(settings.REDIS_URL)
+        return (
+            settings.REDIS_URL,
+            parsed.hostname or settings.REDIS_HOST,
+            parsed.port or settings.REDIS_PORT,
+            parsed.password or settings.REDIS_PASSWORD,
+        )
+    password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
+    url = f"redis://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}/{db or settings.REDIS_DB_APPROVALS}"
+    return url, settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_PASSWORD
+
+
 class ApprovalStateTracker:
     """Track approval state for actions (similar to AlertStateTracker)."""
 
@@ -30,27 +53,14 @@ class ApprovalStateTracker:
             )
             from app.config import settings
 
-            # Build Redis URL from settings or use REDIS_URL if provided
-            if settings.REDIS_URL:
-                redis_url = settings.REDIS_URL
-            else:
-                password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
-                redis_url = f"redis://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}"
-
-            # Parse URL components for Redis client
-            from urllib.parse import urlparse
-            parsed = urlparse(redis_url if settings.REDIS_URL else f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}")
+            _, host, port, password = build_redis_url()
 
             self._state = RedisApprovalStore(
-                redis_host=parsed.hostname or settings.REDIS_HOST,
-                redis_port=parsed.port or settings.REDIS_PORT,
-                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_host=host, redis_port=port, redis_password=password,
                 redis_db=settings.REDIS_DB_APPROVALS,
             )
             self._history = RedisApprovalHistory(
-                redis_host=parsed.hostname or settings.REDIS_HOST,
-                redis_port=parsed.port or settings.REDIS_PORT,
-                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_host=host, redis_port=port, redis_password=password,
                 redis_db=settings.REDIS_DB_APPROVALS,
             )
         else:
@@ -260,23 +270,14 @@ def get_approval_history(use_redis: bool = False) -> ApprovalHistory:
     global _approval_history
     if _approval_history is None:
         if use_redis:
-            from urllib.parse import urlparse
 
             from app.approvals.redis_store import RedisApprovalHistory
             from app.config import settings
 
-            if settings.REDIS_URL:
-                redis_url = settings.REDIS_URL
-            else:
-                password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
-                redis_url = f"redis://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}"
-
-            parsed = urlparse(redis_url if settings.REDIS_URL else f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB_APPROVALS}")
+            _, host, port, password = build_redis_url()
 
             _approval_history = RedisApprovalHistory(
-                redis_host=parsed.hostname or settings.REDIS_HOST,
-                redis_port=parsed.port or settings.REDIS_PORT,
-                redis_password=parsed.password or settings.REDIS_PASSWORD,
+                redis_host=host, redis_port=port, redis_password=password,
                 redis_db=settings.REDIS_DB_APPROVALS,
             )
         else:

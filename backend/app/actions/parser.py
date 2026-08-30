@@ -5,6 +5,11 @@ import shlex
 
 from app.models.actions import CommandParams, CommandType
 
+# Phase 12 S5: the only binaries the executor may run. Parser and executor
+# share this one source of truth (validator.py applies the command-policy
+# layer on top; this is the hard argv[0] floor).
+ALLOWED_BINARIES = {"kubectl", "helm", "argocd"}
+
 
 class CommandParser:
     """Parse shell commands into structured parameters."""

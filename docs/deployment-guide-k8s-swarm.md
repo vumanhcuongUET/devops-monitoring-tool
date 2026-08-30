@@ -3,7 +3,7 @@
 Hướng dẫn triển khai **DevOps AI Agentics 2026** (backend FastAPI + frontend React + Redis + PostgreSQL/TimescaleDB) lên **Kubernetes** (khuyến nghị cho production, manifests sẵn trong `k8s/`) hoặc **Docker Swarm** (môi trường đơn giản hơn, dùng `docker-stack.yml` ở thư mục gốc).
 
 > **Ràng buộc quan trọng nhất — backend chạy 1 replica.**
-> AlertEngine chạy in-process và WebSocket broadcast là pod-local. Chạy ≥2 replica sẽ **nhân đôi alert và mất realtime event** (phát hiện review H1, 2026-08-29). Chỉ scale ra sau khi tách alert-worker + Redis pub/sub (debt Phase 12). Frontend thì thoải mái scale.
+> AlertEngine chạy in-process và WebSocket broadcast là pod-local. Chạy ≥2 replica sẽ **nhân đôi alert và mất realtime event** (phát hiện review H1, 2026-08-29). Chỉ scale ra sau khi tách alert-worker + Redis pub/sub (debt [Phase 12](phase-12-review-fixes.md), mục Deferred). Frontend thì thoải mái scale.
 
 ## Kiến trúc & phụ thuộc
 

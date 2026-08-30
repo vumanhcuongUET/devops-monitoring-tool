@@ -26,6 +26,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
 
+    # Chat-platform webhook paths exempt from bearer/api-key auth. The
+    # platforms' own HMAC signature IS the authentication for these paths
+    # (Slack fails hard without SLACK_SIGNING_SECRET; Teams fails hard in
+    # production without TEAMS_WEBHOOK_SECRET — see approvals/webhook.py).
+    WEBHOOK_AUTH_PATHS = "/api/v1/approvals/webhook/"
+
     async def dispatch(self, request, call_next):
         if not settings.AUTH_ENABLED:
             return await call_next(request)
@@ -33,6 +39,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         # Allow docs, health, and static assets
         if path in self.PUBLIC_PATHS or path.startswith("/docs/oauth2"):
+            return await call_next(request)
+
+        # Slack/Teams signature-verified webhooks: signature is the auth
+        if path.startswith(self.WEBHOOK_AUTH_PATHS):
             return await call_next(request)
 
         # Check API key
@@ -109,7 +119,8 @@ async def lifespan(app: FastAPI):
     slo_task = asyncio.create_task(slo_reporter.start(app.state))
 
     # Phase 2: Initialize Action Engine
-    action_engine = get_action_engine()
+    # Phase 12 B3: inject the real k8s client so impact estimation can use it.
+    action_engine = get_action_engine(k8s_client=app.state.k8s_client)
     approval_tracker = get_approval_tracker(use_redis=settings.APPROVAL_STATE_USE_REDIS)
     approval_tracker.set_ws_manager(ws_manager)
     app.state.action_engine = action_engine
@@ -121,7 +132,6 @@ async def lifespan(app: FastAPI):
         es_client=app.state.es_client,
         prom_client=app.state.prometheus_client,
         k8s_client=app.state.k8s_client,
-        l2_cache=None  # Will be integrated with cache module
     )
 
     pool_manager = ConnectionPoolManager()

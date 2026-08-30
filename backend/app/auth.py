@@ -4,40 +4,7 @@ import hmac
 import json
 import time
 
-from fastapi import HTTPException, Request, Security
-from fastapi.security import APIKeyHeader, HTTPBearer
-
 from app.config import settings
-
-
-class APIKeyAuth:
-    """Validates API key from X-API-Key header."""
-
-    _scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-    async def __call__(self, request: Request, api_key: str = Security(_scheme)) -> str:
-        if not settings.AUTH_ENABLED:
-            return "anonymous"
-
-        if api_key and _is_valid_api_key(api_key):
-            return f"apikey:{api_key[:8]}"
-
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-
-class BearerAuth:
-    """Validates JWT or HMAC-signed bearer tokens."""
-
-    _scheme = HTTPBearer(auto_error=False)
-
-    async def __call__(self, request: Request, credentials=Security(_scheme)) -> str:
-        if not settings.AUTH_ENABLED:
-            return "anonymous"
-
-        if credentials and _is_valid_token(credentials.credentials):
-            return f"bearer:{credentials.credentials[:8]}"
-
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def _is_valid_api_key(key: str) -> bool:
@@ -88,5 +55,4 @@ def _b64decode(s: str) -> bytes:
     return base64.urlsafe_b64decode(s)
 
 
-api_key_auth = APIKeyAuth()
-bearer_auth = BearerAuth()
+

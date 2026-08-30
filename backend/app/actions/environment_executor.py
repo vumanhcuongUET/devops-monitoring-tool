@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.governance.ai_rbac import ENVIRONMENT_PERMISSIONS, AIPermission
+from app.actions.parser import ALLOWED_BINARIES
 from app.models.actions import ExecutionResult
 from app.utils.logging import sanitize_command
 
@@ -170,6 +171,7 @@ class EnvironmentAwareCommandExecutor:
         environment: ExecutionEnvironment | None = None,
         required_permission: AIPermission | None = None,
         timeout_seconds: int = 30,
+        dry_run: bool | None = None,
     ) -> ExecutionResult:
         """Execute a command with environment-specific service account.
 
@@ -178,6 +180,8 @@ class EnvironmentAwareCommandExecutor:
             environment: Target environment (uses default if None)
             required_permission: Required permission for the operation
             timeout_seconds: Execution timeout
+            dry_run: Override the executor's dry_run mode for this call
+                (None = use the executor default)
 
         Returns:
             ExecutionResult
@@ -188,6 +192,7 @@ class EnvironmentAwareCommandExecutor:
             subprocess.TimeoutExpired: If command times out
         """
         env = environment or self.default_environment
+        use_dry_run = self.dry_run if dry_run is None else dry_run
 
         # Validate permissions
         if required_permission:
@@ -215,7 +220,7 @@ class EnvironmentAwareCommandExecutor:
         start_time = datetime.now(timezone.utc)
 
         try:
-            if self.dry_run:
+            if use_dry_run:
                 sanitized_cmd = sanitize_command(command)
                 logger.info(f"DRY RUN: Would execute in {env.value} with SA {service_account}: {sanitized_cmd}")
                 result = ExecutionResult(
@@ -237,44 +242,35 @@ class EnvironmentAwareCommandExecutor:
                 except ValueError as e:
                     raise ValueError(f"Failed to parse command: {e}") from e
 
-                # Prepend kubectl context switching if context is specified
-                if context:
-                    # We need to run two commands: set context, then the actual command
-                    # We do this by running kubectl config use-context first
-                    context_args = ["kubectl", "config", "use-context", context]
+                # Stateless per-command context selection — never `kubectl config
+                # use-context`, which mutates shared kubeconfig state (concurrent
+                # actions could cross-apply each other's cluster context).
+                if context and kubeconfig:
+                    # File-based kubeconfig only; in-cluster config has no contexts.
+                    binary = cmd_args[0].lower() if cmd_args else ""
+                    if binary.startswith("kubectl"):
+                        cmd_args = (
+                            cmd_args[:1]
+                            + ["--context", context, "--kubeconfig", kubeconfig]
+                            + cmd_args[1:]
+                        )
+                    elif binary == "helm":
+                        cmd_args = (
+                            cmd_args[:1]
+                            + ["--kube-context", context, "--kubeconfig", kubeconfig]
+                            + cmd_args[1:]
+                        )
+                    # argocd has no context concept — runs as-is
 
-                    # Set up environment with KUBECONFIG
-                    proc_env = os.environ.copy()
-                    proc_env["KUBECONFIG"] = kubeconfig
+                proc_env = os.environ.copy()
+                proc_env["KUBECONFIG"] = kubeconfig
 
-                    # Execute context switch first
-                    context_process = await asyncio.create_subprocess_exec(
-                        *context_args,
-                        env=proc_env,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-
-                    await context_process.wait()
-
-                    # Now execute the actual command with the same environment
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd_args,
-                        env=proc_env,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                else:
-                    # No context switch needed, just execute with KUBECONFIG
-                    proc_env = os.environ.copy()
-                    proc_env["KUBECONFIG"] = kubeconfig
-
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd_args,
-                        env=proc_env,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
+                process = await asyncio.create_subprocess_exec(
+                    *cmd_args,
+                    env=proc_env,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
 
                 try:
                     stdout, stderr = await asyncio.wait_for(
@@ -344,12 +340,21 @@ class EnvironmentAwareCommandExecutor:
     def _validate_command(self, command: str) -> bool:
         """Validate command for safety.
 
+        Phase 12 S5: argv[0] must be in the shared ALLOWED_BINARIES whitelist
+        (parser.py): only kubectl/helm/argocd pass, never an arbitrary binary.
+
         Args:
             command: Command to validate
 
         Returns:
             True if command is safe to execute
         """
+        # S5 binary whitelist (argv[0] floor)
+        first = shlex.split(command)[0] 
+        if first not in ALLOWED_BINARIES:
+            logger.warning(f"Blocked non-whitelisted binary: {first!r}")
+            return False
+
         # Basic validation rules
         dangerous_patterns = [
             "rm -rf /",

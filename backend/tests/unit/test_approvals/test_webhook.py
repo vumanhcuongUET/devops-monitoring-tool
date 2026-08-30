@@ -626,6 +626,53 @@ class TestTeamsApprovalWebhook:
         assert exc_info.value.status_code == 400
 
 
+    def _ts_sig(self, secret, body, ts):
+        import hashlib
+        import hmac as hmac_module
+
+        return "sha256=" + hmac_module.new(
+            secret.encode(), f"{ts}.".encode() + body, hashlib.sha256
+        ).hexdigest()
+
+    @pytest.mark.asyncio
+    async def test_teams_replay_window_fresh_timestamp_passes(self, mock_request):
+        """Phase 13: signature over {timestamp}.body within the window passes."""
+        import time as time_module
+
+        body = b'{"test": "data"}'
+        mock_request.body = AsyncMock(return_value=body)
+        secret = "dedicated-teams-secret"
+        now = str(int(time_module.time()))
+        sig = self._ts_sig(secret, body, now)
+
+        with patch("app.approvals.webhook.settings") as mock_settings_class:
+            mock_settings_class.ENVIRONMENT = "production"
+            mock_settings_class.TEAMS_WEBHOOK_SECRET = secret
+
+            with pytest.raises(HTTPException) as exc_info:
+                await teams_approval_webhook(mock_request, authorization=sig, x_timestamp=now)
+
+        assert exc_info.value.status_code == 400  # passed the signature gate
+
+    @pytest.mark.asyncio
+    async def test_teams_replay_window_stale_timestamp_rejected(self, mock_request):
+        """A captured request replayed after the window is rejected."""
+        import time as time_module
+
+        body = b'{"test": "data"}'
+        mock_request.body = AsyncMock(return_value=body)
+        secret = "dedicated-teams-secret"
+        stale = str(int(time_module.time()) - 3600)
+        sig = self._ts_sig(secret, body, stale)
+
+        with patch("app.approvals.webhook.settings") as mock_settings_class:
+            mock_settings_class.ENVIRONMENT = "production"
+            mock_settings_class.TEAMS_WEBHOOK_SECRET = secret
+
+            with pytest.raises(HTTPException) as exc_info:
+                await teams_approval_webhook(mock_request, authorization=sig, x_timestamp=stale)
+
+        assert exc_info.value.status_code == 401
 class TestApprovalWebhookHealth:
     """Test webhook health check endpoint."""
 

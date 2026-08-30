@@ -236,6 +236,12 @@ class AlertEngine:
             await self._ws_manager.broadcast({"type": "alert_resolved", "data": event})
 
     async def _notify(self, rule, event: dict):
+        # Phase 13 fencing: skip side effects if leadership was lost
+        # mid-cycle (the wrapper only cancels between renew ticks).
+        fence = getattr(self, "leadership", None)
+        if fence is not None and not await fence.is_mine():
+            logger.warning("Lost leadership — skipping notifications for %s", event.get("rule_name"))
+            return
         if rule.notify_slack:
             await self.slack.send(event)
         if rule.notify_email:

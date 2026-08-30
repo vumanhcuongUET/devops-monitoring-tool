@@ -82,6 +82,10 @@ class SloReporter:
                     pass
 
         message = self._format_slack_message(slo_results, slow_apis_map)
+        fence = getattr(self, "leadership", None)
+        if fence is not None and not await fence.is_mine():
+            logger.warning("Lost leadership — skipping SLO report (another pod reports)")
+            return
         await self._post_to_slack(message)
 
         self._save_last_report()

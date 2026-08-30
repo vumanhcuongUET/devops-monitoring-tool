@@ -139,6 +139,17 @@ class ResourceOptimizerSkill(BaseSkill):
             except Exception:
                 return []  # missing series degrades to "unknown", never fails the run
 
+        # resolve real deployment names when a k8s client is available —
+        # beats the pod-name heuristic, which is wrong for StatefulSets
+        deployment_names: set[str] = set()
+        k8s = ((context or {}).get("clients") or {}).get("k8s")
+        if k8s is not None and getattr(k8s, "available", True):
+            try:
+                for d in await k8s.list_deployments(namespace):
+                    deployment_names.add(d["name"])
+            except Exception:
+                pass  # heuristic fallback stays
+
         usage_cpu = await q(
             "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\""
             + selector + "}[" + window + "]))"
@@ -173,13 +184,18 @@ class ResourceOptimizerSkill(BaseSkill):
             cpu_r, mem_r = rc.get(pod_key), rm.get(pod_key)
             rec_cpu = round(cpu_u * 1.5, 4) if cpu_r else None
             rec_mem = round(mem_u * 1.5, 1) if mem_r else None
+            # longest real deployment name the pod starts with; heuristic
+            # fallback (strip ReplicaSet/Pod hash suffix) otherwise
+            deployment = next(
+                (name for name in sorted(deployment_names, key=len, reverse=True)
+                 if pod.startswith(name + "-")),
+                pod.rsplit("-", 2)[0] if pod.count("-") >= 2 else pod,
+            )
             resources.append({
                 "namespace": ns,
                 "pod": pod,
                 "name": pod,
-                # deployment guess from pod name — wrong for StatefulSets
-                # (pg-0 stays pg-0); command checks will surface that
-                "deployment": pod.rsplit("-", 2)[0] if pod.count("-") >= 2 else pod,
+                "deployment": deployment,
                 "cpu_usage": round(cpu_u, 4),
                 "mem_usage_bytes": round(mem_u, 1),
                 "cpu_request": cpu_r,

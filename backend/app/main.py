@@ -130,19 +130,23 @@ async def lifespan(app: FastAPI):
     if settings.ALERT_ENGINE_LEADER_LOCK:
         from app.alerting.leader import RedisLeaderLock, run_as_leader
 
+        engine_lock = RedisLeaderLock("alert-engine")
+        slo_lock = RedisLeaderLock("slo-reporter")
+        alert_engine.leadership = engine_lock  # fencing before notifications
         alert_task = asyncio.create_task(
             run_as_leader(
                 "alert-engine",
                 lambda: alert_engine.start(app.state),
-                RedisLeaderLock("alert-engine"),
+                engine_lock,
             )
         )
         slo_reporter = SloReporter(slo_client=app.state.slo_client)
+        slo_reporter.leadership = slo_lock
         slo_task = asyncio.create_task(
             run_as_leader(
                 "slo-reporter",
                 lambda: slo_reporter.start(app.state),
-                RedisLeaderLock("slo-reporter"),
+                slo_lock,
             )
         )
         logger.info("Phase 12 H1: alert engine + SLO reporter under Redis leader lock")

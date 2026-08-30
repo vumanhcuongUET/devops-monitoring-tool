@@ -11,6 +11,7 @@ import hmac
 import json
 import logging
 import time
+
 import urllib.parse
 from typing import Any
 
@@ -22,6 +23,9 @@ from app.config import settings
 # Lazy import to avoid circular import with actions/engine
 # from app.actions.engine import get_action_engine
 from app.models.actions import ApproveActionRequest, RejectActionRequest
+
+# 5 min replay window — same order as the Slack timestamp check
+TEAM_WEBHOOK_REPLAY_WINDOW_SECONDS = 300
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 logger = logging.getLogger(__name__)
@@ -90,6 +94,7 @@ def verify_teams_hmac_signature(
     raw_body: bytes,
     auth_header: str,
     key: str,
+    timestamp: str | None = None,
 ) -> bool:
     """Verify Teams webhook HMAC signature (S4 scheme).
 
@@ -109,9 +114,19 @@ def verify_teams_hmac_signature(
     Returns:
         True if signature is valid
     """
+    if timestamp is not None:
+        try:
+            if abs(time.time() - float(timestamp)) > TEAM_WEBHOOK_REPLAY_WINDOW_SECONDS:
+                return False
+        except ValueError:
+            return False
+        signed = f"{timestamp}.".encode() + raw_body
+    else:
+        signed = raw_body
+
     digest = hmac.new(
         key.encode(),
-        raw_body,
+        signed,
         hashlib.sha256
     ).hexdigest()
 
@@ -277,6 +292,7 @@ async def slack_approval_webhook(
 async def teams_approval_webhook(
     request: Request,
     authorization: str | None = Header(None, alias="Authorization"),
+    x_timestamp: str | None = Header(None, alias="X-Timestamp"),
 ) -> dict[str, Any]:
     """Handle Microsoft Teams approval button interactions.
 
@@ -322,9 +338,16 @@ async def teams_approval_webhook(
                     detail="Authorization header is required for Teams webhook signature verification"
                 )
 
-            if not verify_teams_hmac_signature(raw_body, authorization, hmac_key):
+            # isinstance guard: direct callers (tests) may skip FastAPI's Header default
+            ts = x_timestamp if isinstance(x_timestamp, str) else None
+            if not verify_teams_hmac_signature(raw_body, authorization, hmac_key, timestamp=ts):
                 logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
                 raise HTTPException(status_code=401, detail="Invalid signature")
+            if not ts:
+                logger.warning(
+                    "Teams webhook verified without X-Timestamp (replay window not enforced); "
+                    "the header becomes mandatory next release."
+                )
         else:
             logger.warning(
                 f"Teams webhook signature verification disabled (ENVIRONMENT={settings.ENVIRONMENT}). "

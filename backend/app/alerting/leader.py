@@ -98,6 +98,19 @@ class RedisLeaderLock:
             )
         )
 
+    async def is_mine(self) -> bool:
+        """Fencing check (best effort): does this pod still own the lock?
+
+        Side-effectful work (notifications, reports) re-checks right before
+        acting so a pod that lost leadership mid-cycle stays silent. Any
+        Redis error answers False — a missed notification is cheaper than a
+        duplicate one.
+        """
+        try:
+            return await self._get_client().get(self.key) == self._identity
+        except Exception:
+            return False
+
     async def release(self) -> None:
         """Release the lock if and only if we still own it."""
         try:

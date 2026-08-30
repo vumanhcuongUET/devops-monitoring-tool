@@ -87,6 +87,11 @@ metadata:
   name: alert-data-pvc
   namespace: devops-monitor
 spec:
+  # ReadWriteOnce: correct for the default 1-replica deployment. Scaling the
+  # backend past 1 replica (with ALERT_ENGINE_LEADER_LOCK/WS_FANOUT_USE_REDIS)
+  # and wanting rule-edit endpoints on every pod needs ReadWriteMany — most
+  # default StorageClasses are RWO-only, so switch deliberately:
+  #   accessModes: ["ReadWriteMany"]   # requires an RWX-capable StorageClass
   accessModes:
     - ReadWriteOnce
   resources:

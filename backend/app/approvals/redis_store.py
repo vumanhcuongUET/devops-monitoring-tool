@@ -9,27 +9,23 @@ Features:
 - TTL-based automatic cleanup (7-day retention for audit trail)
 - Distributed locking for concurrent modification prevention
 - Separate Redis database for approval state
+
+Redis plumbing (client, locking, JSON read-modify-write, history lists)
+lives in app.redis_store_base; this module holds the approval schema.
 """
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-try:
-    import redis.asyncio as redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-    redis = None
-
 from app.models.actions import ActionStatus
+from app.redis_store_base import BaseRedisHistory, BaseRedisStateStore, now_utc
 
 logger = logging.getLogger(__name__)
 
 
-class RedisApprovalStore:
+class RedisApprovalStore(BaseRedisStateStore):
     """
     Redis-backed approval state with distributed locking.
 
@@ -62,21 +58,21 @@ class RedisApprovalStore:
             ttl_seconds: TTL for approval state entries (default 7 days)
             lock_ttl: TTL for distributed locks (default 30 seconds)
         """
-        if not REDIS_AVAILABLE:
-            raise ImportError("redis package is required for RedisApprovalStore")
-
-        self.redis = redis.Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=redis_db,
-            decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=5,
+        super().__init__(
+            namespace="approval",
+            entity="approval",
+            redis_host=redis_host,
+            redis_port=redis_port,
+            redis_password=redis_password,
+            redis_db=redis_db,
+            ttl_seconds=ttl_seconds,
+            lock_ttl=lock_ttl,
         )
-        self.ttl_seconds = ttl_seconds
-        self.lock_ttl = lock_ttl
         self._ws_manager = None
+
+    def _serialize_state(self, state: dict[str, Any]) -> str:
+        """Serialize with default=str so enum/datetime fields never fail."""
+        return json.dumps(state, default=str)
 
     def set_ws_manager(self, manager):
         """Set the WebSocket manager for real-time updates."""
@@ -94,27 +90,6 @@ class RedisApprovalStore:
                 },
             })
 
-    async def get(self, action_id: str) -> dict[str, Any] | None:
-        """
-        Get approval state for an action.
-
-        Args:
-            action_id: Action ID
-
-        Returns:
-            Approval state dict or None if not found
-        """
-        key = f"approval:state:{action_id}"
-
-        try:
-            data = await self.redis.get(key)
-            if data:
-                return json.loads(data)
-            return None
-        except Exception as e:
-            logger.error(f"RedisApprovalStore: Error getting state for {action_id}: {e}")
-            return None
-
     async def get_all(self) -> dict[str, dict[str, Any]]:
         """
         Get all approval states.
@@ -122,34 +97,7 @@ class RedisApprovalStore:
         Returns:
             Dictionary mapping action_id to state
         """
-        pattern = "approval:state:*"
-
-        try:
-            keys = []
-            async for key in self.redis.scan_iter(match=pattern):
-                keys.append(key)
-
-            if not keys:
-                return {}
-
-            # Fetch all values
-            values = await self.redis.mget(keys)
-
-            # Build result dict
-            result = {}
-            for key, value in zip(keys, values, strict=False):
-                if value:
-                    key_s = key.decode() if isinstance(key, bytes) else key
-                    val_s = value.decode() if isinstance(value, bytes) else value
-                    # Extract action_id from key
-                    action_id = key_s.replace("approval:state:", "")
-                    result[action_id] = json.loads(val_s)
-
-            return result
-
-        except Exception as e:
-            logger.error(f"RedisApprovalStore: Error getting all states: {e}")
-            return {}
+        return await self._scan_all_states()
 
     async def get_by_status(self, status: ActionStatus) -> list[str]:
         """
@@ -179,7 +127,7 @@ class RedisApprovalStore:
             pending_ids = await self.get_by_status(ActionStatus.PENDING)
             return len(pending_ids)
         except Exception as e:
-            logger.error(f"RedisApprovalStore: Error getting pending count: {e}")
+            self._error("Error getting pending count", e)
             return 0
 
     async def set_status(
@@ -209,7 +157,7 @@ class RedisApprovalStore:
             action_id=action_id,
             updates={
                 "status": status,
-                "updated_at": _now(),
+                "updated_at": now_utc(),
                 "updated_by": user,
                 "reason": reason,
             },
@@ -239,70 +187,36 @@ class RedisApprovalStore:
         Returns:
             Updated approval state
         """
-        key = f"approval:state:{action_id}"
-        lock_key = f"approval:lock:{action_id}"
 
-        # Phase 10 Sprint 1 Day 1: Bug Fix - Lock acquisition with retry before throwing
-        # Try to acquire lock with retries before giving up
-        max_retries = 3
-        locked = False
+        def build_initial_state() -> dict[str, Any]:
+            state = {
+                "action_id": action_id,
+                "status": ActionStatus.PENDING,
+                "created_at": now_utc(),
+                "created_by": created_by,
+            }
+            if command:
+                state["command"] = command
+            return state
 
-        for attempt in range(max_retries):
-            locked = await self.redis.set(
-                lock_key,
-                "locked",
-                nx=True,
-                ex=self.lock_ttl,
-            )
-
-            if locked:
-                break
-
-            # Wait a bit before retry (exponential backoff)
-            await asyncio.sleep(0.1 * (2 ** attempt))
-
-        # If still not locked after retries, raise explicit error
-        if not locked:
-            raise RuntimeError(
-                f"Could not acquire lock for approval {action_id} after {max_retries} retries. "
-                f"Another process may be modifying this approval."
-            )
-
-        try:
-            # Get existing state
-            existing_data = await self.redis.get(key)
-            if existing_data:
-                state = json.loads(existing_data)
-            else:
-                # Initialize new state
-                state = {
-                    "action_id": action_id,
-                    "status": ActionStatus.PENDING,
-                    "created_at": _now(),
-                    "created_by": created_by,
-                }
-                # Store command if provided
-                if command:
-                    state["command"] = command
-
+        def apply_updates(state: dict[str, Any]) -> None:
             # Apply status-specific updates
             status = updates.get("status")
             if status:
-                # Set the status first
                 state["status"] = status
 
             if status == ActionStatus.APPROVED:
-                state["approved_at"] = updates.get("updated_at", _now())
+                state["approved_at"] = updates.get("updated_at", now_utc())
                 state["approved_by"] = updates.get("updated_by")
             elif status == ActionStatus.REJECTED:
-                state["rejected_at"] = updates.get("updated_at", _now())
+                state["rejected_at"] = updates.get("updated_at", now_utc())
                 state["rejected_by"] = updates.get("updated_by")
                 state["rejection_reason"] = updates.get("reason")
             elif status == ActionStatus.EXECUTED:
-                state["executed_at"] = updates.get("updated_at", _now())
+                state["executed_at"] = updates.get("updated_at", now_utc())
                 state["executed_by"] = updates.get("updated_by")
             elif status == ActionStatus.FAILED:
-                state["failed_at"] = updates.get("updated_at", _now())
+                state["failed_at"] = updates.get("updated_at", now_utc())
                 state["failed_by"] = updates.get("updated_by")
 
             # Apply general updates (excluding status and reason which are handled above)
@@ -316,21 +230,9 @@ class RedisApprovalStore:
 
             # Apply extra fields
             if extra_fields:
-                for key, value in extra_fields.items():
-                    state[key] = value
+                state.update(extra_fields)
 
-            # Save with TTL
-            await self.redis.setex(
-                key,
-                self.ttl_seconds,
-                json.dumps(state, default=str),
-            )
-
-            return state
-
-        finally:
-            # Always release lock
-            await self.redis.delete(lock_key)
+        return await self._locked_update(action_id, build_initial_state, apply_updates)
 
     async def delete(self, action_id: str) -> bool:
         """
@@ -342,70 +244,10 @@ class RedisApprovalStore:
         Returns:
             True if deleted, False otherwise
         """
-        key = f"approval:state:{action_id}"
-        lock_key = f"approval:lock:{action_id}"
-
-        try:
-            # Delete both state and lock
-            result = await self.redis.delete(key, lock_key)
-            return result > 0
-        except Exception as e:
-            logger.error(f"RedisApprovalStore: Error deleting {action_id}: {e}")
-            return False
-
-    async def acquire_lock(self, action_id: str, ttl: int | None = None) -> bool:
-        """
-        Acquire distributed lock for approval modification.
-
-        Args:
-            action_id: Action ID
-            ttl: Lock TTL (uses default if not provided)
-
-        Returns:
-            True if lock acquired, False otherwise
-        """
-        lock_key = f"approval:lock:{action_id}"
-        lock_ttl = ttl or self.lock_ttl
-
-        try:
-            return await self.redis.set(
-                lock_key,
-                "locked",
-                nx=True,
-                ex=lock_ttl,
-            )
-        except Exception as e:
-            logger.error(f"RedisApprovalStore: Error acquiring lock for {action_id}: {e}")
-            return False
-
-    async def release_lock(self, action_id: str) -> bool:
-        """
-        Release distributed lock for approval.
-
-        Args:
-            action_id: Action ID
-
-        Returns:
-            True if lock was released, False otherwise
-        """
-        lock_key = f"approval:lock:{action_id}"
-
-        try:
-            result = await self.redis.delete(lock_key)
-            return result > 0
-        except Exception as e:
-            logger.error(f"RedisApprovalStore: Error releasing lock for {action_id}: {e}")
-            return False
-
-    async def close(self) -> None:
-        """Close Redis connection."""
-        try:
-            await self.redis.close()
-        except Exception as e:
-            logger.error(f"RedisApprovalStore: Error closing connection: {e}")
+        return (await self._delete_state_and_lock(action_id)) > 0
 
 
-class RedisApprovalHistory:
+class RedisApprovalHistory(BaseRedisHistory):
     """
     Redis-backed approval history with automatic cleanup.
 
@@ -437,18 +279,14 @@ class RedisApprovalHistory:
             max_entries: Maximum entries to keep in list
             retention_days: Days to retain history (TTL)
         """
-        if not REDIS_AVAILABLE:
-            raise ImportError("redis package is required for RedisApprovalHistory")
-
-        self.redis = redis.Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=redis_db,
-            decode_responses=True,
+        super().__init__(
+            redis_host=redis_host,
+            redis_port=redis_port,
+            redis_password=redis_password,
+            redis_db=redis_db,
+            max_entries=max_entries,
+            retention_days=retention_days,
         )
-        self.max_entries = max_entries
-        self.retention_seconds = retention_days * 86400  # Convert to seconds
         self.global_history_key = "approval:history:events"
 
     async def add(self, event: dict[str, Any]) -> bool:
@@ -462,30 +300,22 @@ class RedisApprovalHistory:
             True if successful, False otherwise
         """
         try:
-            # Serialize event
             event_json = json.dumps(event)
 
-            # Add to global history list (left push for newest first)
-            await self.redis.lpush(self.global_history_key, event_json)
-
-            # Trim to max entries
-            await self.redis.ltrim(self.global_history_key, 0, self.max_entries - 1)
-
-            # Set TTL on the list key
-            await self.redis.expire(self.global_history_key, self.retention_seconds)
+            # Add to global history list
+            await self._append_event(self.global_history_key, event_json)
 
             # Also add to per-action history for faster lookups
             action_id = event.get("action_id")
             if action_id:
-                action_key = f"approval:history:action:{action_id}"
-                await self.redis.lpush(action_key, event_json)
-                await self.redis.ltrim(action_key, 0, self.max_entries - 1)
-                await self.redis.expire(action_key, self.retention_seconds)
+                await self._append_event(
+                    f"approval:history:action:{action_id}", event_json
+                )
 
             return True
 
         except Exception as e:
-            logger.error(f"RedisApprovalHistory: Error adding event: {e}")
+            self._error("Error adding event", e)
             return False
 
     async def get_for_action(self, action_id: str) -> list[dict[str, Any]]:
@@ -498,24 +328,10 @@ class RedisApprovalHistory:
         Returns:
             List of approval event dicts (newest first)
         """
-        key = f"approval:history:action:{action_id}"
-
         try:
-            # Get entries from action-specific list
-            raw_entries = await self.redis.lrange(key, 0, -1)
-
-            # Deserialize
-            entries = []
-            for raw in raw_entries:
-                try:
-                    entries.append(json.loads(raw))
-                except json.JSONDecodeError:
-                    continue
-
-            return entries
-
+            return await self._read_entries(f"approval:history:action:{action_id}")
         except Exception as e:
-            logger.error(f"RedisApprovalHistory: Error getting history for {action_id}: {e}")
+            self._error(f"Error getting history for {action_id}", e)
             return []
 
     async def get_recent(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -529,22 +345,10 @@ class RedisApprovalHistory:
             List of approval event dicts (newest first)
         """
         try:
-            # Get entries from global history list
             end = limit - 1 if limit > 0 else -1
-            raw_entries = await self.redis.lrange(self.global_history_key, 0, end)
-
-            # Deserialize
-            entries = []
-            for raw in raw_entries:
-                try:
-                    entries.append(json.loads(raw))
-                except json.JSONDecodeError:
-                    continue
-
-            return entries
-
+            return await self._read_entries(self.global_history_key, end)
         except Exception as e:
-            logger.error(f"RedisApprovalHistory: Error getting recent events: {e}")
+            self._error("Error getting recent events", e)
             return []
 
     @property
@@ -559,37 +363,17 @@ class RedisApprovalHistory:
 
     async def clear(self) -> bool:
         """
-        Clear all history.
+        Clear all history (global and per-action lists).
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Clear global history
-            pattern = "approval:history:*"
-
             # Find and delete all history keys
-            keys = []
-            async for key in self.redis.scan_iter(match=pattern):
-                keys.append(key)
-
+            keys = [key async for key in self.redis.scan_iter(match="approval:history:*")]
             if keys:
                 await self.redis.delete(*keys)
-
             return True
-
         except Exception as e:
-            logger.error(f"RedisApprovalHistory: Error clearing history: {e}")
+            self._error("Error clearing history", e)
             return False
-
-    async def close(self) -> None:
-        """Close Redis connection."""
-        try:
-            await self.redis.close()
-        except Exception as e:
-            logger.error(f"RedisApprovalHistory: Error closing connection: {e}")
-
-
-def _now() -> str:
-    """Get current UTC timestamp in ISO format."""
-    return datetime.now(timezone.utc).isoformat()

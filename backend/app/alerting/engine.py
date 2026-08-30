@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -8,6 +9,7 @@ from app.alerting.notifiers import EmailNotifier, SlackNotifier, WebhookNotifier
 from app.alerting.rules import load_rules
 from app.alerting.state import AlertHistory, AlertStateTracker
 from app.config import settings
+from app.metrics import ALERT_ENGINE_LAST_SUCCESS, ALERT_EVAL_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +93,15 @@ class AlertEngine:
                 continue
             try:
                 value = await fetcher(app_state, rule)
-            except Exception:
+            except Exception as e:
+                # Phase 14 residual #2: a failed fetch used to be a bare
+                # `continue` — rules silently going dark looked identical to
+                # "no data". Count it so alert_eval_errors_total can page.
+                ALERT_EVAL_ERRORS.labels(rule.source).inc()
+                logger.warning(
+                    "Metric fetch failed for rule %s (source=%s): %s",
+                    rule.id, rule.source, e,
+                )
                 continue
 
             breached = self._evaluate(rule.condition, value, rule.threshold)
@@ -112,6 +122,12 @@ class AlertEngine:
                     await self._resolve(rule, value)
 
         app_state.alert_state = await self.state_tracker.get_all_state()
+
+        # Phase 14 residual #2 heartbeat: a completed cycle means the loop is
+        # alive (per-rule fetch failures `continue` and don't abort the cycle
+        # — ALERT_EVAL_ERRORS covers those separately). time_absent-style
+        # alerting on this gauge detects a hung/cancelled engine.
+        ALERT_ENGINE_LAST_SUCCESS.set(time.time())
 
     def _evaluate(self, condition: str, value: float, threshold: float) -> bool:
         ops = {"gt": lambda v, t: v > t, "gte": lambda v, t: v >= t, "lt": lambda v, t: v < t, "lte": lambda v, t: v <= t, "eq": lambda v, t: v == t}

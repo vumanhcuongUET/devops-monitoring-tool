@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import logging.config
+import time
 from contextlib import asynccontextmanager
 
 import fastapi.responses
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware(BaseHTTPMiddleware):
     """Enforce auth on all routes except whitelisted ones."""
 
-    PUBLIC_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/api/v1/auth/login"}
+    PUBLIC_PATHS = {"/health", "/health/ready", "/metrics", "/docs", "/redoc", "/openapi.json", "/api/v1/auth/login"}
 
     # Chat-platform webhook paths exempt from bearer/api-key auth. The
     # platforms' own HMAC signature IS the authentication for these paths
@@ -358,6 +359,116 @@ async def health():
             "stubs": stubs,
         },
     }
+
+
+# Phase 14 residual #2: short, parallel dependency pings — the kubelet calls
+# this every 10s, so the budget must be tighter than the clients' own
+# REQUEST_TIMEOUT_SECONDS (5s) and the probe's timeoutSeconds.
+READINESS_TIMEOUT_SECONDS = 2.0
+
+
+def _redis_configured() -> bool:
+    """Redis matters for readiness only when some feature actually uses it."""
+    return bool(
+        settings.REDIS_URL
+        or settings.ALERT_STATE_USE_REDIS
+        or settings.APPROVAL_STATE_USE_REDIS
+        or settings.RATE_LIMIT_USE_REDIS
+        or settings.WS_FANOUT_USE_REDIS
+        or settings.ALERT_ENGINE_LEADER_LOCK
+    )
+
+
+async def _probe(check) -> dict:
+    """Run one dependency check under a short timeout.
+
+    Reports the exception CLASS only (never str(e)) — messages can carry
+    URLs/credentials from settings.
+    """
+    start = time.perf_counter()
+    try:
+        await asyncio.wait_for(check(), timeout=READINESS_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        return {"status": "down", "latency_ms": round((time.perf_counter() - start) * 1000), "error": "timeout"}
+    except Exception as e:
+        return {"status": "down", "latency_ms": round((time.perf_counter() - start) * 1000), "error": type(e).__name__}
+    return {"status": "up", "latency_ms": round((time.perf_counter() - start) * 1000)}
+
+
+async def _check_kubernetes(k8s) -> None:
+    # `available` is the cheap sync flag (config loaded at init); list_nodes
+    # then proves the API actually answers — it swallows its own errors and
+    # returns [], and a live cluster always has >=1 node, so empty == down.
+    if not getattr(k8s, "available", False):
+        raise RuntimeError("kubernetes client not loaded")
+    if not await k8s.list_nodes():
+        raise RuntimeError("kubernetes api returned no nodes")
+
+
+async def _check_redis() -> None:
+    # Reuse the shared lazy singleton (same client the leader lock and WS
+    # fanout use) — no new client class, no extra connection.
+    from app.redis_client import get_redis
+
+    await get_redis().ping()
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Honest readiness: ping the live dependencies in parallel.
+
+    Status policy (deliberate): 200 "ok" when every checked source is up;
+    200 "degraded" when SOME are down; 503 "down" only when ALL non-skipped
+    sources are down. A single flaky dependency must not flap the pod out of
+    the Service (that trades partial traffic for zero traffic), but a backend
+    cut off from everything it monitors has no business receiving requests.
+
+    Sources report "skipped" when the client is absent from app.state
+    (dependency not configured / lifespan not run) or, for Redis, when no
+    feature is configured to use it — absent is not down. With zero checked
+    sources the answer is "ok" (nothing contradicts readiness).
+
+    /health stays as-is: liveness answers "is the process alive", this
+    answers "can it do its job".
+    """
+    es = getattr(app.state, "es_client", None)
+    prom = getattr(app.state, "prometheus_client", None)
+    k8s = getattr(app.state, "k8s_client", None)
+
+    # Prometheus's convenience getters swallow errors and return 0.0 — use
+    # the public query(), which raises, so down really reads as down.
+    checks: dict[str, object] = {}
+    if es is not None:
+        checks["elasticsearch"] = _probe(es.get_cluster_health)
+    if prom is not None:
+        checks["prometheus"] = _probe(lambda: prom.query("up"))
+    if k8s is not None:
+        checks["kubernetes"] = _probe(lambda: _check_kubernetes(k8s))
+    redis_on = _redis_configured()
+    if redis_on:
+        checks["redis"] = _probe(_check_redis)
+
+    keys = list(checks)
+    results = await asyncio.gather(*(checks[k] for k in keys))
+    sources = dict(zip(keys, results, strict=True))
+    for name in ("elasticsearch", "prometheus", "kubernetes", "redis"):
+        sources.setdefault(name, {"status": "skipped", "latency_ms": None})
+
+    checked = {k: v for k, v in sources.items() if v["status"] != "skipped"}
+    down = [k for k, v in checked.items() if v["status"] == "down"]
+    if not checked:
+        overall, status_code = "ok", 200
+    elif len(down) == len(checked):
+        overall, status_code = "down", 503
+    elif down:
+        overall, status_code = "degraded", 200
+    else:
+        overall, status_code = "ok", 200
+
+    return fastapi.responses.JSONResponse(
+        status_code=status_code,
+        content={"status": overall, "sources": sources},
+    )
 
 
 @app.post("/api/v1/auth/token", include_in_schema=True)

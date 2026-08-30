@@ -67,8 +67,12 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
           readinessProbe:
+            # Phase 14 residual #2: readiness pings the live dependencies
+            # (ES/Prometheus/K8s, Redis when configured) — /health stays
+            # liveness-only. Worst case is ~2s (parallel 2s-capped probes),
+            # inside timeoutSeconds below.
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10

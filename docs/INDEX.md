@@ -1,9 +1,11 @@
 # DevOps AI Agentics 2026 - Documentation Index
 
-**Last Updated**: 2026-08-25
-**Current Phase**: Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 5 ✅ COMPLETE | Phase 6 ✅ COMPLETE | Phase 7 ✅ COMPLETE | Phase 8 ✅ COMPLETE | Phase 9 ✅ COMPLETE - Production Hardening & Scalability 🎉
+**Last Updated**: 2026-08-31
+**Current Phase**: Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 5 ✅ COMPLETE | Phase 6 ✅ COMPLETE | Phase 7 ✅ COMPLETE | Phase 8 ✅ COMPLETE | Phase 9 ✅ COMPLETE | Phase 10 📋 SUPERSEDED | Phase 11 ✅ COMPLETE | Phase 12 ✅ COMPLETE | Phase 13 ✅ COMPLETE | Phase 14 ✅ COMPLETE
 
 **AI Assistant Code Review**: ✅ ALL TASKS COMPLETE (2026-08-24) - 8 tasks, 209 tests passing
+
+**Latest delivery**: [Phase 14 — Full-Repo Review & Fixes](phase-14-full-review-fixes.md) (2026-08-30) — every finding from 4 review passes fixed; token optimization made real; backend 1162 unit tests green.
 
 ---
 
@@ -77,14 +79,27 @@
 - [Phase 9 Architecture](phase-9-architecture.md) — Distributed state, connection pools, tracing architecture
 - [Phase 9 Operations Runbook](phase-9-operations-runbook.md) — Redis operations, incident response, monitoring
 
-### Phase 10: Enterprise Enhancement 📋 PLANNED (2026-08-25)
+### Phase 10: Enterprise Enhancement 📋 SUPERSEDED (2026-08-25 → closed 2026-08-30)
+> **Note**: never executed as planned. Its goals were absorbed and surpassed by the Phase 11–14 health/review sprints (CI gates blocking, distributed state, identity, honest feature wiring). Plans below are historical.
 - [Phase 10 Comprehensive Review](phase-10-comprehensive-review.md) — SA/DevOps/AI Expert assessment (8.2/10 Production Ready)
 - [Phase 10 Plan](phase-10-plan.md) — 4-week sprint plan overview
 - [Phase 10 Implementation Plan](phase-10-implementation-plan.md) — 🆕 Detailed daily tasks & deliverables (20 days)
 - [Phase 10 Deployment Guide](phase-10-deployment-guide.md) — Complete deployment guide with resource requirements
 
-### Phase 12: Review Fixes — Real Bugs & Enforcement Gaps 📋 PLANNED (2026-08-30)
-- [Phase 12 Plan](phase-12-review-fixes.md) — 4 real bugs (Slack View 500, dry_run ignored, impact estimator dead path, kubectl use-context race) + security enforcement (webhook-vs-auth conflict, Teams HMAC key, executor whitelist, self-approval) + wire-or-delete for unwired features (time-window, L1/L2/L3 cache, rollback, OPA wording)
+### Phase 11: Code Health & Deletion Sprint ✅ COMPLETE (2026-08-29)
+- [Phase 11 Code Health](phase-11-code-health.md) — ~-7k lines dead code, blocking CI gates (compileall/ruff/bandit), E2E approval flow, 3+4 real prod bugs fixed, security re-review APPROVED
+
+### Phase 12: Review Fixes — Real Bugs & Enforcement Gaps ✅ COMPLETE (2026-08-30; manual smoke 17/17 green 2026-08-31)
+- [Phase 12 Review Fixes](phase-12-review-fixes.md) — 4 real bugs fixed (Slack View 500, dry_run ignored, impact estimator dead path, kubectl use-context race), security enforcement closed (per-user identity → Phase 13, executor guard, OPA flag-gated enforce, wire-or-delete for unwired features). Security re-check APPROVED. The closing manual smoke (`scripts/phase12-manual-smoke/`) found 5 more real bugs — all fixed same pass (approve unreachable in prod, deny→500, GET action 500, webhook auth-exempt mismatch, ExecutionResult fields).
+
+### Phase 13: Identity, Real Skills, Cleanup ✅ COMPLETE (2026-08-30)
+- [Phase 13 Identity & Skills](phase-13-identity-skills-cleanup.md) — local users (`data/users.json`, scrypt), `/auth/login`, role-narrowed env RBAC, attribution override, first 3 real skills, gates green
+
+### Phase 14: Full-Repo Review & Fixes ✅ COMPLETE (2026-08-30)
+- [Phase 14 Full-Repo Review & Fixes](phase-14-full-review-fixes.md) — 4 review passes (ponytail ×2, security, SA/DevOps), all actionable findings fixed: CRITICAL alert-rule → kubectl bypass closed, ~14k backend + 1.8k frontend dead lines deleted (scipy/recharts dropped), container startup + CWD-independent state + audit durability fixed, token optimization made real (per-path token metrics, compact prompts, prompt caching, ModelSelector wired). Residuals documented in the doc (multi-process CAS via Redis, 22 stub skills, env-aware executor route).
+
+### Phase 15: Full-Repo Review Round 2 + Fixes ✅ COMPLETE (2026-08-31)
+- [Phase 15 Review Findings](phase-15-review-findings.md) — 4 parallel review passes (~45k LOC). P1s fixed same day: rollback audit-event crash, executor flag-whitelist rejecting every real autonomous remediation (and `kubectl exec`/`config` removed from the whitelist; flag validation hoisted into the env-aware path), sync Anthropic SDK blocking the event loop. Wave 2: dry-run no longer consumes the approval, `created_by` server-owned, API actions accept real recommendation commands, frontend WebSocket auth + wss scheme. Wave 3: CI security gates blocking, postgres backup CronJob rewritten (was unrunnable), staging manifest schema + replica fixes. P2/P3 ledger tracked in the doc. Manual smoke re-run 18/18 green (`scripts/phase12-manual-smoke/`).
 
 **Phase 9 Sprint Breakdown:**
 - ✅ [Sprint 1: State Management & Distributed Systems](phase-9-plan.md#sprint-1-state-management--distributed-systems-days-1-5) - Redis alert/approval state, rate limiting (22/22 passed)
@@ -198,7 +213,13 @@ Documentation for AI agent workflows and operations:
 | **Phase 7** | ✅ Complete | Production Hardening (Performance + Config Management) |
 | **Phase 8** | ✅ Complete | Final Polish & Production Excellence (68/68 tests, 0 critical vulns) 🎉 |
 | **Phase 9** | ✅ Complete | Production Hardening & Scalability (distributed state, CI/CD, load tests) 🎉 |
-| **Security Review** | ✅ Approved | Production-ready (Aug 2026) |
+| **Phase 10** | 📋 Superseded | Plan absorbed by Phases 11–14 (never executed as written) |
+| **Phase 11** | ✅ Complete | Code Health & Deletion (-7k lines, blocking CI gates, E2E approval flow) |
+| **Phase 12** | ✅ Complete | Review Fixes — real bugs + enforcement gaps (manual smoke 17/17, 2026-08-31) |
+| **Phase 13** | ✅ Complete | Per-user identity, first 3 real skills, cleanup |
+| **Phase 14** | ✅ Complete | Full-repo review: all findings fixed, dead code removed, token optimization real |
+| **Phase 15** | ✅ Complete | Review round 2: P1 crash/execution bugs fixed, WS auth, CI gates blocking (P2/P3 ledger in doc) |
+| **Security Review** | ✅ Approved | Production-ready (Aug 2026) + re-checks Phases 11/12 |
 
 ---
 
@@ -219,6 +240,6 @@ Documentation for AI agent workflows and operations:
 
 ---
 
-**Document Version**: 1.3
+**Document Version**: 1.4
 **Maintained by**: DevOps AI Agentics Team
-**Last Review**: 2026-08-24
+**Last Review**: 2026-08-31

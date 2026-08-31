@@ -74,7 +74,7 @@ rejects burst 21; ✅ 743 unit + 11 integration pass; ✅ `import app.main` smok
 
 ---
 
-## Sprint 2 — Deletion sprint (Days 5-7) — ~80% COMPLETE (2026-08-29)
+## Sprint 2 — Deletion sprint (Days 5-7) — COMPLETE (2026-08-29; leftovers closed by 2026-08-30)
 
 Targets (each: prove zero callers → delete → run test suite):
 
@@ -93,12 +93,11 @@ Targets (each: prove zero callers → delete → run test suite):
 | `query_optimizer` mock execute paths | 440 | return fabricated data — cut until real wiring exists |
 
 Also in this sprint:
-- [ ] Deduplicate `ExecutionResult` (keep `models/actions.py` version).
-- [ ] Merge `autonomous_executor.RateLimiter` into `actions/rate_limiter.py`.
-- [ ] Extract `_action_kwargs_from_state()` in `engine.py` (removes 3 copy-paste blocks).
-- [ ] Extract shared flag-parsing loop in `actions/parser.py`.
-- [ ] Mark the ~30 stub skills `implemented: false` in the registry and hide them from
-      `GET /skills` output unless `?include_stubs=true`.
+- [x] Deduplicate `ExecutionResult` — single class in `models/actions.py` (`env_executor` imports it; verified 2026-08-31 only one `class ExecutionResult` remains).
+- [x] Merge `autonomous_executor.RateLimiter` into `actions/rate_limiter.py` — moved verbatim in Sprint 2; the stale `RateLimiter` alias is gone too (2026-08-31 verified single class).
+- [x] Extract `_action_kwargs_from_state()` in `engine.py` — done in Sprint 2 (`app/actions/engine.py:48`, called from both execute paths).
+- [x] Extract shared flag-parsing loop in `actions/parser.py` — `Parser._parse_flags()` shared by kubectl/helm/argocd/generic (verified 2026-08-31).
+- [x] Mark the stub skills `implemented: false` and hide them — shipped as `BaseSkill.implemented` + `STUB_SKILLS` metadata (Phase 13/14: `CatalogStubSkill`, `implemented_only` filter, `execute()` refuses stubs with "Coming soon" on SkillsPage) instead of an `?include_stubs` query param — catalog contract unchanged, same guarantee.
 
 **Exit criteria**: backend line count drops ~6.5k; `pytest` suite green; no import of deleted
 modules anywhere (`grep`-verified + graft blast-radius check).

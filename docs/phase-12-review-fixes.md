@@ -1,6 +1,6 @@
 # Phase 12: Review Fixes — Real Bugs & Enforcement Gaps
 
-**Status**: Sprints 1-3 code complete (2026-08-30) — full gates + security re-check done; H1 debt closed (leader lock + WS fanout). Only manual smoke remains before closing Phase 12.
+**Status**: ✅ COMPLETE (2026-08-31) — Sprints 1-3 code complete (2026-08-30), H1 debt closed, manual smoke green 17/17 (2026-08-31, `scripts/phase12-manual-smoke/`; it found 5 more real bugs — all fixed, gates re-run green, 1172 backend tests).
 **Created**: 2026-08-30
 **Basis**: Full codebase review 2026-08-30 (all CI gates green: compileall/ruff/bandit/733 unit/262 ai_assistant/frontend build; deep-read of actions engine, approvals, governance, webhooks, executors, cache, frontend auth; ponytail-audit)
 **Goal**: Fix the 4 confirmed real bugs, close the security enforcement gaps (identity, webhooks, executor), and resolve every "claimed ✅ but never wired" feature by an explicit wire-or-delete decision. No new dependencies.
@@ -111,6 +111,48 @@ Each item: explicit decision, then either a wiring test or a deletion receipt.
 
 - [x] All Sprint 1-3 checkboxes done; every fix has its fail-first test.
 - [x] Full gates green: compileall, ruff, bandit, 861 unit tests, ai_assistant suite, frontend build (verified 2026-08-30).
-- [ ] Manual smoke: create → approve (different user) → dry-run execute → execute; Slack signed webhook approve + view; dry-run shows no side effect.
+- [x] Manual smoke: create → approve (different user) → dry-run execute → execute; Slack signed webhook approve + view; dry-run shows no side effect. **DONE 2026-08-31, 17/17 green** — `scripts/phase12-manual-smoke/` (setup.sh + smoke.py + README). The smoke found and fixed 5 real bugs (see below); gates re-run green after: compileall, ruff, bandit, 1172 backend tests.
 - [x] Security re-check written against the Sprint 2 changes — `security-recheck-phase12-2026-08-30.md` (APPROVED; findings F1 reject-permission, F2 executor malformed-command guard fixed in the paired commit).
 - [x] CLAUDE.md + security review addendum reflect real enforcement paths.
+
+## Manual-smoke findings — fixed 2026-08-31
+
+The Phase 12 exit smoke ran the whole chain on a live stack (isolated DATA_DIR,
+fake kubectl + kubeconfig stub, real HMAC login/session). Five real bugs fell
+out; each fixed with a fail-first test.
+
+1. **APPROVE was unreachable outside development.** The environment matrix
+   lacked APPROVE for staging/production AND `get_required_permission("approve")`
+   fell through to the EXECUTE default — so the S6 decision gate denied every
+   approver, admin included. Production human-approval (the platform's headline
+   flow) could never complete. Fix: `approve` → `AIPermission.APPROVE` mapping +
+   APPROVE in the staging/production matrices (`governance/ai_rbac.py`);
+   `production-read-only` still denies. Role narrowing unchanged — operator
+   still can't approve in production. The e2e deny test had unknowingly
+   encoded the paradox ("RBAC grants approve to nobody in production"); it now
+   denies via the read-only matrix.
+2. **RBAC denials returned 500, not 403.** PermissionError fell into the
+   generic `except Exception` on approve/reject/execute. Now mapped to 403
+   with the checker's reason (`api/v1/actions.py`).
+3. **`GET /actions/{id}` 500'd on every stored action.** Tracker state omits
+   `id` (it is the key); the API's `Action(**state)` rehydration failed
+   pydantic "id: Field required". `engine.get_action` now injects it.
+4. **Slack/Teams webhooks 401'd whenever AUTH_ENABLED.** The middleware exempt
+   prefix `/api/v1/approvals/webhook/` doesn't match the real mount
+   `/approvals/webhook/*` — real chat callbacks died at the bearer check
+   before signature verification (the e2e test mounts the router standalone,
+   so it never saw the middleware). Both prefixes now exempt
+   (`main.py::WEBHOOK_AUTH_PATHS`); signature verification remains the auth.
+5. **Every real execution 500'd after the subprocess ran.** The Phase 11
+   ExecutionResult dedup dropped `environment`/`command`; pydantic v2 silently
+   ignored the constructor kwargs, then `EnvironmentExecutor._log_execution`
+   raised on the missing attribute — the command actually ran but the action
+   never reached EXECUTED and history/audit weren't written. Both fields
+   restored on `models/actions.py::ExecutionResult`.
+
+Also verified live (working as designed, no change): operator denied in
+production while allowed in staging; time-window enforcement blocks
+production executions outside business hours and audits the block; action
+rate-limiter cooldown (300s/project+type) trips on back-to-back executions
+(the smoke waits it out rather than bypassing); dry-run never invokes the
+binary; tampered Slack signatures 401.

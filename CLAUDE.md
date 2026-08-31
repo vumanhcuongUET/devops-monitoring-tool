@@ -14,7 +14,7 @@ This project combines:
 
 **Strategic Vision**: Building a centralized agentic platform (config-driven, guardrails, production-ready) following the 4-phase roadmap outlined in `docs/chien_luoc_tong_the.md`.
 
-**Current Status**: Phase 11 (Code Health & Deletion) in progress — Sprint 4 (validation) as of Aug 2026. Platform production-ready with comprehensive security review approval (Aug 2026). See `docs/phase-11-code-health.md`.
+**Current Status**: Phases 11–14 (code health & deletion, review fixes, identity/skills, full-repo review) complete; Phase 12 closed with a green manual smoke (2026-08-31, 17/17 — `scripts/phase12-manual-smoke/`) that found and fixed 5 more real bugs. Platform production-ready; security re-checks approved (Phases 11/12/14). Gates: 1172 backend unit tests green (2026-08-31). Open: 22 stub skills pending real data sources. See `docs/phase-14-full-review-fixes.md`.
 
 **Stack**: Backend Python (FastAPI) + Frontend Node.js (React + TypeScript + Vite + Tailwind) + AI Assistant (Python + Claude CLI)
 

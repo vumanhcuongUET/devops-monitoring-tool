@@ -40,7 +40,7 @@ You already have Elasticsearch, Prometheus, and Kubernetes — each with its own
 - **Lightweight** — No database, no agent. Just aggregates data from your existing tools
 - **Secure** — Auth, SSRF protection, rate limiting, security headers out of the box
 
-See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the complete 4-phase strategic roadmap. **Phase 2 (Human-in-the-loop Actions System) is now complete!** See [docs/phase-2-actions.md](docs/phase-2-actions.md) for details.
+See [docs/chien_luoc_tong_the.md](docs/chien_luoc_tong_the.md) for the strategic roadmap. **Phases 1–9 (platform) and 11–14 (code health, review fixes, identity, full-repo review) are complete** — see [docs/INDEX.md](docs/INDEX.md) for phase docs and [docs/phase-14-full-review-fixes.md](docs/phase-14-full-review-fixes.md) for the latest delivery report.
 
 📖 **Documentation:**
 - [📚 Documentation Index](docs/INDEX.md) — Complete navigation guide for all documentation

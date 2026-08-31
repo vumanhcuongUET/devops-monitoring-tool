@@ -90,6 +90,10 @@ Fixed 2026-08-31 (third batch, same day):
    XFF chain walked right-to-left past trusted proxies (leftmost was
    attacker-controlled); X-Real-IP must parse as an IP, never verbatim; the
    per-key window dict is swept every 60s and hard-capped at 10k keys.
+11. [x] `sanitize_es_query` rejects Lucene regex terms (unquoted `/` —
+   quote literal paths instead) and leading wildcards (`*foo`, `?foo`,
+   `field:*foo`, `-*foo`); trailing wildcards and bare `*` (match-all
+   default) stay allowed. `/logs` returns 400 with the reason, not 500.
 
 Also fixed: users.json atomic 0600 write (P3), ai_assistant `unit` pytest
 marker registered (P3).
@@ -107,7 +111,6 @@ Still open (design-needed or low priority):
     in URL; `/skills` + `/governance` orphaned from nav, light theme.
     Refresh cookie contract: `/auth/refresh` is bearer-based; the dead
     httpOnly-cookie comments/withCredentials in client.ts need a sweep.
-11. `sanitize_es_query` permits Lucene operators (wildcard/regex DoS).
 12. k8s: ArgoCD selfHeal vs CI `kubectl set image` ownership conflict;
     kustomize overlays referenced but nonexistent; networkpolicy blocks CI
     smoke + prometheus scrape; consumed CHANGE_ME secrets (postgres/argocd/

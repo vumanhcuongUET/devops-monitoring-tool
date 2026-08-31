@@ -166,6 +166,48 @@ class TestInputValidation:
         with pytest.raises(ValueError):
             sanitize_es_query("x" * 1001)
 
+    def test_es_query_rejects_regex_terms(self):
+        """Phase 15 P2-11: unquoted /.../ is a Lucene regex term — an
+        arbitrary automaton over the term dictionary (DoS)."""
+        from app.security import sanitize_es_query
+
+        with pytest.raises(ValueError):
+            sanitize_es_query("/.*/")
+        with pytest.raises(ValueError):
+            sanitize_es_query("message:/error.*/")
+        # Quoted literal paths stay fine
+        assert sanitize_es_query('"/api/v1/users"') == '"/api/v1/users"'
+
+    def test_es_query_rejects_leading_wildcards(self):
+        """Phase 15 P2-11: leading wildcards force full term-dict expansion."""
+        from app.security import sanitize_es_query
+
+        with pytest.raises(ValueError):
+            sanitize_es_query("*error")
+        with pytest.raises(ValueError):
+            sanitize_es_query("?error")
+        with pytest.raises(ValueError):
+            sanitize_es_query("message:*error*")
+        with pytest.raises(ValueError):
+            sanitize_es_query("-*error")  # NOT + leading wildcard
+        with pytest.raises(ValueError):
+            sanitize_es_query("(*)")
+        with pytest.raises(ValueError):
+            sanitize_es_query("service:*api")
+
+    def test_es_query_allows_safe_lucene(self):
+        from app.security import sanitize_es_query
+
+        # Bare match-all is the endpoint default
+        assert sanitize_es_query("*") == "*"
+        # Trailing wildcards OK
+        assert sanitize_es_query("nginx-*") == "nginx-*"
+        assert sanitize_es_query("message:timeout*") == "message:timeout*"
+        # Boolean/phrase syntax unaffected
+        assert sanitize_es_query("error AND service:api") == "error AND service:api"
+        assert sanitize_es_query('"connection refused"') == '"connection refused"'
+        assert sanitize_es_query("sha-256 mismatch") == "sha-256 mismatch"
+
 
 @pytest.mark.security
 class TestRateLimiting:

@@ -298,10 +298,58 @@ def validate_identifier(value: str, field_name: str = "field") -> str:
 
 
 def sanitize_es_query(query: str) -> str:
-    """Sanitize Elasticsearch query string to prevent injection."""
+    """Sanitize an Elasticsearch query_string user input.
+
+    Phase 15 P2-11: beyond injection chars, two Lucene query_string
+    constructs are DoS-shaped and now rejected:
+
+    - Unquoted ``/`` starts a regex term (``/.*/``) — arbitrary automata over
+      the term dictionary. Searching a literal path already requires quoting
+      it in query_string syntax, so nothing legitimate is lost.
+    - Leading wildcards (``*foo``, ``?foo``, ``field:*foo``) force full
+      term-dictionary expansion. Trailing wildcards (``nginx-*``) stay
+      allowed; a bare ``*`` (match-all, the endpoint default) stays allowed.
+    """
     if len(query) > 1000:
         raise ValueError("Query string too long (max 1000)")
     if _ES_QUERY_RE.search(query):
         # Allow quotes and braces in simple queries but escape backslashes
         query = query.replace("\\", "\\\\")
+
+    in_quote = False
+    term_start = True
+    escaped = False
+    for ch in query:
+        if escaped:
+            escaped = False
+            term_start = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_quote = not in_quote
+            term_start = False
+            continue
+        if in_quote:
+            term_start = False
+            continue
+        if ch == "/":
+            raise ValueError(
+                "Regex terms (unquoted '/') are not allowed; quote the text instead"
+            )
+        if ch.isspace() or ch in "():":
+            term_start = True
+            continue
+        if ch in "[]{}^":
+            term_start = False
+            continue
+        if ch in "+-":
+            # NOT/PLUS operators — a wildcard after them is still leading.
+            continue
+        if term_start and ch in "*?":
+            if query == "*":
+                break  # bare match-all, the endpoint default
+            raise ValueError("Leading wildcards are not allowed")
+        term_start = False
     return query

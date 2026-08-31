@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_es_client
 from app.models.logs import LogsResponse
@@ -19,11 +19,16 @@ async def get_logs(
     size: int = Query(50, ge=1, le=200),
     es: ElasticsearchClient = Depends(get_es_client),
 ) -> LogsResponse:
-    q = sanitize_es_query(q)
-    if level:
-        level = validate_identifier(level, "level")
-    if service:
-        service = validate_identifier(service, "service")
+    # Phase 15 P2-11: rejected query syntax (regex terms, leading wildcards)
+    # is a client error — 400, not a 500.
+    try:
+        q = sanitize_es_query(q)
+        if level:
+            level = validate_identifier(level, "level")
+        if service:
+            service = validate_identifier(service, "service")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     items, total = await es.search_logs(
         query=q, level=level, service=service,
         start=start, end=end, page=page, size=size,

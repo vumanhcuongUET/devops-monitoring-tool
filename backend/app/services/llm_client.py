@@ -27,81 +27,42 @@ from app.models.triage_card import (
     TriageCard,
     TriageCardRequest,
 )
-from app.services.llm_input import LOG_MESSAGE_MAX_CHARS, truncate_log_messages
+from app.services.llm_input import (
+    LOG_MESSAGE_MAX_CHARS,
+    LOG_QUOTA_TRIGGER,
+    LOG_SEVERITY_QUOTAS,
+    estimate_tokens,
+    sample_logs_by_severity,
+    slim_context,
+    truncate_log_messages,
+)
 
 # Cheap fast-tier model for low-stakes calls (simple-stream Q&A, health
 # probes). Single source of truth is the selector's tier table — do not
 # duplicate model ids here.
 FAST_MODEL = ModelSelector.MODELS["fast"]
 
-# Per-severity keep quotas applied when a log payload is too large to ship
-# wholesale (see sample_logs_by_severity). Sum = 30 logs max.
-LOG_SEVERITY_QUOTAS: dict[str, int] = {
-    "critical": 5,
-    "error": 10,
-    "warning": 10,
-    "info": 5,
-}
-# Quotas only kick in above this many log entries.
-LOG_QUOTA_TRIGGER = 50
+# Log slimming constants and sample_logs_by_severity moved to
+# app.services.llm_input (token-optimization 2026-08-31); re-exported here
+# for existing importers/tests.
+__all__ = [
+    "FAST_MODEL",
+    "LOG_MESSAGE_MAX_CHARS",
+    "LOG_QUOTA_TRIGGER",
+    "LOG_SEVERITY_QUOTAS",
+    "LLMClient",
+    "sample_logs_by_severity",
+    "slim_context",
+]
 
-_LEVEL_TO_BUCKET = {
-    "critical": "critical",
-    "fatal": "critical",
-    "alert": "critical",
-    "emerg": "critical",
-    "error": "error",
-    "err": "error",
-    "warn": "warning",
-    "warning": "warning",
-    # everything else (info/debug/trace/missing) lands in the info bucket
-}
-
-
-def _bucket_for_log(log: Any) -> str:
-    """Map a log entry to its severity bucket (default: info)."""
-    if not isinstance(log, dict):
-        return "info"
-    level = str(log.get("level", "")).lower().strip()
-    return _LEVEL_TO_BUCKET.get(level, "info")
-
-
-def sample_logs_by_severity(
-    logs: list[Any],
-    quotas: dict[str, int] | None = None,
-    trigger: int = LOG_QUOTA_TRIGGER,
-) -> tuple[list[Any], str | None]:
-    """Sample oversized log lists by severity quotas.
-
-    Replaces the old blunt ``logs[:50]`` cut, which starved the model of
-    critical entries while flooding it with info noise. When more than
-    ``trigger`` logs arrive, keep at most ``quotas`` entries per severity
-    bucket (most recent first — ES returns desc-by-timestamp) and drop the
-    rest. Original relative order is preserved.
-
-    Returns:
-        (kept_logs, note) where note is None when no sampling was applied,
-        else a human-readable summary to embed in the prompt.
-    """
-    quotas = quotas if quotas is not None else LOG_SEVERITY_QUOTAS
-    logs = list(logs or [])
-    if len(logs) <= trigger:
-        return logs, None
-
-    seen: dict[str, int] = {bucket: 0 for bucket in ("critical", "error", "warning", "info")}
-    kept: dict[str, int] = {bucket: 0 for bucket in seen}
-    sampled: list[Any] = []
-
-    for log in logs:
-        bucket = _bucket_for_log(log)
-        seen[bucket] += 1
-        if kept[bucket] < quotas.get(bucket, 0):
-            sampled.append(log)
-            kept[bucket] += 1
-
-    breakdown = ", ".join(f"{b} {kept[b]}/{seen[b]}" for b in seen)
-    note = f"showing {len(sampled)} of {len(logs)} logs by severity ({breakdown})"
-    return sampled, note
+# Input-budget ladder: when the assembled prompt exceeds
+# AI_INPUT_BUDGET_TOKENS, log payloads shrink rung by rung — info dropped
+# first, then warnings — before the logs section is omitted entirely.
+# critical/error entries survive longest: they carry the incident signal.
+LOG_BUDGET_LADDER: list[dict[str, int]] = [
+    {"critical": 5, "error": 5, "warning": 3, "info": 0},
+    {"critical": 3, "error": 2, "warning": 0, "info": 0},
+]
 
 
 def _usage_tokens(usage: Any, field: str) -> int:
@@ -235,36 +196,20 @@ You communicate in Vietnamese by default, unless the user specifically requests 
             "",
         ])
 
-        # Elasticsearch / Logs
-        if context_data.get("logs"):
-            sampled_logs, sampling_note = sample_logs_by_severity(context_data["logs"])
-            # Severity quotas cap the COUNT of shipped logs; the messages
-            # themselves were unbounded — a single 2KB stack trace could
-            # outweigh the rest of the prompt. Cap each at head-preserving
-            # LOG_MESSAGE_MAX_CHARS.
-            sampled_logs, truncated_count = truncate_log_messages(sampled_logs)
-            notes = []
-            if sampling_note:
-                notes.append(sampling_note)
-            if truncated_count:
-                notes.append(
-                    f"{truncated_count} message(s) exceeded {LOG_MESSAGE_MAX_CHARS} "
-                    "chars and were head-truncated"
-                )
-            if notes:
+        # Elasticsearch / Logs — subject to the input budget: everything
+        # else in the prompt is estimated first, and the logs section
+        # shrinks down LOG_BUDGET_LADDER (info first) to fit what remains.
+        logs_entries = context_data.get("logs")
+        if logs_entries:
+            logs_lines = self._fit_logs_section(logs_entries, prompt_parts, context_data)
+            if logs_lines is not None:
+                prompt_parts.extend(logs_lines)
+            else:
                 prompt_parts.extend([
-                    f"*Note: {'; '.join(notes)}.*",
+                    "*Note: logs omitted — prompt exceeded the input budget; "
+                    "rely on the other sections.*",
                     "",
                 ])
-            prompt_parts.extend([
-                "### Logs (Elasticsearch)",
-                "```json",
-                # Compact JSON — indent=2 roughly tripled payload size for no
-                # model-quality gain (token-optimization follow-up).
-                json.dumps(sampled_logs, ensure_ascii=False),
-                "```",
-                "",
-            ])
 
         # APM Data
         if context_data.get("apm"):
@@ -315,6 +260,76 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         ])
 
         return "\n".join(prompt_parts)
+
+    @staticmethod
+    def _estimate_parts_tokens(parts: list[str]) -> int:
+        return estimate_tokens("\n".join(parts))
+
+    def _fit_logs_section(
+        self,
+        logs: list,
+        prompt_parts: list[str],
+        context_data: dict[str, Any],
+    ) -> list[str] | None:
+        """Build the logs section within the remaining input budget.
+
+        Tries the default severity quotas first, then LOG_BUDGET_LADDER.
+        Returns the prompt lines, or None when even the tightest rung
+        doesn't fit (caller notes the omission).
+        """
+        other = list(context_data.items())
+        other_estimate = 0
+        for key, value in other:
+            if key != "logs" and value:
+                other_estimate += self._estimate_parts_tokens(
+                    [json.dumps(value, ensure_ascii=False)]
+                )
+
+        fixed = prompt_parts + [
+            "### Logs (Elasticsearch)",
+            "```json", "", "```", "",
+            "---", "",
+            "Dựa trên dữ liệu above, hãy tạo Triage Card (JSON format như specified).",
+            "Focus trên việc tìm root cause và recommend actionable steps.",
+        ]
+        remaining = settings.AI_INPUT_BUDGET_TOKENS - self._estimate_parts_tokens(fixed) - other_estimate
+
+        rungs: list[tuple[dict[str, int] | None, int]] = [
+            (None, LOG_QUOTA_TRIGGER),  # default behavior
+            *((quotas, 0) for quotas in LOG_BUDGET_LADDER),  # quotas forced
+        ]
+        for rung_quotas, rung_trigger in rungs:
+            sampled_logs, sampling_note = sample_logs_by_severity(
+                logs, quotas=rung_quotas, trigger=rung_trigger
+            )
+            sampled_logs, truncated_count = truncate_log_messages(sampled_logs)
+            notes = []
+            if sampling_note:
+                notes.append(sampling_note)
+            if truncated_count:
+                notes.append(
+                    f"{truncated_count} message(s) exceeded {LOG_MESSAGE_MAX_CHARS} "
+                    "chars and were head-truncated"
+                )
+            if rung_quotas is not None:
+                notes.append("reduced quotas applied by the input budget")
+            body = json.dumps(sampled_logs, ensure_ascii=False)
+            lines = []
+            if notes:
+                lines.extend([f"*Note: {'; '.join(notes)}.*", ""])
+            lines.extend([
+                "### Logs (Elasticsearch)",
+                "```json",
+                body,
+                "```",
+                "",
+            ])
+            if not sampled_logs:
+                continue
+            if self._estimate_parts_tokens(lines) <= remaining:
+                return lines
+        # Even the tightest rung doesn't fit — drop logs entirely.
+        return None
 
     async def generate_triage_card(
         self,
@@ -616,6 +631,11 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         Yields:
             JSON-formatted chunks
         """
+        # Slim the context blob the same way the triage path does — this
+        # path used to dump whatever it was handed, logs unbounded (the
+        # fast-tier model still bills tokens).
+        context = slim_context(context)
+
         # Build simple prompt
         prompt_parts = [
             "# Question",

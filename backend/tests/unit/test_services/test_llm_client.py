@@ -538,3 +538,102 @@ class TestOutputBudgetConstraints:
         assert "5 findings" in lowered
         assert "3 recommendations" in lowered
         assert "200 characters" in lowered
+
+
+@pytest.mark.unit
+class TestInputBudgetLadder:
+    """Token-optimization 2026-08-31: the triage prompt must respect
+    AI_INPUT_BUDGET_TOKENS — logs shrink down the quota ladder (info first)
+    before being dropped entirely."""
+
+    def _prompt(self, llm, logs, budget):
+        llm2_settings = settings
+        original = llm2_settings.AI_INPUT_BUDGET_TOKENS
+        llm2_settings.AI_INPUT_BUDGET_TOKENS = budget
+        try:
+            return llm._build_user_prompt(
+                project="test",
+                incident_id=None,
+                alert_message=None,
+                context_data={"logs": logs},
+                time_range=timedelta(minutes=30),
+            )
+        finally:
+            llm2_settings.AI_INPUT_BUDGET_TOKENS = original
+
+    @staticmethod
+    def _logs(counts: dict[str, int]) -> list[dict]:
+        logs = []
+        for level, n in counts.items():
+            logs.extend({"level": level, "message": f"{level} {i}"} for i in range(n))
+        return logs
+
+    def test_generous_budget_keeps_default_section(self, llm):
+        logs = self._logs({"ERROR": 60, "INFO": 60})
+
+        prompt = self._prompt(llm, logs, budget=10_000)
+
+        assert "### Logs (Elasticsearch)" in prompt
+        assert "input budget" not in prompt
+
+    def test_small_budget_forces_reduced_quotas(self, llm):
+        logs = self._logs({"ERROR": 80, "INFO": 80, "WARNING": 40})
+
+        # The default section (~30 logs) doesn't fit a tiny budget; the
+        # first ladder rung keeps error/critical only.
+        prompt = self._prompt(llm, logs, budget=150)
+
+        assert "reduced quotas applied by the input budget" in prompt
+        assert "### Logs (Elasticsearch)" in prompt
+
+    def test_tiniest_budget_drops_logs_with_a_note(self, llm):
+        logs = self._logs({"ERROR": 80})
+
+        prompt = self._prompt(llm, logs, budget=1)
+
+        assert "logs omitted" in prompt
+        assert "### Logs (Elasticsearch)" not in prompt
+
+    def test_non_log_sections_survive_the_budget_cut(self, llm):
+        logs = self._logs({"ERROR": 80})
+        llm_settings = settings
+        original = llm_settings.AI_INPUT_BUDGET_TOKENS
+        llm_settings.AI_INPUT_BUDGET_TOKENS = 1
+        try:
+            prompt = llm._build_user_prompt(
+                project="test",
+                incident_id=None,
+                alert_message=None,
+                context_data={"logs": logs, "metrics": {"cpu_percent": 91.0}},
+                time_range=timedelta(minutes=30),
+            )
+        finally:
+            llm_settings.AI_INPUT_BUDGET_TOKENS = original
+
+        assert "logs omitted" in prompt
+        assert "cpu_percent" in prompt  # the rest of the prompt is intact
+
+
+@pytest.mark.unit
+class TestSlimContext:
+    """simple-stream used to dump its context blob unsampled."""
+
+    def test_logs_are_sampled_and_truncated(self):
+        from app.services.llm_input import slim_context
+
+        logs = [{"level": "INFO", "message": "x" * 1000} for _ in range(80)]
+        context = {"logs": logs, "metrics": {"cpu": 90}}
+
+        slimmed = slim_context(context)
+
+        assert len(slimmed["logs"]) <= 30
+        assert "[truncated" in slimmed["logs"][0]["message"]
+        assert slimmed["metrics"] == {"cpu": 90}
+        # caller's context untouched
+        assert len(context["logs"]) == 80
+
+    def test_non_logs_keys_pass_through(self):
+        from app.services.llm_input import slim_context
+
+        context = {"apm": {"error_rate": 1.2}}
+        assert slim_context(context) == context

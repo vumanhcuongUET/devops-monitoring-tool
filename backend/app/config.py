@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""  # Claude API key for Triage Card generation
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"  # Default model (Sonnet 4)
     AI_MAX_TOKENS: int = 4096  # Max tokens for LLM response
+    # Soft ceiling for one triage user prompt (~4 chars/token estimate). When
+    # the prompt exceeds it, log payloads shrink down a severity-quota ladder
+    # (info first) before the logs section is dropped entirely.
+    AI_INPUT_BUDGET_TOKENS: int = 12000
 
     # Phase 6: AI Input Optimization
 

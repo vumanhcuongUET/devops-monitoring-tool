@@ -8,6 +8,7 @@ free so any app module can import it without cycles.
 """
 
 import copy
+from typing import Any
 
 # A log/alert message longer than this adds cost without adding signal: the
 # exception name and the first stack frames are at the head.
@@ -17,6 +18,74 @@ LOG_MESSAGE_MAX_CHARS = 400
 ALERT_MESSAGE_MAX_CHARS = 300
 
 _TRUNCATION_MARKER = " [truncated {} chars]"
+
+# Per-severity keep quotas applied when a log payload is too large to ship
+# wholesale. Sum = 30 logs max. Quotas only kick in above LOG_QUOTA_TRIGGER.
+LOG_SEVERITY_QUOTAS: dict[str, int] = {
+    "critical": 5,
+    "error": 10,
+    "warning": 10,
+    "info": 5,
+}
+LOG_QUOTA_TRIGGER = 50
+
+_LEVEL_TO_BUCKET = {
+    "critical": "critical",
+    "fatal": "critical",
+    "alert": "critical",
+    "emerg": "critical",
+    "error": "error",
+    "err": "error",
+    "warn": "warning",
+    "warning": "warning",
+    # everything else (info/debug/trace/missing) lands in the info bucket
+}
+
+
+def _bucket_for_log(log: Any) -> str:
+    """Map a log entry to its severity bucket (default: info)."""
+    if not isinstance(log, dict):
+        return "info"
+    level = str(log.get("level", "")).lower().strip()
+    return _LEVEL_TO_BUCKET.get(level, "info")
+
+
+def sample_logs_by_severity(
+    logs: list[Any],
+    quotas: dict[str, int] | None = None,
+    trigger: int = LOG_QUOTA_TRIGGER,
+) -> tuple[list[Any], str | None]:
+    """Sample oversized log lists by severity quotas.
+
+    Replaces the old blunt ``logs[:50]`` cut, which starved the model of
+    critical entries while flooding it with info noise. When more than
+    ``trigger`` logs arrive, keep at most ``quotas`` entries per severity
+    bucket (most recent first — ES returns desc-by-timestamp) and drop the
+    rest. Original relative order is preserved.
+
+    Returns:
+        (kept_logs, note) where note is None when no sampling was applied,
+        else a human-readable summary to embed in the prompt.
+    """
+    quotas = quotas if quotas is not None else LOG_SEVERITY_QUOTAS
+    logs = list(logs or [])
+    if len(logs) <= trigger:
+        return logs, None
+
+    seen: dict[str, int] = {bucket: 0 for bucket in ("critical", "error", "warning", "info")}
+    kept: dict[str, int] = {bucket: 0 for bucket in seen}
+    sampled: list[Any] = []
+
+    for log in logs:
+        bucket = _bucket_for_log(log)
+        seen[bucket] += 1
+        if kept[bucket] < quotas.get(bucket, 0):
+            sampled.append(log)
+            kept[bucket] += 1
+
+    breakdown = ", ".join(f"{b} {kept[b]}/{seen[b]}" for b in seen)
+    note = f"showing {len(sampled)} of {len(logs)} logs by severity ({breakdown})"
+    return sampled, note
 
 
 def truncate_text(message: str, max_chars: int = LOG_MESSAGE_MAX_CHARS) -> str:
@@ -101,3 +170,23 @@ def estimate_tokens(text: str) -> int:
     if not text:
         return 0
     return max(1, len(text) // 4)
+
+
+def slim_context(context: dict, quotas: dict[str, int] | None = None) -> dict:
+    """Best-effort slimming for ad-hoc context blobs sent to the model.
+
+    The known key is `logs` (the shared `_collect_context_data` shape):
+    severity sampling + per-message truncation apply. Everything else passes
+    through untouched — shapes vary by caller and the model needs them.
+    Returns a new dict; the caller's context is never mutated.
+    """
+    if not isinstance(context, dict):
+        return context
+
+    result = dict(context)
+    logs = result.get("logs")
+    if isinstance(logs, list):
+        sampled, _note = sample_logs_by_severity(logs, quotas=quotas)
+        sampled, _truncated = truncate_log_messages(sampled)
+        result["logs"] = sampled
+    return result

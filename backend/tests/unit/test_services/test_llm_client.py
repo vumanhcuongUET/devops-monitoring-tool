@@ -523,3 +523,18 @@ class TestPromptCaching:
         )]
 
         self._assert_cached(llm.client.messages.stream_kwargs["system"])
+
+
+@pytest.mark.unit
+class TestOutputBudgetConstraints:
+    """Token-optimization 2026-08-31: output tokens cost ~5x input — the
+    system prompt must carry hard output limits, not just 'be concise'."""
+
+    def test_system_prompt_contains_output_budget(self, llm):
+        prompt = llm.SYSTEM_PROMPT
+
+        lowered = prompt.lower()
+        assert "output budget" in lowered
+        assert "5 findings" in lowered
+        assert "3 recommendations" in lowered
+        assert "200 characters" in lowered

@@ -172,6 +172,13 @@ You must respond with a JSON object containing:
 - Default to medium severity if uncertain.
 - Always recommend human verification before executing critical actions.
 
+## Output Budget (hard limits — output tokens cost ~5x input)
+
+- At most 5 findings and 3 recommendations. Fewer, sharper entries beat many vague ones.
+- Each finding/recommendation description: at most 2 sentences.
+- Evidence: at most 200 characters — cite the exact data point, not the surrounding log.
+- Summary: at most 5 sentences.
+
 You communicate in Vietnamese by default, unless the user specifically requests English."""
 
     # Anthropic prompt caching: the system prompt (~90 lines) is identical on

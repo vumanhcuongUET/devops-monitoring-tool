@@ -27,6 +27,7 @@ from app.models.triage_card import (
     TriageCard,
     TriageCardRequest,
 )
+from app.services.llm_input import LOG_MESSAGE_MAX_CHARS, truncate_log_messages
 
 # Cheap fast-tier model for low-stakes calls (simple-stream Q&A, health
 # probes). Single source of truth is the selector's tier table — do not
@@ -230,9 +231,22 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         # Elasticsearch / Logs
         if context_data.get("logs"):
             sampled_logs, sampling_note = sample_logs_by_severity(context_data["logs"])
+            # Severity quotas cap the COUNT of shipped logs; the messages
+            # themselves were unbounded — a single 2KB stack trace could
+            # outweigh the rest of the prompt. Cap each at head-preserving
+            # LOG_MESSAGE_MAX_CHARS.
+            sampled_logs, truncated_count = truncate_log_messages(sampled_logs)
+            notes = []
             if sampling_note:
+                notes.append(sampling_note)
+            if truncated_count:
+                notes.append(
+                    f"{truncated_count} message(s) exceeded {LOG_MESSAGE_MAX_CHARS} "
+                    "chars and were head-truncated"
+                )
+            if notes:
                 prompt_parts.extend([
-                    f"*Note: {sampling_note}; the rest were truncated by severity quota.*",
+                    f"*Note: {'; '.join(notes)}.*",
                     "",
                 ])
             prompt_parts.extend([

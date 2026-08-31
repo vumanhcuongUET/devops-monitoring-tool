@@ -14,6 +14,8 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
+from app.services.llm_input import truncate_text
+
 from .base import AgentResponse, BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -287,12 +289,16 @@ Provide analysis focusing on root causes and actionable recommendations.
         return bursts
 
     def _prepare_log_sample(self, logs: list[dict], max_lines: int = 100) -> str:
-        """Prepare a readable sample of logs for analysis."""
+        """Prepare a readable sample of logs for analysis.
+
+        Each message is head-truncated (token-optimization 2026-08-31) — a
+        single stack trace used to outweigh the rest of the sample.
+        """
         sample = []
         for _i, log in enumerate(logs[:max_lines]):
             timestamp = log.get("timestamp", "")
             level = log.get("level", "")
-            message = log.get("message", "")
+            message = truncate_text(str(log.get("message", "")))
             sample.append(f"[{timestamp}] {level}: {message}")
 
         if len(logs) > max_lines:

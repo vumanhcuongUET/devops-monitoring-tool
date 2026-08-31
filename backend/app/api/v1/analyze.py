@@ -21,6 +21,7 @@ from app.models.triage_card import (
     TriageCardResponse,
 )
 from app.services.llm_client import get_llm_client
+from app.services.llm_input import dedupe_alerts
 
 router = APIRouter(tags=["analyze"])
 
@@ -601,6 +602,6 @@ async def _get_alerts_context(es_client, project: str, time_delta: timedelta, se
                 "timestamp": alert.get("timestamp"),
             })
 
-        return filtered_alerts[-20:]  # Return last 20 alerts
+        return dedupe_alerts(filtered_alerts)
     except Exception:
         return []

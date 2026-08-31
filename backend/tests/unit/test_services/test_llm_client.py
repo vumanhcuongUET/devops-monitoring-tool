@@ -271,6 +271,21 @@ class TestCompactJsonPrompts:
         assert "\n" not in block
         assert '"mem": {"used": 1' in block  # separators without padding
 
+    def test_oversized_log_message_is_head_truncated(self, llm):
+        """Token-optimization 2026-08-31: severity quotas cap the count of
+        logs, but a single 2KB stack trace used to ship whole."""
+        long_message = "E" * 2000
+        prompt = self._prompt(llm, logs=[{"level": "ERROR", "message": long_message}])
+
+        assert long_message not in prompt
+        assert "[truncated" in prompt
+        assert "head-truncated" in prompt  # the note names the omission
+
+    def test_short_messages_ship_without_note(self, llm):
+        prompt = self._prompt(llm, logs=[{"level": "ERROR", "message": "boom"}])
+
+        assert "truncated" not in prompt
+
 
 @pytest.mark.unit
 class TestSeverityQuotaSampling:

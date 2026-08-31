@@ -56,30 +56,43 @@ UX) → Wave 3 (CI/deploy) → P2 remainder → P3 hardening batch.
 
 ## P2 — tracked, fix in follow-up batches
 
-1. OPA enforcement fail-open ×3 (`engine.py:552` except→allow; missing
-   `result`→allow; decision cache without TTL). Make UNKNOWN→DENY when
-   OPA_ENFORCE, honor 60s TTL.
-2. Service-key (API-key) calls keep client-asserted `approved_by`/
-   `executed_by` → forge attribution; stamp `service:<key-id>` server-side.
-3. env-aware executor validation floor is argv[0]+substrings;
-   `kubectl exec`/`helm uninstall` pass if approved — enforce subcommand
-   table + remove `exec` unless needed. (Related: `executor.py` whitelist
-   dead on the engine path.)
-4. Subprocess output unbounded; engine timeout hardcode 30s — cap captured
-   bytes, add `timeout_seconds` to ExecuteActionRequest.
-5. Teams webhook signature optional outside production + no IP allowlist +
-   replay when X-Timestamp absent (P0 the moment staging is untrusted).
-6. K8s client swallows errors → outages read as healthy zeros; raise when
-   all namespaces fail.
-7. SSRF check-then-use DNS rebind (validate+connect not IP-pinned) in
-   `safe_post`/notifiers; sync `getaddrinfo` on loop.
-8. Sync `smtplib` in async notifier (no timeout); redis leader-lock client
-   without socket timeouts (double-engine risk on hung Redis).
-9. Frontend: refresh flow expects an httpOnly cookie the backend never
-   issues; no logout/revocation endpoint; refresh not single-flight.
+Fixed 2026-08-31 (same day, second batch):
+
+1. [x] OPA fail-closed: UNKNOWN/unevaluable now blocks under OPA_ENFORCE
+   (`engine.py`), missing `result` → UNKNOWN not ALLOW (`opa_client.py`),
+   decision cache honors the 60s TTL and never caches UNKNOWN.
+2. [x] Service-key attribution stamping: middleware marks `auth_method`;
+   approve/reject/execute/create prefix service-asserted labels with
+   `service:` — audit no longer trusts client-chosen names.
+5. [x] Teams webhook secret required whenever AUTH_ENABLED (signature IS the
+   auth on the exempt path); `X-Timestamp` mandatory (replay protection);
+   `TEAMS_WEBHOOK_URL`-keyed legacy scheme stays dead.
+6. [x] K8s listers raise on TOTAL namespace failure (partial failures still
+   degrade gracefully) — an API outage no longer reads as "zero pods".
+8. [x] SMTP moved off the event loop (`asyncio.to_thread` + 10s timeout);
+   leader-lock/fanout redis client and `BaseRedisHistory` got 5s socket
+   timeouts.
+9. [x] Logout/revocation: `POST /auth/logout` bumps per-user `min_iat`,
+   middleware rejects tokens issued before it; frontend `logout()` calls it,
+   Header gained a Logout button, refresh is single-flight per burst of 401s.
+
+Also fixed: users.json atomic 0600 write (P3), ai_assistant `unit` pytest
+marker registered (P3).
+
+Still open (design-needed or low priority):
+
+3. Env-aware executor subcommand table is shared now, but `kubectl exec`/
+   `helm uninstall` remain whitelisted for kubectl — decide per-subcommand
+   depth; IP-pinning for SSRF needs a custom httpx transport (check-then-use
+   DNS rebind remains theoretically possible; Teams + notifiers now at least
+   validate).
+4. Subprocess output size cap + `timeout_seconds` on ExecuteActionRequest.
+7. Full SSRF IP-pinning (see 3).
 10. Frontend: API errors render as empty data on 6/7 pages; AlertsPage
     delete no confirm/no catch; SkillsPage `alert()` + unvalidated project
     in URL; `/skills` + `/governance` orphaned from nav, light theme.
+    Refresh cookie contract: `/auth/refresh` is bearer-based; the dead
+    httpOnly-cookie comments/withCredentials in client.ts need a sweep.
 11. `sanitize_es_query` permits Lucene operators (wildcard/regex DoS).
 12. k8s: ArgoCD selfHeal vs CI `kubectl set image` ownership conflict;
     kustomize overlays referenced but nonexistent; networkpolicy blocks CI
@@ -94,15 +107,15 @@ UX) → Wave 3 (CI/deploy) → P2 remainder → P3 hardening batch.
 ## P3 — hardening batch (one PR)
 
 AUTH_SECRET per-process random breaks multi-worker/dev persistence (derive
-from file under DATA_DIR); users.json non-atomic write + chmod-after; Slack
-verify logs expected HMAC (replayable) — log failure+IP only; raw `str(e)` in
-unauthenticated webhook 500s; audit gaps (`log_action_created` lacks user;
-401s/login failures unaudited); time-window next-allowed math + end-hour
-off-by-one + unknown-env fail-open; impact estimator real-cluster path
-unreachable (dry_run=True hardcoded); engine hardcodes approval-gating
-constants (20 pods/10 replicas); rollback actions auto-created can never
-execute in production (DELETE not in prod matrix); OPA client log hygiene;
-frontend api `WS_URL`/constants cleanup; npm audit gating strategy.
+from file under DATA_DIR); Slack verify logs expected HMAC (replayable) — log
+failure+IP only; raw `str(e)` in unauthenticated webhook 500s; audit gaps
+(`log_action_created` lacks user; 401s/login failures unaudited); time-window
+next-allowed math + end-hour off-by-one + unknown-env fail-open; impact
+estimator real-cluster path unreachable (dry_run=True hardcoded); engine
+hardcodes approval-gating constants (20 pods/10 replicas); rollback actions
+auto-created can never execute in production (DELETE not in prod matrix);
+OPA client log hygiene; frontend api `WS_URL`/constants cleanup; npm audit
+gating strategy.
 
 ## Explicitly clean (verified this round)
 

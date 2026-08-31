@@ -201,7 +201,12 @@ def render_template(template: str, vars_: Dict[str, Any]) -> str:
     """
     Replace {{ key }} placeholders in template string.
 
-    Missing keys become empty string.
+    Phase 15 P2-13: a missing key used to render as empty string, which
+    silently dropped query filters (`"filter": [{{ project_filter }}]` →
+    `"filter": []`, `{{ namespace_filter }}` gone from PromQL) and widened
+    the query to all projects/namespaces. Missing keys now raise KeyError
+    naming every missing placeholder. An explicitly provided empty value
+    still renders as empty — that is how a project opts out of a filter.
 
     Args:
         template: Template string with {{ key }} placeholders
@@ -209,17 +214,30 @@ def render_template(template: str, vars_: Dict[str, Any]) -> str:
 
     Returns:
         Rendered string
+
+    Raises:
+        KeyError: A placeholder has no entry in vars_
     """
     import re
 
+    missing: list[str] = []
+
     def replacer(match: re.Match) -> str:
-        """Replace a single placeholder with its value or empty string."""
+        """Replace a single placeholder; record missing keys."""
         key = match.group(1)
-        value = vars_.get(key)
-        if value is None:
+        if key not in vars_:
+            missing.append(key)
             return ""
-        return str(value)
+        value = vars_[key]
+        return "" if value is None else str(value)
 
     # Replace all {{ key }} placeholders
     pattern = r"{{\s*(\w+)\s*}}"
-    return re.sub(pattern, replacer, template)
+    rendered = re.sub(pattern, replacer, template)
+    if missing:
+        raise KeyError(
+            f"Missing template variable(s): {', '.join(sorted(set(missing)))}. "
+            "Set them in the project's query_vars — a missing variable would "
+            "otherwise silently widen the query."
+        )
+    return rendered

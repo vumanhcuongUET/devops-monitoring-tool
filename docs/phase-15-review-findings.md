@@ -94,6 +94,12 @@ Fixed 2026-08-31 (third batch, same day):
    quote literal paths instead) and leading wildcards (`*foo`, `?foo`,
    `field:*foo`, `-*foo`); trailing wildcards and bare `*` (match-all
    default) stay allowed. `/logs` returns 400 with the reason, not 500.
+13. [x] ai_assistant `render_template` fails closed on missing variables
+   (KeyError naming all missing placeholders → structured `template_error`
+   per source); an explicitly provided empty value still renders as empty —
+   that is the intentional filter opt-out. Dead half of `core/security.py`
+   removed (token-bucket limiter, `rate_limit`/`validate_input` decorators,
+   `SecurityHeaders` — zero non-test callers) with their tests.
 
 Also fixed: users.json atomic 0600 write (P3), ai_assistant `unit` pytest
 marker registered (P3).
@@ -115,9 +121,9 @@ Still open (design-needed or low priority):
     kustomize overlays referenced but nonexistent; networkpolicy blocks CI
     smoke + prometheus scrape; consumed CHANGE_ME secrets (postgres/argocd/
     grafana); Alertmanager config unloadable (`actions:` key, no api_url).
-13. ai_assistant: missing template var silently empties query filters
-    (data-widening); ~50% of security.py dead; audit chain sha256-concat +
-    cwd-relative + no verifier.
+13b. ai_assistant audit chain: sha256-concat hashing + cwd-relative storage
+    + no verifier — needs a migration, not a patch (existing entries must
+    stay verifiable or be re-seeded).
 
 ## P3 — hardening batch (one PR)
 

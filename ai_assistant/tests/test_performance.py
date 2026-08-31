@@ -9,7 +9,7 @@ import time
 import pytest
 
 from core.cache import get_global_cache, SimpleCache
-from core.security import TokenBucketRateLimiter, InputValidator
+from core.security import InputValidator
 from core.audit import AuditLogger, AuditLogEntry
 from core.single_flight import SingleFlight
 
@@ -42,23 +42,6 @@ class TestCachePerformance:
 
         avg_time_ms = (elapsed / 1000) * 1000
         assert avg_time_ms < 1.0, f"Cache set too slow: {avg_time_ms:.3f}ms average"
-
-
-@pytest.mark.performance
-class TestRateLimiterPerformance:
-    """Performance tests for rate limiter."""
-
-    def test_rate_limiter_check_performance(self):
-        """Test rate limiter check performance (should be < 0.5ms)."""
-        limiter = TokenBucketRateLimiter(rate=1000.0, capacity=10000)
-
-        start = time.perf_counter()
-        for _ in range(1000):
-            limiter.check("test_user")
-        elapsed = time.perf_counter() - start
-
-        avg_time_ms = (elapsed / 1000) * 1000
-        assert avg_time_ms < 0.5, f"Rate limiter check too slow: {avg_time_ms:.3f}ms average"
 
 
 @pytest.mark.performance
@@ -203,18 +186,6 @@ class TestMemoryUsage:
 @pytest.mark.slow
 class TestScalability:
     """Scalability tests (marked as slow)."""
-
-    def test_rate_limiter_scalability(self):
-        """Test rate limiter performance with many users."""
-        limiter = TokenBucketRateLimiter(rate=100.0, capacity=1000)
-
-        start = time.perf_counter()
-        for i in range(10000):
-            limiter.check(f"user_{i % 1000}")  # 1000 unique users
-        elapsed = time.perf_counter() - start
-
-        avg_time_ms = (elapsed / 10000) * 1000
-        assert avg_time_ms < 1.0, f"Rate limiter with many users too slow: {avg_time_ms:.3f}ms average"
 
     def test_cache_scalability(self):
         """Test cache performance with many keys."""

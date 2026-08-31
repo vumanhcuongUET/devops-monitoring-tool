@@ -89,12 +89,20 @@ class TestRenderTemplate:
 
         assert result == "Hello Claude, Hello!"
 
-    def test_render_template_missing_key(self):
-        """Test that missing keys become empty string."""
+    def test_render_template_missing_key_raises(self):
+        """Phase 15 P2-13: a missing key used to render as empty string,
+        silently dropping query filters (data-widening). It now raises."""
         template = "Value is {{ missing_key }}"
-        result = render_template(template, {})
 
-        assert result == "Value is "
+        with pytest.raises(KeyError, match="missing_key"):
+            render_template(template, {})
+
+    def test_render_template_explicit_empty_still_renders_empty(self):
+        """An explicitly provided empty value is an intentional opt-out."""
+        template = '"filter": [{{ project_filter }}]'
+        result = render_template(template, {"project_filter": ""})
+
+        assert result == '"filter": []'
 
     def test_render_template_none_value(self):
         """Test that None values become empty string."""
@@ -102,6 +110,14 @@ class TestRenderTemplate:
         result = render_template(template, {"value": None})
 
         assert result == "Value is "
+
+    def test_render_template_names_all_missing_keys(self):
+        """The error lists every missing placeholder at once."""
+        template = "{{ alpha }} {{ beta }} {{ alpha }}"
+
+        with pytest.raises(KeyError, match="alpha.*beta") as exc_info:
+            render_template(template, {})
+        assert "beta" in str(exc_info.value)
 
     def test_render_template_preserves_literal(self):
         """Test that literal text is preserved."""

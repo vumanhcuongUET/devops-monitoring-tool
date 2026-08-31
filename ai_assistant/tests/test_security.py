@@ -3,96 +3,8 @@ Tests for security module.
 """
 
 import pytest
-import time
 
-from core.security import (
-    TokenBucketRateLimiter,
-    InputValidator,
-    SecurityHeaders,
-    rate_limit,
-    check_rate_limit,
-)
-
-
-@pytest.mark.unit
-class TestTokenBucketRateLimiter:
-    """Tests for token bucket rate limiter."""
-
-    def setup_method(self):
-        """Reset rate limiter state before each test."""
-        # Clear global rate limiters to avoid test interference
-        from core.security import _global_rate_limiters
-        _global_rate_limiters.clear()
-
-    def test_init(self):
-        """Test rate limiter initialization."""
-        limiter = TokenBucketRateLimiter(rate=10.0, capacity=100)
-        assert limiter._rate == 10.0
-        assert limiter._capacity == 100
-
-    def test_check_allows_requests_within_limit(self):
-        """Test that requests within limit are allowed."""
-        limiter = TokenBucketRateLimiter(rate=10.0, capacity=10)
-
-        for i in range(10):
-            result = limiter.check("user1")
-            assert result.allowed is True
-            # Remaining should be decreasing, but allow for timing variance
-            assert result.remaining >= 0 and result.remaining <= 10 - i
-
-    def test_check_blocks_requests_over_limit(self):
-        """Test that requests over limit are blocked."""
-        limiter = TokenBucketRateLimiter(rate=1.0, capacity=2)
-
-        # First two requests should be allowed
-        assert limiter.check("user1").allowed is True
-        assert limiter.check("user1").allowed is True
-
-        # Third should be blocked
-        result = limiter.check("user1")
-        assert result.allowed is False
-        assert result.remaining == 0
-        assert result.retry_after is not None
-
-    def test_check_refills_tokens_over_time(self):
-        """Test that tokens refill over time."""
-        limiter = TokenBucketRateLimiter(rate=10.0, capacity=10)
-
-        # Use all tokens
-        for _ in range(10):
-            limiter.check("user1")
-
-        # Wait for refill
-        time.sleep(0.15)  # 150ms should refill ~1.5 tokens
-
-        # Should have some tokens back
-        result = limiter.check("user1")
-        assert result.allowed is True
-
-    def test_check_different_keys(self):
-        """Test that different keys have separate buckets."""
-        limiter = TokenBucketRateLimiter(rate=1.0, capacity=2)
-
-        # Each user should get their full capacity
-        assert limiter.check("user1").allowed is True
-        assert limiter.check("user2").allowed is True
-        assert limiter.check("user1").allowed is True
-        assert limiter.check("user2").allowed is True
-
-    def test_reset(self):
-        """Test resetting rate limit for a key."""
-        limiter = TokenBucketRateLimiter(rate=1.0, capacity=2)
-
-        # Use all tokens
-        limiter.check("user1")
-        limiter.check("user1")
-        assert limiter.check("user1").allowed is False
-
-        # Reset
-        limiter.reset("user1")
-
-        # Should have full capacity again
-        assert limiter.check("user1").allowed is True
+from core.security import InputValidator
 
 
 @pytest.mark.unit
@@ -258,89 +170,11 @@ class TestInputValidator:
 
 
 @pytest.mark.unit
-class TestSecurityHeaders:
-    """Tests for security headers validation."""
-
-    def test_validate_headers_valid(self):
-        """Test valid headers."""
-        headers = {"Content-Type": "application/json"}
-        is_valid, errors = SecurityHeaders.validate_headers(headers)
-        assert is_valid is True
-        assert len(errors) == 0
-
-    def test_validate_headers_wrong_content_type(self):
-        """Test headers with wrong content type."""
-        headers = {"Content-Type": "text/html"}
-        is_valid, errors = SecurityHeaders.validate_headers(headers)
-        # HTML content type is flagged but not necessarily invalid
-        assert len(errors) >= 0
-
-
-@pytest.mark.unit
-class TestRateLimitDecorator:
-    """Tests for rate_limit decorator."""
-
-    def test_rate_limit_decorator(self):
-        """Test that decorator rate limits function calls."""
-        @rate_limit(rate=100.0, capacity=5)  # High rate for fast test
-        def limited_function():
-            return "success"
-
-        # Should allow first few calls
-        for _ in range(5):
-            assert limited_function() == "success"
-
-    def test_rate_limit_with_key_func(self):
-        """Test rate limit with custom key function."""
-        calls_by_user = {}
-
-        @rate_limit(rate=1.0, capacity=2, key_func=lambda user: user)
-        def limited_function(user):
-            calls_by_user[user] = calls_by_user.get(user, 0) + 1
-            return "success"
-
-        # Each user should get their own limit
-        assert limited_function("user1") == "success"
-        assert limited_function("user1") == "success"
-
-        assert limited_function("user2") == "success"
-        assert limited_function("user2") == "success"
-
-
-@pytest.mark.unit
-class TestCheckRateLimit:
-    """Tests for check_rate_limit function."""
-
-    def setup_method(self):
-        """Reset rate limiter state before each test."""
-        # Clear global rate limiters to avoid test interference
-        from core.security import _global_rate_limiters
-        _global_rate_limiters.clear()
-
-    def test_check_rate_limit_basic(self):
-        """Test basic rate limit checking."""
-        result = check_rate_limit(identifier="test_user_unique", rate=10.0, capacity=5)
-        assert result.allowed is True
-        # Remaining should be less than capacity after consuming 1 token
-        assert result.remaining >= 0 and result.remaining < 5
-
-    def test_check_rate_limit_multiple_calls(self):
-        """Test multiple calls deplete limit."""
-        for _ in range(5):
-            check_rate_limit(identifier="test_user", rate=10.0, capacity=5)
-
-        result = check_rate_limit(identifier="test_user", rate=10.0, capacity=5)
-        assert result.allowed is False
-
-
-@pytest.mark.unit
 class TestInputValidationInEntryPoints:
     """Tests for input validation applied in CLI entry points."""
 
     def test_invalid_project_name_rejected(self):
         """Test that invalid project names are rejected."""
-        from core.security import InputValidator
-
         # Test invalid characters
         invalid_names = ["project with spaces", "project@special", "project/with/slash", ""]
         for name in invalid_names:
@@ -350,8 +184,6 @@ class TestInputValidationInEntryPoints:
 
     def test_valid_project_name_accepted(self):
         """Test that valid project names are accepted."""
-        from core.security import InputValidator
-
         valid_names = ["meinvoice", "project-123", "project_name", "Project123"]
         for name in valid_names:
             is_valid, error = InputValidator.validate_project_name(name)
@@ -360,8 +192,6 @@ class TestInputValidationInEntryPoints:
 
     def test_invalid_section_name_rejected(self):
         """Test that invalid section names are rejected."""
-        from core.security import InputValidator
-
         # Test empty name
         is_valid, error = InputValidator.validate_section_name("")
         assert is_valid is False
@@ -369,8 +199,6 @@ class TestInputValidationInEntryPoints:
 
     def test_valid_section_name_accepted(self):
         """Test that valid section names are accepted."""
-        from core.security import InputValidator
-
         valid_names = ["errors", "alerts", "slow_endpoints", "custom-section"]
         for name in valid_names:
             is_valid, error = InputValidator.validate_section_name(name)
@@ -378,8 +206,6 @@ class TestInputValidationInEntryPoints:
 
     def test_invalid_time_range_rejected(self):
         """Test that invalid time ranges are rejected."""
-        from core.security import InputValidator
-
         invalid_ranges = ["invalid", "now-10x", "now-", "-30m", ""]
         for time_range in invalid_ranges:
             is_valid, error = InputValidator.validate_time_range(time_range)
@@ -388,8 +214,6 @@ class TestInputValidationInEntryPoints:
 
     def test_valid_time_range_accepted(self):
         """Test that valid time ranges are accepted."""
-        from core.security import InputValidator
-
         valid_ranges = ["now", "now-30m", "now-2h", "now-7d", "now-365d"]
         for time_range in valid_ranges:
             is_valid, error = InputValidator.validate_time_range(time_range)
@@ -398,8 +222,6 @@ class TestInputValidationInEntryPoints:
 
     def test_url_sanitization_removes_credentials(self):
         """Test that URL sanitization removes credentials."""
-        from core.security import InputValidator
-
         url_with_creds = "http://user:pass@localhost:9200/path"
         sanitized = InputValidator.sanitize_url(url_with_creds)
 

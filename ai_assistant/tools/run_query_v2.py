@@ -326,7 +326,13 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
                 _logger.error("Invalid ELK template", extra={"source": source["name"], "error": error})
                 return {"status": "template_error", "source": source["name"], "error": f"Invalid template: {error}", "data": None}
 
-            body_str = render_template(template, vars_)
+            # Phase 15 P2-13: a missing template var is a loud config error,
+            # not a silently-widened query.
+            try:
+                body_str = render_template(template, vars_)
+            except KeyError as e:
+                _logger.error("Missing template variable", extra={"source": source["name"], "error": str(e)})
+                return {"status": "template_error", "source": source["name"], "error": str(e), "data": None}
             try:
                 body = json.loads(body_str)
             except json.JSONDecodeError as e:
@@ -344,7 +350,11 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
                     if not is_valid:
                         _logger.error("Invalid PromQL template", extra={"source": source["name"], "error": error})
                         return {"status": "template_error", "source": source["name"], "error": f"Invalid template: {error}", "data": None}
-                    promql = render_template(template, vars_)
+                    try:
+                        promql = render_template(template, vars_)
+                    except KeyError as e:
+                        _logger.error("Missing template variable", extra={"source": source["name"], "error": str(e)})
+                        return {"status": "template_error", "source": source["name"], "error": str(e), "data": None}
                     res = execute_prometheus_query(source, promql, timeout)
                     res["query_id"] = q["id"]
                     sub_results.append(res)
@@ -357,7 +367,11 @@ def run_section(config: dict, section: str, time_range_override: str | None) -> 
                 if not is_valid:
                     _logger.error("Invalid PromQL template", extra={"source": source["name"], "error": error})
                     return {"status": "template_error", "source": source["name"], "error": f"Invalid template: {error}", "data": None}
-                promql = render_template(template, vars_)
+                try:
+                    promql = render_template(template, vars_)
+                except KeyError as e:
+                    _logger.error("Missing template variable", extra={"source": source["name"], "error": str(e)})
+                    return {"status": "template_error", "source": source["name"], "error": str(e), "data": None}
                 return execute_prometheus_query(source, promql, timeout)
 
         return {"status": "unknown_query_type", "source": source["name"], "data": None}

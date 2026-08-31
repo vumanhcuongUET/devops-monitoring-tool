@@ -9,8 +9,17 @@
 set -euo pipefail
 
 # Configuration
-NAMESPACE="${1:-devops-monitor}"
-POD_NAME="postgres-0"
+NAMESPACE="${1:-postgres}"
+# Resolve the Postgres pod from the deployment/statefulset label rather than a
+# hardcoded name — the DB runs as a Deployment named `postgres` in the
+# `postgres` namespace (k8s/postgresql/), so "postgres-0" never existed.
+POD_NAME="${POD_NAME:-$(kubectl get pods -n "${NAMESPACE}" \
+    -l app=postgres --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)}"
+if [ -z "${POD_NAME}" ]; then
+    log_error "no running pod with label app=postgres in namespace ${NAMESPACE}"
+    exit 1
+fi
 DB_NAME="devops_monitor"
 DB_USER="postgres"
 BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
@@ -98,9 +107,11 @@ log_info "Cleaning up old backups (retention: ${RETENTION_DAYS} days)..."
 CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
 
 if command -v aws &> /dev/null && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
-    # List and delete old backups from S3
+    # List and delete old backups from S3. `aws s3 ls` lines look like
+    # "2026-08-31 12:00:00 1234 file" — the DATE is field 1 (field 2 is the
+    # time, which never matches \d{8}); strip dashes before comparing.
     aws s3 ls "${S3_BUCKET}/" | while read -r line; do
-        FILE_DATE=$(echo "$line" | awk '{print $2}' | grep -oP '\d{8}' | head -1)
+        FILE_DATE=$(echo "$line" | awk '{print $1}' | tr -d '-')
 
         if [ "${FILE_DATE:-}" != "" ] && [ "${FILE_DATE}" -lt "${CUTOFF_DATE}" ]; then
             FILE_NAME=$(echo "$line" | awk '{print $4}')

@@ -1,5 +1,12 @@
 ---
 # Alertmanager Configuration
+#
+# REQUIRED BEFORE GO-LIVE — without these, notifications silently go nowhere:
+#   1. slack_api_url (global): every slack_configs receiver below is inert
+#      until a real Slack webhook URL is set.
+#   2. pagerduty_configs: re-add with a real routing key via pagerduty_url
+#      (see comment on the critical receiver).
+# Provide values out-of-band (External Secrets / kubectl patch) — never in git.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -14,8 +21,8 @@ stringData:
       # Default resolution timeout
       resolve_timeout: 5m
 
-      # Slack API URL (set via environment or Secret)
-      # slack_api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+      # REQUIRED: without this URL the slack_configs receivers cannot send.
+      # slack_api_url: 'https://hooks.slack.com/services/...'
 
       # SMTP configuration for email alerts
       # smtp_smarthost: 'smtp.gmail.com:587'
@@ -71,9 +78,10 @@ stringData:
                 text: "Runbook"
                 url: "{{ range .Alerts }}{{ .Annotations.runbook }}{{ end }}"
 
-        pagerduty_configs:
-          - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
-            description: '{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        # PagerDuty: re-add a pagerduty_configs block ONLY together with a
+        # real routing key (global pagerduty_url from a Secret). An empty
+        # routing_key fails Alertmanager config validation, which rejects the
+        # whole file and takes every notification channel down with it.
 
         email_configs:
           - to: 'oncall@devops-monitor.com'

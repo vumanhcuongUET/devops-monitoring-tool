@@ -1,5 +1,16 @@
 ---
 # Redis Backup CronJob
+# 2026-08-31 rewrite: the previous version could never succeed —
+#   - image redis:7-alpine has no `aws` CLI the script calls,
+#   - env values were literal "${AWS_REGION:-us-east-1}" strings (k8s does
+#     not expand shell defaults),
+#   - host `redis` resolved inside devops-monitor but Redis runs in the
+#     `monitoring` namespace,
+#   - the BGSAVE wait compared LASTSAVE to "0", so it broke out immediately
+#     (LASTSAVE always returns the previous save epoch).
+# Mirrors the Phase 15 PostgreSQL CronJob: alpine + runtime apk install of
+# redis-cli and the aws CLI (swap to a prebuilt image when an internal
+# registry exists), its own namespace-local ServiceAccount.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -14,6 +25,7 @@ spec:
   suspend: false
   successfulJobsHistoryLimit: 24
   failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
 
   jobTemplate:
     metadata:
@@ -30,76 +42,90 @@ spec:
             app.kubernetes.io/name: redis-backup-pod
         spec:
           restartPolicy: OnFailure
-
           serviceAccountName: backup-service-account
 
           containers:
             - name: backup
-              image: redis:7-alpine
+              image: alpine:3.20
               command:
                 - /bin/sh
                 - -c
                 - |
+                  set -eu
+                  apk add --no-cache redis aws-cli >/dev/null
+
+                  # redis-cli reads the password from REDISCLI_AUTH. Only set
+                  # it when non-empty — exporting "" makes redis-cli send
+                  # `AUTH ""`, which errors and spins the PING loop forever.
+                  if [ -n "${REDIS_PASSWORD:-}" ]; then
+                    export REDISCLI_AUTH="${REDIS_PASSWORD}"
+                  fi
+                  RHOST="redis.monitoring.svc.cluster.local"
+
+                  until redis-cli -h "${RHOST}" PING >/dev/null 2>&1; do
+                    echo "Waiting for Redis..."
+                    sleep 2
+                  done
+
                   BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
-                  BACKUP_FILE="redis_dump_${BACKUP_DATE}.rdb"
+                  BACKUP_FILE="redis_dump_${BACKUP_DATE}.rdb.gz"
 
                   echo "Starting Redis backup: ${BACKUP_FILE}"
 
-                  # Trigger BGSAVE
-                  redis-cli -h redis BGSAVE
-
-                  # Wait for BGSAVE to complete
+                  # BGSAVE, then wait for LASTSAVE epoch to actually advance.
+                  LASTSAVE_BEFORE=$(redis-cli -h "${RHOST}" LASTSAVE)
+                  redis-cli -h "${RHOST}" BGSAVE
                   SAVE_DONE=0
                   for i in $(seq 1 60); do
-                    LASTSAVE=$(redis-cli -h redis LASTSAVE)
-                    if [ "${LASTSAVE}" != "0" ]; then
+                    LASTSAVE_NOW=$(redis-cli -h "${RHOST}" LASTSAVE)
+                    if [ "${LASTSAVE_NOW}" != "${LASTSAVE_BEFORE}" ]; then
                       SAVE_DONE=1
                       break
                     fi
                     echo "Waiting for BGSAVE... (${i}/60)"
                     sleep 1
                   done
+                  [ "${SAVE_DONE}" = "1" ] || { echo "BGSAVE timeout!"; exit 1; }
 
-                  if [ "${SAVE_DONE}" != "1" ]; then
-                    echo "BGSAVE timeout!"
+                  # Direct RDB copy, then compress.
+                  redis-cli -h "${RHOST}" --rdb /tmp/dump.rdb >/dev/null
+                  gzip /tmp/dump.rdb
+                  mv /tmp/dump.rdb.gz "/tmp/${BACKUP_FILE}"
+                  echo "Backup size: $(du -h "/tmp/${BACKUP_FILE}" | cut -f1)"
+
+                  # Upload to S3 (plain env values — k8s does not expand ${}).
+                  if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+                    aws s3 cp "/tmp/${BACKUP_FILE}" "${S3_BUCKET}/${BACKUP_FILE}"
+                    echo "Upload successful"
+                  else
+                    echo "AWS credentials not configured, backup kept locally only" >&2
                     exit 1
                   fi
 
-                  echo "BGSAVE completed"
-
-                  # Copy RDB file
-                  redis-cli -h redis --rdb /tmp/${BACKUP_FILE}
-
-                  # Compress
-                  gzip /tmp/${BACKUP_FILE}
-                  BACKUP_FILE="${BACKUP_FILE}.gz"
-
-                  # Get size
-                  BACKUP_SIZE=$(du -h /tmp/${BACKUP_FILE} | cut -f1)
-                  echo "Backup size: ${BACKUP_SIZE}"
-
-                  # Upload to S3
-                  if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
-                    echo "Uploading to S3..."
-                    aws s3 cp /tmp/${BACKUP_FILE} \
-                      ${S3_BUCKET:-s3://devops-monitoring-backups/redis}/${BACKUP_FILE}
-
-                    if [ $? -eq 0 ]; then
-                      echo "Upload successful"
-                    else
-                      echo "Upload failed"
-                      exit 1
+                  # Retention: delete uploads older than RETENTION_DAYS.
+                  # `aws s3 ls` lines look like: "2026-08-31 12:00:00 1234 file"
+                  # — the DATE is field 1, stripped of dashes for comparison.
+                  CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+                  aws s3 ls "${S3_BUCKET}/" | while read -r _date _time _size fname; do
+                    [ -n "${fname:-}" ] || continue
+                    FILE_DATE=$(echo "${_date}" | tr -d '-')
+                    if [ "${FILE_DATE}" -lt "${CUTOFF_DATE}" ] 2>/dev/null; then
+                      echo "Deleting old backup: ${fname}"
+                      aws s3 rm "${S3_BUCKET}/${fname}"
                     fi
-                  else
-                    echo "AWS credentials not configured, skipping S3 upload"
-                  fi
+                  done
 
-                  # Cleanup
-                  rm -f /tmp/${BACKUP_FILE}
-
+                  rm -f "/tmp/${BACKUP_FILE}"
                   echo "Redis backup completed successfully"
 
               env:
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: redis-backup-auth
+                      key: redis-password
+                      optional: true
+
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
                     secretKeyRef:
@@ -115,10 +141,13 @@ spec:
                       optional: true
 
                 - name: AWS_DEFAULT_REGION
-                  value: "${AWS_REGION:-us-east-1}"
+                  value: "us-east-1"
 
                 - name: S3_BUCKET
-                  value: "${S3_BUCKET:-s3://devops-monitoring-backups/redis}"
+                  value: "s3://devops-monitoring-backups/redis"
+
+                - name: RETENTION_DAYS
+                  value: "7"
 
               resources:
                 requests:
@@ -136,3 +165,14 @@ spec:
             - name: tmp
               emptyDir:
                 sizeLimit: 1Gi
+
+---
+# Namespace-local backup SA — the postgres namespace copy is not visible here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-service-account
+  namespace: devops-monitor
+  labels:
+    app.kubernetes.io/name: redis-backup
+    app.kubernetes.io/component: backup

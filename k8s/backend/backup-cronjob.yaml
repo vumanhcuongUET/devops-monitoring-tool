@@ -1,0 +1,133 @@
+---
+# Alert-Data PVC Backup CronJob
+# The alert-data PVC is the PRIMARY state store of the platform (DATA_DIR=
+# /app/data: local users, alert rules/state/history, SLO configs, approvals,
+# audit log). PostgreSQL and Redis are optional mirrors — until one of them
+# becomes the system of record, losing this volume loses the platform's
+# configuration and identity. This CronJob tars the volume and uploads to S3
+# daily. Same runtime-apk pattern as the postgres/redis backup jobs.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: alert-data-backup
+  namespace: devops-monitor
+  labels:
+    app.kubernetes.io/name: alert-data-backup
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: devops-monitor
+spec:
+  # Daily at 2 AM — runs before the postgres backup (3 AM) on purpose.
+  schedule: "0 2 * * *"
+  suspend: false
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alert-data-backup-job
+    spec:
+      concurrencyPolicy: Forbid
+      backoffLimit: 3
+      activeDeadlineSeconds: 1800
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: alert-data-backup-pod
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: backup-service-account
+
+          containers:
+            - name: backup
+              image: alpine:3.20
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  apk add --no-cache aws-cli >/dev/null
+
+                  BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="alert_data_${BACKUP_DATE}.tar.gz"
+
+                  echo "Backing up alert-data volume: ${BACKUP_FILE}"
+
+                  # The backup pod can share the RWO PVC only while the backend
+                  # pod runs on the same node; if the attach fails, fail loudly
+                  # (the BackupFailed Prometheus alert pages on it) rather
+                  # than silently skipping.
+                  tar -czf "/tmp/${BACKUP_FILE}" -C /data .
+                  echo "Backup size: $(du -h "/tmp/${BACKUP_FILE}" | cut -f1)"
+
+                  if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+                    aws s3 cp "/tmp/${BACKUP_FILE}" "${S3_BUCKET}/${BACKUP_FILE}"
+                    echo "Upload successful"
+                  else
+                    echo "AWS credentials not configured, backup kept locally only" >&2
+                    exit 1
+                  fi
+
+                  # Retention (30d — file-state backups are the only copy).
+                  CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+                  aws s3 ls "${S3_BUCKET}/" | while read -r _date _time _size fname; do
+                    [ -n "${fname:-}" ] || continue
+                    FILE_DATE=$(echo "${_date}" | tr -d '-')
+                    if [ "${FILE_DATE}" -lt "${CUTOFF_DATE}" ] 2>/dev/null; then
+                      echo "Deleting old backup: ${fname}"
+                      aws s3 rm "${S3_BUCKET}/${fname}"
+                    fi
+                  done
+
+                  rm -f "/tmp/${BACKUP_FILE}"
+                  echo "Alert-data backup completed successfully"
+
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-aws-credentials
+                      key: access-key-id
+                      optional: true
+
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-aws-credentials
+                      key: secret-access-key
+                      optional: true
+
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+
+                - name: S3_BUCKET
+                  value: "s3://devops-monitoring-backups/alert-data"
+
+                - name: RETENTION_DAYS
+                  value: "30"
+
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+
+              volumeMounts:
+                # Read-only: backup must never mutate live state.
+                - name: alert-data
+                  mountPath: /data
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+
+          volumes:
+            - name: alert-data
+              persistentVolumeClaim:
+                claimName: alert-data-pvc
+            - name: tmp
+              emptyDir:
+                sizeLimit: 2Gi

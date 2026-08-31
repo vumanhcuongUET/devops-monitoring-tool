@@ -9,7 +9,16 @@
 set -euo pipefail
 
 BACKUP_TYPE="${1:-postgresql}"
-NAMESPACE="${2:-devops-monitor}"
+NAMESPACE="${2:-postgres}"
+# Discover the Postgres pod from its label — the DB runs as a Deployment in
+# the `postgres` namespace, "postgres-0" never existed.
+POD_NAME="${POD_NAME:-$(kubectl get pods -n "${NAMESPACE}" \
+    -l app=postgres --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)}"
+if [ "${BACKUP_TYPE}" = "postgresql" ] && [ -z "${POD_NAME}" ]; then
+    log_error "no running pod with label app=postgres in namespace ${NAMESPACE}"
+    exit 1
+fi
 VALIDATION_LOG="/tmp/backup_validation_${BACKUP_TYPE}.log"
 
 # Colors for output
@@ -41,10 +50,12 @@ case "${BACKUP_TYPE}" in
     postgresql)
         log_info "Validating PostgreSQL backups..."
 
-        # Get latest backup from S3
+        # Get latest backup from S3. Accept BOTH artifacts: the CronJob
+        # uploads uncompressed custom-format `.dump` (internally compressed),
+        # the manual script uploads `.dump.gz`.
         log_info "Fetching latest backup from S3..."
         LATEST_BACKUP=$(aws s3 ls "${S3_BUCKET:-s3://devops-monitoring-backups/postgresql}/" | \
-            grep "\.dump\.gz$" | tail -1 | awk '{print $4}')
+            grep -E "\.dump(\.gz)?$" | tail -1 | awk '{print $4}')
 
         if [ -z "${LATEST_BACKUP}" ]; then
             log_error "No backups found in S3"
@@ -60,42 +71,61 @@ case "${BACKUP_TYPE}" in
         # Validate file integrity
         log_validation "Validating file integrity..."
 
-        if gunzip -t "${TEMP_BACKUP}" 2>/dev/null; then
-            log_validation "File integrity check passed"
+        if [[ "${LATEST_BACKUP}" == *.gz ]]; then
+            if gunzip -t "${TEMP_BACKUP}" 2>/dev/null; then
+                log_validation "File integrity check passed"
+            else
+                log_error "File is corrupted"
+                rm -f "${TEMP_BACKUP}"
+                exit 1
+            fi
         else
-            log_error "File is corrupted"
-            rm -f "${TEMP_BACKUP}"
-            exit 1
+            log_validation "Uncompressed custom-format dump (CronJob artifact)"
         fi
 
         # Test restore to temporary database
         log_validation "Performing test restore..."
 
         TEMP_DB="backup_validation_$(date +%s)"
-        kubectl exec postgres-0 -n "${NAMESPACE}" -- \
+        kubectl exec "${POD_NAME}" -n "${NAMESPACE}" -- \
             psql -U postgres -c "CREATE DATABASE ${TEMP_DB};" || {
             log_error "Failed to create test database"
             rm -f "${TEMP_BACKUP}"
             exit 1
         }
 
-        gunzip -c "${TEMP_BACKUP}" | kubectl exec -i postgres-0 -n "${NAMESPACE}" -- \
-            pg_restore -U postgres -d "${TEMP_DB}" --format=custom || {
-            log_error "Test restore failed"
-            kubectl exec postgres-0 -n "${NAMESPACE}" -- \
-                psql -U postgres -c "DROP DATABASE ${TEMP_DB};"
-            rm -f "${TEMP_BACKUP}"
-            exit 1
-        }
+        # gz artifact: stream through gunzip. Plain .dump: feed directly.
+        # (A pipe held in a variable expands as literal args, never as a
+        # pipeline — which is why the previous RESTORE_CMD indirection could
+        # not work.)
+        if [[ "${LATEST_BACKUP}" == *.gz ]]; then
+            gunzip -c "${TEMP_BACKUP}" | kubectl exec -i "${POD_NAME}" -n "${NAMESPACE}" -- \
+                pg_restore -U postgres -d "${TEMP_DB}" --format=custom || {
+                log_error "Test restore failed"
+                kubectl exec "${POD_NAME}" -n "${NAMESPACE}" -- \
+                    psql -U postgres -c "DROP DATABASE ${TEMP_DB};"
+                rm -f "${TEMP_BACKUP}"
+                exit 1
+            }
+        else
+            cat "${TEMP_BACKUP}" | kubectl exec -i "${POD_NAME}" -n "${NAMESPACE}" -- \
+                pg_restore -U postgres -d "${TEMP_DB}" --format=custom || {
+                log_error "Test restore failed"
+                kubectl exec "${POD_NAME}" -n "${NAMESPACE}" -- \
+                    psql -U postgres -c "DROP DATABASE ${TEMP_DB};"
+                rm -f "${TEMP_BACKUP}"
+                exit 1
+            }
+        fi
 
         # Verify data
-        TABLE_COUNT=$(kubectl exec postgres-0 -n "${NAMESPACE}" -- \
+        TABLE_COUNT=$(kubectl exec "${POD_NAME}" -n "${NAMESPACE}" -- \
             psql -U postgres -d "${TEMP_DB}" -tAc "SELECT COUNT(*) FROM information_schema.tables;")
 
         log_validation "Test restore successful: ${TABLE_COUNT} tables found"
 
         # Cleanup
-        kubectl exec postgres-0 -n "${NAMESPACE}" -- \
+        kubectl exec "${POD_NAME}" -n "${NAMESPACE}" -- \
             psql -U postgres -c "DROP DATABASE ${TEMP_DB};"
         rm -f "${TEMP_BACKUP}"
 

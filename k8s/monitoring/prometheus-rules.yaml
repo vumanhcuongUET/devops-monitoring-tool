@@ -1,415 +1,419 @@
 ---
 # Prometheus Custom Rules for DevOps Monitor
-apiVersion: v1
-kind: ConfigMap
+# Shipped as a PrometheusRule CRD — this stack runs kube-prometheus-stack, which
+# loads PrometheusRule objects only; a plain ConfigMap here is never mounted
+# (same situation as agent-metrics.yaml, review finding R4).
+#
+# Metric-name contract: every expr below references a series that is actually
+# exported. API series come from app/metrics.py (HTTPMetricsMiddleware):
+#   http_server_requests_total{method, route_pattern, status}
+#   http_server_request_duration_seconds_bucket{method, route_pattern, status, le}
+#   alert_eval_errors_total{source}, alert_engine_last_success_timestamp,
+#   leader_lock_up{lock}
+# Infra series (container_*, kube_*, node_*) come from kube-prometheus-stack;
+# pg_*/redis_* require the postgres/redis exporters to be scraped.
+# Rules for series the app does NOT export (slo_budget_remaining,
+# rate_limit_hits_total, approval_queue_length, alert_evaluation_lag_seconds,
+# alert_queue_*) were removed — an alert on an absent series can never fire,
+# which is a silent monitoring failure (review finding, 2026-08-31).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
 metadata:
-  name: prometheus-rules
+  name: devops-monitor-rules
   namespace: monitoring
   labels:
+    release: prometheus-operator
     app.kubernetes.io/name: prometheus-rules
     app.kubernetes.io/component: monitoring
-data:
-  devops-monitor-rules.yaml: |
-    groups:
-      # API Availability Rules
-      - name: api_availability
-        interval: 30s
-        rules:
-          - alert: HighErrorRate
-            expr: |
-              sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
-              /
-              sum(rate(http_requests_total[5m])) by (service)
-              > 0.05
-            for: 5m
-            labels:
-              severity: high
-              tier: api
-            annotations:
-              summary: "High error rate detected"
-              description: "Service {{ $labels.service }} error rate is {{ $value | humanizePercentage }} (>5%)"
-              runbook: "https://runbooks.example.com/high-error-rate"
+spec:
+  groups:
+    # API Availability Rules
+    - name: api_availability
+      interval: 30s
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            sum(rate(http_server_requests_total{status=~"5.."}[5m])) by (route_pattern)
+            /
+            sum(rate(http_server_requests_total[5m])) by (route_pattern)
+            > 0.05
+          for: 5m
+          labels:
+            severity: high
+            tier: api
+          annotations:
+            summary: "High error rate detected"
+            description: "Route {{ $labels.route_pattern }} error rate is {{ $value | humanizePercentage }} (>5%)"
+            runbook: "https://runbooks.example.com/high-error-rate"
 
-          - alert: CriticalErrorRate
-            expr: |
-              sum(rate(http_requests_total{status=~"5.."}[2m])) by (service)
-              /
-              sum(rate(http_requests_total[2m])) by (service)
-              > 0.10
-            for: 2m
-            labels:
-              severity: critical
-              tier: api
-            annotations:
-              summary: "Critical error rate detected"
-              description: "Service {{ $labels.service }} error rate is {{ $value | humanizePercentage }} (>10%)"
+        - alert: CriticalErrorRate
+          expr: |
+            sum(rate(http_server_requests_total{status=~"5.."}[2m])) by (route_pattern)
+            /
+            sum(rate(http_server_requests_total[2m])) by (route_pattern)
+            > 0.10
+          for: 2m
+          labels:
+            severity: critical
+            tier: api
+          annotations:
+            summary: "Critical error rate detected"
+            description: "Route {{ $labels.route_pattern }} error rate is {{ $value | humanizePercentage }} (>10%)"
 
-      # API Latency Rules
-      - name: api_latency
-        interval: 30s
-        rules:
-          - alert: HighLatency
-            expr: |
-              histogram_quantile(0.95,
-                sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
-              ) > 2
-            for: 10m
-            labels:
-              severity: high
-              tier: api
-            annotations:
-              summary: "High P95 latency detected"
-              description: "Service {{ $labels.service }} P95 latency is {{ $value }}s (>2s)"
-              runbook: "https://runbooks.example.com/high-latency"
+    # API Latency Rules
+    - name: api_latency
+      interval: 30s
+      rules:
+        - alert: HighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le, route_pattern)
+            ) > 2
+          for: 10m
+          labels:
+            severity: high
+            tier: api
+          annotations:
+            summary: "High P95 latency detected"
+            description: "Route {{ $labels.route_pattern }} P95 latency is {{ $value }}s (>2s)"
+            runbook: "https://runbooks.example.com/high-latency"
 
-          - alert: CriticalLatency
-            expr: |
-              histogram_quantile(0.99,
-                sum(rate(http_request_duration_seconds_bucket[2m])) by (le, service)
-              ) > 5
-            for: 2m
-            labels:
-              severity: critical
-              tier: api
-            annotations:
-              summary: "Critical P99 latency detected"
-              description: "Service {{ $labels.service }} P99 latency is {{ $value }}s (>5s)"
+        - alert: CriticalLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_server_request_duration_seconds_bucket[2m])) by (le, route_pattern)
+            ) > 5
+          for: 2m
+          labels:
+            severity: critical
+            tier: api
+          annotations:
+            summary: "Critical P99 latency detected"
+            description: "Route {{ $labels.route_pattern }} P99 latency is {{ $value }}s (>5s)"
 
-      # SLO Violation Rules
-      - name: slo_violations
-        interval: 1m
-        rules:
-          - alert: SLOViolation
-            expr: slo_budget_remaining < 0
-            for: 5m
-            labels:
-              severity: critical
-              tier: slo
-            annotations:
-              summary: "SLO violation detected"
-              description: "Service {{ $labels.service }} SLO violated, budget: {{ $value }}%"
-              runbook: "https://runbooks.example.com/slo-violation"
+    # SLO note: slo_budget_remaining was never exported by the backend, so the
+    # previous SLOViolation/SLOAtRisk alerts could never fire. Re-add them only
+    # together with a recording rule that computes error-budget burn from
+    # http_server_request_duration_seconds / http_server_requests_total.
+    - name: slo_violations
+      interval: 1m
+      rules:
+        # Recording rules that actually exist today: latency SLO burn from real series.
+        - record: slo:latency_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le)
+            )
+        - record: slo:error_ratio_5m
+          expr: |
+            sum(rate(http_server_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_server_requests_total[5m]))
 
-          - alert: SLOAtRisk
-            expr: slo_budget_remaining < 10 and slo_budget_remaining > 0
-            for: 15m
-            labels:
-              severity: warning
-              tier: slo
-            annotations:
-              summary: "SLO at risk"
-              description: "Service {{ $labels.service }} SLO budget at {{ $value }}% (<10%)"
+        - alert: LatencySLOBurn
+          expr: slo:latency_p95_5m > 2
+          for: 15m
+          labels:
+            severity: warning
+            tier: slo
+          annotations:
+            summary: "Latency SLO at risk"
+            description: "Global P95 latency is {{ $value }}s (>2s) for 15m"
 
-          - alert: SLOWarnings
-            expr: |
-              sum(rate(http_slow_requests_total[5m])) by (service)
-              /
-              sum(rate(http_requests_total[5m])) by (service)
-              > 0.01
-            for: 10m
-            labels:
-              severity: warning
-              tier: slo
-            annotations:
-              summary: "High slow request rate"
-              description: "Service {{ $labels.service }} slow request rate is {{ $value | humanizePercentage }} (>1%)"
+        - alert: ErrorBudgetBurn
+          expr: slo:error_ratio_5m > 0.01
+          for: 15m
+          labels:
+            severity: warning
+            tier: slo
+          annotations:
+            summary: "Error budget burning fast"
+            description: "Global 5xx ratio is {{ $value | humanizePercentage }} (>1%)"
 
-      # Resource Exhaustion Rules
-      - name: resource_exhaustion
-        interval: 30s
-        rules:
-          - alert: HighMemoryUsage
-            expr: |
-              container_memory_usage_bytes{namespace="devops-monitor"}
-              /
-              container_spec_memory_limit_bytes{namespace="devops-monitor"}
+    # Resource Exhaustion Rules
+    - name: resource_exhaustion
+      interval: 30s
+      rules:
+        - alert: HighMemoryUsage
+          expr: |
+            container_memory_usage_bytes{namespace="devops-monitor", container!=""}
+            /
+            container_spec_memory_limit_bytes{namespace="devops-monitor", container!=""}
+            > 0.9
+          for: 5m
+          labels:
+            severity: high
+            tier: infrastructure
+          annotations:
+            summary: "High memory usage"
+            description: "Container {{ $labels.container }} in {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
+            runbook: "https://runbooks.example.com/high-memory-usage"
+
+        - alert: CriticalMemoryUsage
+          expr: |
+            container_memory_usage_bytes{namespace="devops-monitor", container!=""}
+            /
+            container_spec_memory_limit_bytes{namespace="devops-monitor", container!=""}
+            > 0.95
+          for: 2m
+          labels:
+            severity: critical
+            tier: infrastructure
+          annotations:
+            summary: "Critical memory usage"
+            description: "Container {{ $labels.container }} in {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
+
+        - alert: HighCPUUsage
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{namespace="devops-monitor", container!=""}[5m])) by (pod)
+            /
+            sum(container_spec_cpu_quota{namespace="devops-monitor"}/container_spec_cpu_period{namespace="devops-monitor"}) by (pod)
+            > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            tier: infrastructure
+          annotations:
+            summary: "High CPU usage"
+            description: "Pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of CPU limit"
+
+        - alert: DiskSpaceLow
+          expr: |
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint="/"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint="/"}
+            < 0.2
+          for: 10m
+          labels:
+            severity: medium
+            tier: infrastructure
+          annotations:
+            summary: "Disk space low"
+            description: "Disk {{ $labels.device }} has {{ $value | humanizePercentage }} free space"
+            runbook: "https://runbooks.example.com/disk-space-low"
+
+        - alert: DiskSpaceCritical
+          expr: |
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint="/"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint="/"}
+            < 0.1
+          for: 5m
+          labels:
+            severity: critical
+            tier: infrastructure
+          annotations:
+            summary: "Critical disk space"
+            description: "Disk {{ $labels.device }} has {{ $value | humanizePercentage }} free space"
+
+    # Database Health Rules (require postgres_exporter / redis_exporter scrapes)
+    - name: database_health
+      interval: 30s
+      rules:
+        - alert: PostgreSQLDown
+          expr: pg_up == 0
+          for: 1m
+          labels:
+            severity: critical
+            tier: database
+          annotations:
+            summary: "PostgreSQL database down"
+            description: "PostgreSQL instance {{ $labels.instance }} is not responding"
+
+        # Previous expr divided a rate() by itself (=1, always firing). There is
+        # no slow-query series exported today; re-add this alert only once
+        # pg_stat_statements is enabled and pg_exporter exposes it.
+        - alert: PostgreSQLConnectionPoolExhausted
+          expr: |
+            sum by (instance) (pg_stat_activity_count)
+            /
+            on (instance)
+            pg_settings_max_connections
               > 0.9
-            for: 5m
-            labels:
-              severity: high
-              tier: infrastructure
-            annotations:
-              summary: "High memory usage"
-              description: "Container {{ $labels.container }} in {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
-              runbook: "https://runbooks.example.com/high-memory-usage"
+          for: 5m
+          labels:
+            severity: high
+            tier: database
+          annotations:
+            summary: "PostgreSQL connection pool near capacity"
+            description: "{{ $value | humanizePercentage }} of connections used"
 
-          - alert: CriticalMemoryUsage
-            expr: |
-              container_memory_usage_bytes{namespace="devops-monitor"}
-              /
-              container_spec_memory_limit_bytes{namespace="devops-monitor"}
-              > 0.95
-            for: 2m
-            labels:
-              severity: critical
-              tier: infrastructure
-            annotations:
-              summary: "Critical memory usage"
-              description: "Container {{ $labels.container }} in {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
+        - alert: RedisDown
+          expr: redis_up == 0
+          for: 1m
+          labels:
+            severity: critical
+            tier: cache
+          annotations:
+            summary: "Redis instance down"
+            description: "Redis {{ $labels.addr }} is not responding"
 
-          - alert: HighCPUUsage
-            expr: |
-              sum(rate(container_cpu_usage_seconds_total{namespace="devops-monitor"}[5m])) by (pod)
-              /
-              sum(container_spec_cpu_quota{namespace="devops-monitor"}/container_spec_cpu_period{namespace="devops-monitor"}) by (pod)
-              > 0.8
-            for: 10m
-            labels:
-              severity: warning
-              tier: infrastructure
-            annotations:
-              summary: "High CPU usage"
-              description: "Pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of CPU limit"
-
-          - alert: DiskSpaceLow
-            expr: |
-              node_filesystem_avail_bytes{mountpoint="/var/lib/docker"}
-              /
-              node_filesystem_size_bytes{mountpoint="/var/lib/docker"}
-              < 0.2
-            for: 10m
-            labels:
-              severity: medium
-              tier: infrastructure
-            annotations:
-              summary: "Disk space low"
-              description: "Disk {{ $labels.device }} has {{ $value | humanizePercentage }} free space"
-              runbook: "https://runbooks.example.com/disk-space-low"
-
-          - alert: DiskSpaceCritical
-            expr: |
-              node_filesystem_avail_bytes{mountpoint="/var/lib/docker"}
-              /
-              node_filesystem_size_bytes{mountpoint="/var/lib/docker"}
-              < 0.1
-            for: 5m
-            labels:
-              severity: critical
-              tier: infrastructure
-            annotations:
-              summary: "Critical disk space"
-              description: "Disk {{ $labels.device }} has {{ $value | humanizePercentage }} free space"
-
-      # Database Health Rules
-      - name: database_health
-        interval: 30s
-        rules:
-          - alert: PostgreSQLDown
-            expr: pg_up == 0
-            for: 1m
-            labels:
-              severity: critical
-              tier: database
-            annotations:
-              summary: "PostgreSQL database down"
-              description: "PostgreSQL instance {{ $labels.datname }} is not responding"
-
-          - alert: PostgreSQLSlowQueries
-            expr: |
-              rate(pg_stat_database_calls_total{datname="devops_monitor"}[5m])
-              /
-              rate(pg_stat_database_calls_total{datname="devops_monitor"}[5m])
-              > 0.05
-            for: 10m
-            labels:
-              severity: warning
-              tier: database
-            annotations:
-              summary: "PostgreSQL slow queries"
-              description: "Slow query rate is {{ $value | humanizePercentage }}"
-
-          - alert: PostgreSQLConnectionPoolExhausted
-            expr: |
-              pg_stat_activity_count
-              /
-              pg_settings_max_connections
+        - alert: RedisMemoryHigh
+          expr: |
+            redis_memory_used_bytes
+            /
+            redis_memory_max_bytes
               > 0.9
-            for: 5m
-            labels:
-              severity: high
-              tier: database
-            annotations:
-              summary: "PostgreSQL connection pool near capacity"
-              description: "{{ $value | humanizePercentage }} of connections used"
+            unless on (instance)
+              redis_memory_max_bytes == 0
+          for: 5m
+          labels:
+            severity: high
+            tier: cache
+          annotations:
+            summary: "Redis memory usage high"
+            description: "Redis {{ $labels.instance }} using {{ $value | humanizePercentage }} of max memory (skipped instances with maxmemory=0)"
 
-          - alert: RedisDown
-            expr: redis_up == 0
-            for: 1m
-            labels:
-              severity: critical
-              tier: cache
-            annotations:
-              summary: "Redis instance down"
-              description: "Redis {{ $labels.addr }} is not responding"
+    # Application-Specific Rules — only series the backend actually exports
+    # (app/metrics.py). The previous rate_limit/approval-queue/alert-queue
+    # alerts referenced series that do not exist and could never fire.
+    - name: application_health
+      interval: 30s
+      rules:
+        - alert: AlertEngineStalled
+          expr: |
+            time() - alert_engine_last_success_timestamp > 180
+          for: 5m
+          labels:
+            severity: high
+            tier: application
+          annotations:
+            summary: "Alert engine stalled"
+            description: "No completed alert evaluation cycle for {{ $value | humanizeDuration }}"
 
-          - alert: RedisMemoryHigh
-            expr: |
-              redis_memory_used_bytes
-              /
-              redis_memory_max_bytes
-              > 0.9
-            for: 5m
-            labels:
-              severity: high
-              tier: cache
-            annotations:
-              summary: "Redis memory usage high"
-              description: "Redis using {{ $value | humanizePercentage }} of max memory"
+        - alert: AlertEngineNeverRan
+          expr: |
+            alert_engine_last_success_timestamp == 0
+          for: 15m
+          labels:
+            severity: warning
+            tier: application
+          annotations:
+            summary: "Alert engine has never completed a cycle"
+            description: "alert_engine_last_success_timestamp is still 0 — engine never finished a cycle since pod start"
 
-      # Application-Specific Rules
-      - name: application_health
-        interval: 30s
-        rules:
-          - alert: HighRateLimitHits
-            expr: |
-              sum(rate(rate_limit_hits_total[5m])) by (endpoint)
-              > 10
-            for: 5m
-            labels:
-              severity: warning
-              tier: application
-            annotations:
-              summary: "High rate limit hits"
-              description: "Endpoint {{ $labels.endpoint }} hitting rate limits frequently"
+        - alert: AlertEvalErrors
+          expr: |
+            sum(rate(alert_eval_errors_total[10m])) by (source) > 0
+          for: 10m
+          labels:
+            severity: warning
+            tier: application
+          annotations:
+            summary: "Alert rule evaluations failing for source {{ $labels.source }}"
+            description: "Metric fetches from {{ $labels.source }} have been raising for 10m"
 
-          - alert: ApprovalQueueBacklog
-            expr: |
-              approval_queue_length
-              > 50
-            for: 15m
-            labels:
-              severity: warning
-              tier: application
-            annotations:
-              summary: "Approval queue backlog"
-              description: "{{ $value }} approvals pending"
+        - alert: LeaderLockDown
+          expr: |
+            leader_lock_up == 0
+          for: 10m
+          labels:
+            severity: high
+            tier: application
+          annotations:
+            summary: "Leader lock {{ $labels.lock }} unhealthy"
+            description: "Pod has not acquired/renewed the {{ $labels.lock }} leader lock for 10m"
 
-          - alert: AlertEngineLagging
-            expr: |
-              alert_evaluation_lag_seconds
-              > 60
-            for: 5m
-            labels:
-              severity: warning
-              tier: application
-            annotations:
-              summary: "Alert evaluation lagging"
-              description: "Alert engine lagging by {{ $value }}s"
+    # External Dependency Rules
+    - name: external_dependencies
+      interval: 30s
+      rules:
+        - alert: ElasticsearchDown
+          expr: elasticsearch_cluster_health_status{color="red"} == 1
+          for: 2m
+          labels:
+            severity: critical
+            tier: external
+          annotations:
+            summary: "Elasticsearch cluster unhealthy"
+            description: "Elasticsearch cluster is in RED state"
 
-          - alert: AlertQueueFull
-            expr: |
-              alert_queue_length
-              /
-              alert_queue_capacity
-              > 0.9
-            for: 5m
-            labels:
-              severity: high
-              tier: application
-            annotations:
-              summary: "Alert queue near capacity"
-              description: "Alert queue at {{ $value | humanizePercentage }} capacity"
+        - alert: ElasticsearchSlow
+          expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+          for: 10m
+          labels:
+            severity: warning
+            tier: external
+          annotations:
+            summary: "Elasticsearch cluster degraded"
+            description: "Elasticsearch cluster is in YELLOW state"
 
-      # External Dependency Rules
-      - name: external_dependencies
-        interval: 30s
-        rules:
-          - alert: ElasticsearchDown
-            expr: elasticsearch_cluster_health_status{color="red"} == 1
-            for: 2m
-            labels:
-              severity: critical
-              tier: external
-            annotations:
-              summary: "Elasticsearch cluster unhealthy"
-              description: "Elasticsearch cluster is in RED state"
+        - alert: PrometheusDown
+          expr: up{job="prometheus"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            tier: infrastructure
+          annotations:
+            summary: "Prometheus down"
+            description: "Prometheus instance is not responding"
 
-          - alert: ElasticsearchSlow
-            expr: elasticsearch_cluster_health_status{color="yellow"} == 1
-            for: 10m
-            labels:
-              severity: warning
-              tier: external
-            annotations:
-              summary: "Elasticsearch cluster degraded"
-              description: "Elasticsearch cluster is in YELLOW state"
+    # Pod Health Rules
+    - name: pod_health
+      interval: 30s
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="devops-monitor"}[15m])
+            > 0.25
+          for: 10m
+          labels:
+            severity: high
+            tier: infrastructure
+          annotations:
+            summary: "Pod crash looping"
+            description: "Pod {{ $labels.pod }} is restarting frequently"
 
-          - alert: PrometheusDown
-            expr: up{job="prometheus"} == 0
-            for: 2m
-            labels:
-              severity: critical
-              tier: infrastructure
-            annotations:
-              summary: "Prometheus down"
-              description: "Prometheus instance is not responding"
+        - alert: PodNotReady
+          expr: |
+            sum(kube_pod_status_phase{namespace="devops-monitor", phase="Running"})
+            -
+            sum(kube_pod_status_ready{namespace="devops-monitor", condition="true"})
+            > 0
+          for: 15m
+          labels:
+            severity: high
+            tier: infrastructure
+          annotations:
+            summary: "Pods not ready"
+            description: "{{ $value }} running pod(s) have been not-ready for 15m"
 
-      # Pod Health Rules
-      - name: pod_health
-        interval: 30s
-        rules:
-          - alert: PodCrashLooping
-            expr: |
-              rate(kube_pod_container_status_restarts_total{namespace="devops-monitor"}[5m])
-              > 0
-            for: 10m
-            labels:
-              severity: high
-              tier: infrastructure
-            annotations:
-              summary: "Pod crash looping"
-              description: "Pod {{ $labels.pod }} is restarting frequently"
+        - alert: DeploymentRolloutFailed
+          expr: |
+            kube_deployment_status_condition{namespace="devops-monitor", condition="Progressing", status="False"}
+            > 0
+          for: 10m
+          labels:
+            severity: high
+            tier: infrastructure
+          annotations:
+            summary: "Deployment rollout failed"
+            description: "Deployment {{ $labels.deployment }} failed to rollout"
 
-          - alert: PodNotReady
-            expr: |
-              sum(kube_pod_status_ready{namespace="devops-monitor", condition="true"})
-              /
-              sum(kube_pod_status_phase{namespace="devops-monitor", phase="Running"})
-              < 0.8
-            for: 5m
-            labels:
-              severity: high
-              tier: infrastructure
-            annotations:
-              summary: "Pods not ready"
-              description: "{{ $value | humanizePercentage }} of pods are not ready"
+    # Backup Rules
+    - name: backup_health
+      interval: 1m
+      rules:
+        - alert: BackupFailed
+          expr: |
+            max_over_time(kube_job_status_failed{namespace="devops-monitor", job_name=~".*backup.*"}[24h])
+            > 0
+          for: 5m
+          labels:
+            severity: high
+            tier: operations
+          annotations:
+            summary: "Backup job failed"
+            description: "Recent backup job failed"
 
-          - alert: DeploymentRolloutFailed
-            expr: |
-              kube_deployment_status_condition{namespace="devops-monitor", condition="Progressing", status="False"}
-              > 0
-            for: 10m
-            labels:
-              severity: high
-              tier: infrastructure
-            annotations:
-              summary: "Deployment rollout failed"
-              description: "Deployment {{ $labels.deployment }} failed to rollout"
-
-      # Backup Rules
-      - name: backup_health
-        interval: 1m
-        rules:
-          - alert: BackupFailed
-            expr: |
-              max_over_time(kube_job_status_failed{namespace="devops-monitor", job_name=~".*backup.*"}[24h])
-              > 0
-            for: 5m
-            labels:
-              severity: high
-              tier: operations
-            annotations:
-              summary: "Backup job failed"
-              description: "Recent backup job failed"
-
-          - alert: BackupStale
-            expr: |
-              time() - max(kube_job_status_completion_time{namespace="devops-monitor", job_name=~".*backup.*"})
-              > 86400
-            for: 10m
-            labels:
-              severity: critical
-              tier: operations
-            annotations:
-              summary: "No recent backup"
-              description: "Last successful backup was more than 24 hours ago"
+        - alert: BackupStale
+          expr: |
+            time() - max(kube_job_status_completion_time{namespace="devops-monitor", job_name=~".*backup.*"})
+            > 86400
+          for: 10m
+          labels:
+            severity: critical
+            tier: operations
+          annotations:
+            summary: "No recent backup"
+            description: "Last successful backup was more than 24 hours ago"

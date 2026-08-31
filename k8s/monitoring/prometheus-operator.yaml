@@ -63,6 +63,11 @@ spec:
             cpu: 1000m
             memory: 4Gi
         serviceMonitorSelectorNilUsesHelmValues: false
+        # Without an explicit ruleSelector the chart default
+        # (ruleSelectorNilUsesHelmValues: true) never picks up our
+        # PrometheusRule objects (devops-monitor-rules, agent-metrics-rules).
+        ruleSelector: {}
+        ruleSelectorNilUsesHelmValues: false
         # Remote write for long-term storage
         remoteWrite:
           - url: "https://thanos-receiver.monitoring.svc.cluster.local:19291/api/v1/receive"
@@ -86,7 +91,8 @@ spec:
         type: pvc
         storageClassName: gp3-encrypted
         size: 10Gi
-      adminPassword: "CHANGE_ME_IN_PRODUCTION"
+      # Leave empty; set out-of-band so Grafana generates a random admin secret on first start.
+      adminPassword: ""
       resources:
         requests:
           cpu: 200m

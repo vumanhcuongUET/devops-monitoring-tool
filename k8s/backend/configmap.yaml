@@ -18,6 +18,8 @@ data:
   # File-backed state (users, alert rules/state/history, SLO configs,
   # approvals, audit log) lives on the alert-data PVC mounted at /app/data.
   DATA_DIR: "/app/data"
+  # Tracing: OTLP endpoint of the collector; empty keeps the console exporter.
+  OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
   # Config subsystem store (versions, audit); scratch emptyDir at /app/configs
   # keeps it writable under the read-only root filesystem.
   CONFIG_STORAGE_PATH: "/app/configs"

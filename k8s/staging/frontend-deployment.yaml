@@ -39,7 +39,7 @@ spec:
 
       containers:
       - name: frontend
-        image: devops-monitor-frontend:v1.0.0-phase8
+        image: ghcr.io/vumanhcuonguet/devops-monitoring-tool/frontend:staging-set-by-ci
         imagePullPolicy: IfNotPresent
 
         ports:

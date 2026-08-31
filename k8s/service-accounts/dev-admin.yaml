@@ -1,10 +1,13 @@
 ---
 # Development Admin Service Account
-# Purpose: Full admin access to development environment
-# Environment: Development
-# Permissions: Admin (all permissions including delete)
-# WARNING: Only use in development environments
-
+# Purpose: Full admin access to the ai-agents namespace (development only).
+#
+# SECURITY: previously this was a ClusterRole + ClusterRoleBinding granting
+# `*` on `*` cluster-wide — ClusterRoles are cluster-scoped, so the
+# "environment: development" label provided zero boundary, and any workload
+# holding this token had full cluster control including secret theft. It is
+# now a namespaced Role in ai-agents only. If a namespace other than
+# ai-agents is needed, create a separate Role in that namespace.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -15,22 +18,24 @@ metadata:
     access-level: admin
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: ai-agent-dev-admin-role
+  namespace: ai-agents
   labels:
     environment: development
     access-level: admin
 rules:
-  # Full admin access to all resources
+  # Full admin access within ai-agents only
   - apiGroups: ["*"]
     resources: ["*"]
     verbs: ["*"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: ai-agent-dev-admin-binding
+  namespace: ai-agents
   labels:
     environment: development
 subjects:
@@ -38,6 +43,6 @@ subjects:
     name: ai-agent-dev-admin
     namespace: ai-agents
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: ai-agent-dev-admin-role
   apiGroup: rbac.authorization.k8s.io

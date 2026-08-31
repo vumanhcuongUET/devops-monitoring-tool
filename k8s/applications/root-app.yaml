@@ -15,7 +15,7 @@ spec:
 
   source:
     repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
+    targetRevision: master
     path: k8s/applications
 
   destination:

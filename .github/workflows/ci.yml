@@ -21,6 +21,12 @@ env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "22"
 
+# Deploy jobs push bump commits and kubectl against the same branch — two
+# overlapping runs would race the git push and interleave rollouts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 
 jobs:
   # =============================================================================
@@ -268,10 +274,10 @@ jobs:
         run: cd frontend && npm audit --audit-level=critical
 
       # Secrets detection
-      # TODO(pin): pin the trufflehog ref to a commit SHA before this repo
-      # adopts an action-pinning policy; @main is a floating ref.
+      # Version-pinned refs (was @main/@master floating). Pin to commit SHAs
+      # once the repo adopts a full action-pinning policy.
       - name: TruffleHog - Scan for secrets
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.97.1
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
@@ -320,7 +326,9 @@ jobs:
   build-and-push:
     name: Build and Push
     needs: [backend-lint, backend-test, frontend-test, security-scan]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    # master is this repo's default branch — without it here, pushes to master
+    # never produced images.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -369,7 +377,7 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
 
       - name: Image scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}/${{ matrix.component }}:latest
           format: 'sarif'
@@ -398,6 +406,8 @@ jobs:
     environment:
       name: staging
       url: https://staging.devops-monitoring.internal
+    permissions:
+      contents: write   # commit the image-tag bump ArgoCD (selfHeal) deploys from
 
     steps:
       - name: Checkout code
@@ -406,24 +416,58 @@ jobs:
       - name: Configure kubectl
         run: |
           echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig
-          export KUBECONFIG=kubeconfig
+          chmod 600 kubeconfig
+          # export does NOT survive across steps; persist via GITHUB_ENV.
+          echo "KUBECONFIG=$GITHUB_WORKSPACE/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Commit image tags to Git
+        env:
+          IMAGE_TAG: staging-${{ github.sha }}
+        run: |
+          # One deploy model: Git is the source of truth, ArgoCD selfHeal syncs
+          # it. The kubectl set image below only makes the rollout immediate.
+          REPO_LC="${GITHUB_REPOSITORY,,}"
+          SHORT_SHA="${IMAGE_TAG#staging-}"; SHORT_SHA="${SHORT_SHA:0:7}"
+          sed -i "s|image: ghcr.io/.*/backend:.*|image: ${REPO_LC}/backend:staging-${SHORT_SHA}|" k8s/staging/deployment.yaml
+          sed -i "s|image: ghcr.io/.*/frontend:.*|image: ${REPO_LC}/frontend:staging-${SHORT_SHA}|" k8s/staging/frontend-deployment.yaml
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add k8s/staging/deployment.yaml k8s/staging/frontend-deployment.yaml
+          # [skip ci]: the bump commit must not retrigger this workflow and
+          # loop build -> bump -> build forever.
+          git commit -m "chore(deploy): staging ${SHORT_SHA} [skip ci]" || echo "no changes"
+          git push
 
       - name: Deploy to staging
         run: |
           # Deployment/container names from k8s/staging/*.yaml (namespace
-          # devops-monitor-staging). Tag matches docker/metadata-action
-          # `type=sha,prefix={{branch}}-` from the build-and-push job.
+          # devops-monitor-staging). Read the tag back from the committed
+          # manifest — HEAD after the bump commit is the BUMP commit, not the
+          # build sha, so `git rev-parse HEAD` here names a tag nobody pushed.
+          REPO_LC="${GITHUB_REPOSITORY,,}"
+          TAG=$(sed -n 's|.*backend:\(.*\)$|\1|p' k8s/staging/deployment.yaml)
+          echo "Deploying backend tag: ${TAG}"
           kubectl set image deployment/backend-staging \
-            backend=ghcr.io/${{ github.repository }}/backend:staging-$(git rev-parse --short HEAD) \
+            backend=ghcr.io/${REPO_LC}/backend:${TAG} \
             -n devops-monitor-staging
           kubectl set image deployment/frontend-staging \
-            frontend=ghcr.io/${{ github.repository }}/frontend:staging-$(git rev-parse --short HEAD) \
+            frontend=ghcr.io/${REPO_LC}/frontend:$(sed -n 's|.*frontend:\(.*\)$|\1|p' k8s/staging/frontend-deployment.yaml) \
             -n devops-monitor-staging
 
       - name: Verify deployment
         run: |
-          kubectl rollout status deployment/backend-staging -n devops-monitor-staging --timeout=5m
-          kubectl rollout status deployment/frontend-staging -n devops-monitor-staging --timeout=5m
+          # Rollback = revert the bump commit (ArgoCD selfHeal would otherwise
+          # re-apply the broken tag over any kubectl undo), then undo the
+          # rollout for immediate relief.
+          rollback() {
+            git revert --no-edit HEAD >/dev/null 2>&1 || true
+            git commit --amend -m "revert: staging deploy [skip ci]" >/dev/null 2>&1 || true
+            git push || true
+            kubectl rollout undo deployment/backend-staging -n devops-monitor-staging || true
+            kubectl rollout undo deployment/frontend-staging -n devops-monitor-staging || true
+          }
+          kubectl rollout status deployment/backend-staging -n devops-monitor-staging --timeout=5m || { rollback; exit 1; }
+          kubectl rollout status deployment/frontend-staging -n devops-monitor-staging --timeout=5m || { rollback; exit 1; }
 
 
   # =============================================================================
@@ -432,11 +476,15 @@ jobs:
   deploy-production:
     name: Deploy to Production
     needs: [build-and-push]
-    if: github.ref == 'refs/heads/main'
+    # master is the default branch; keep main so the workflow also works if the
+    # repo renames its default branch.
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://devops-monitoring.internal
+    permissions:
+      contents: write   # commit the image-tag bump ArgoCD (selfHeal) deploys from
 
     steps:
       - name: Checkout code
@@ -445,26 +493,55 @@ jobs:
       - name: Configure kubectl
         run: |
           echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > kubeconfig
-          export KUBECONFIG=kubeconfig
+          chmod 600 kubeconfig
+          echo "KUBECONFIG=$GITHUB_WORKSPACE/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Commit image tags to Git
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          # GitOps loop: bump the tag ArgoCD (selfHeal: true, path k8s/backend +
+          # k8s/frontend) deploys from, so Git and cluster can never diverge.
+          REPO_LC="${GITHUB_REPOSITORY,,}"
+          TAG="${BRANCH}-$(git rev-parse --short HEAD)"
+          sed -i "s|image: ghcr.io/.*/backend:.*|image: ${REPO_LC}/backend:${TAG}|" k8s/backend/deployment.yaml
+          sed -i "s|image: ghcr.io/.*/frontend:.*|image: ${REPO_LC}/frontend:${TAG}|" k8s/frontend/deployment.yaml
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add k8s/backend/deployment.yaml k8s/frontend/deployment.yaml
+          # [skip ci]: prevent the build -> bump -> build loop.
+          git commit -m "chore(deploy): ${TAG} [skip ci]" || echo "no changes"
+          git push
 
       - name: Deploy to production
         run: |
           # Deployment/container names from k8s/backend/deployment.yaml and
           # k8s/frontend/deployment.yaml (namespace devops-monitor, from
-          # k8s/namespace.yaml). Deploy the immutable sha tag the build just
-          # pushed (docker/metadata-action `type=sha,prefix={{branch}}-`),
-          # never the mutable :latest.
+          # k8s/namespace.yaml). Read the tag back from the committed
+          # manifest — HEAD is now the bump commit, not the build sha.
+          REPO_LC="${GITHUB_REPOSITORY,,}"
+          TAG=$(sed -n 's|.*backend:\(.*\)$|\1|p' k8s/backend/deployment.yaml)
+          echo "Deploying backend tag: ${TAG}"
           kubectl set image deployment/monitor-backend \
-            backend=ghcr.io/${{ github.repository }}/backend:main-$(git rev-parse --short HEAD) \
+            backend=ghcr.io/${REPO_LC}/backend:${TAG} \
             -n devops-monitor
           kubectl set image deployment/monitor-frontend \
-            frontend=ghcr.io/${{ github.repository }}/frontend:main-$(git rev-parse --short HEAD) \
+            frontend=ghcr.io/${REPO_LC}/frontend:$(sed -n 's|.*frontend:\(.*\)$|\1|p' k8s/frontend/deployment.yaml) \
             -n devops-monitor
 
       - name: Verify deployment
         run: |
-          kubectl rollout status deployment/monitor-backend -n devops-monitor --timeout=5m
-          kubectl rollout status deployment/monitor-frontend -n devops-monitor --timeout=5m
+          # Rollback = revert the bump commit (selfHeal would re-apply the
+          # broken tag over a bare kubectl undo), then undo for relief.
+          rollback() {
+            git revert --no-edit HEAD >/dev/null 2>&1 || true
+            git commit --amend -m "revert: production deploy [skip ci]" >/dev/null 2>&1 || true
+            git push || true
+            kubectl rollout undo deployment/monitor-backend -n devops-monitor || true
+            kubectl rollout undo deployment/monitor-frontend -n devops-monitor || true
+          }
+          kubectl rollout status deployment/monitor-backend -n devops-monitor --timeout=5m || { rollback; exit 1; }
+          kubectl rollout status deployment/monitor-frontend -n devops-monitor --timeout=5m || { rollback; exit 1; }
 
       - name: Run smoke tests
         run: |

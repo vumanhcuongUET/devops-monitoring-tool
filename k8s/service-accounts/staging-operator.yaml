@@ -23,11 +23,13 @@ metadata:
     access-level: operator
 rules:
   # Core API - full access in ai-agents namespace
+  # pods/exec intentionally NOT granted: combined with secrets
+  # create/update/patch it equals code-execution + credential ownership in
+  # the namespace. Re-add temporarily only with an audit note.
   - apiGroups: [""]
     resources:
       - pods
       - pods/log
-      - pods/exec
       - pods/status
       - services
       - configmaps
@@ -45,7 +47,7 @@ metadata:
     environment: staging
     access-level: operator
 rules:
-  # Core API - read-only in other namespaces
+  # Core API - read-only outside ai-agents
   - apiGroups: [""]
     resources:
       - pods
@@ -58,7 +60,9 @@ rules:
       - namespaces
     verbs: ["get", "list", "watch"]
 
-  # Apps API - full access in all namespaces
+  # Apps API - READ-ONLY outside ai-agents. This is a ClusterRole, so write
+  # verbs here would grant modify rights across every namespace; staging
+  # writes belong in the namespaced Role above.
   - apiGroups: ["apps"]
     resources:
       - deployments
@@ -69,31 +73,31 @@ rules:
       - statefulsets/status
       - daemonsets
       - replicasets
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    verbs: ["get", "list", "watch"]
 
-  # Batch API
+  # Batch API - read-only outside ai-agents
   - apiGroups: ["batch"]
     resources:
       - jobs
       - jobs/status
       - cronjobs
       - cronjobs/status
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    verbs: ["get", "list", "watch"]
 
-  # Autoscaling - can modify
+  # Autoscaling - read-only outside ai-agents
   - apiGroups: ["autoscaling"]
     resources:
       - horizontalpodautoscalers
       - horizontalpodautoscalers/status
-    verbs: ["get", "list", "watch", "create", "update", "patch", "scale"]
+    verbs: ["get", "list", "watch"]
 
-  # Networking - full access
+  # Networking - read-only outside ai-agents
   - apiGroups: ["networking.k8s.io"]
     resources:
       - ingresses
       - ingresses/status
       - networkpolicies
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

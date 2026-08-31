@@ -12,9 +12,17 @@ NC='\033[0m' # No Color
 
 # Configuration
 NAMESPACE="devops-monitor-staging"
-REGISTRY="your-registry.com"
-BACKEND_IMAGE="${REGISTRY}/devops-monitor-backend:v1.0.0-phase8"
-FRONTEND_IMAGE="${REGISTRY}/devops-monitor-frontend:v1.0.0-phase8"
+# Image paths must match what CI builds/pushes (ghcr.io/<repo>/backend,
+# ghcr.io/<repo>/frontend) and what k8s/staging/*.yaml reference — the old
+# "$REGISTRY/devops-monitor-backend" names never matched either.
+REGISTRY="${REGISTRY:-ghcr.io/vumanhcuonguet/devops-monitoring-tool}"
+IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
+if [ -z "${IMAGE_TAG}" ]; then
+    echo -e "${RED}[✗]${NC} Cannot determine IMAGE_TAG (git unavailable). Set IMAGE_TAG explicitly." >&2
+    exit 1
+fi
+BACKEND_IMAGE="${REGISTRY}/backend:${IMAGE_TAG}"
+FRONTEND_IMAGE="${REGISTRY}/frontend:${IMAGE_TAG}"
 
 echo -e "${GREEN}=== Phase 8 Staging Deployment ===${NC}"
 echo ""
@@ -36,6 +44,7 @@ print_error() {
 echo "Checking prerequisites..."
 command -v kubectl >/dev/null 2>&1 || { print_error "kubectl not found. Exiting."; exit 1; }
 print_status "kubectl found"
+[ -n "$REGISTRY" ] || { print_error "REGISTRY env var not set. Exiting (was hardcoded placeholder before)."; exit 1; }
 
 # 1. Create namespace
 echo ""
@@ -47,6 +56,7 @@ print_status "Namespace created"
 echo ""
 echo "Creating secrets..."
 if [ -f "$HOME/.staging-secrets" ]; then
+    # shellcheck disable=SC1090
     source "$HOME/.staging-secrets"
     kubectl create secret generic backend-secrets-staging \
         --from-literal=database-url="$DATABASE_URL" \
@@ -59,9 +69,10 @@ if [ -f "$HOME/.staging-secrets" ]; then
         --dry-run=client -o yaml | kubectl apply -f -
     print_status "Secrets created"
 else
-    print_warning "Secrets file not found. Creating template..."
-    kubectl apply -f k8s/staging/secrets-template.yaml
-    print_warning "Please update secrets with actual values"
+    print_error "Secrets file $HOME/.staging-secrets not found. Refusing to deploy."
+    print_error "Applying the committed secret template would create empty/placeholder credentials."
+    print_error "Create the file with real values (see k8s/templates/staging-secrets-template.yaml), then re-run."
+    exit 1
 fi
 
 # 3. Create RBAC
@@ -82,6 +93,9 @@ if [ "$SKIP_BUILD" != "true" ]; then
 fi
 
 kubectl apply -f k8s/staging/deployment.yaml
+# The checked-in manifest carries a placeholder tag; point the rollout at the
+# image THIS run built and pushed.
+kubectl set image deployment/backend-staging "backend=${BACKEND_IMAGE}" -n $NAMESPACE
 print_status "Backend deployed"
 
 # 5. Deploy frontend
@@ -95,6 +109,7 @@ if [ "$SKIP_BUILD" != "true" ]; then
 fi
 
 kubectl apply -f k8s/staging/frontend-deployment.yaml
+kubectl set image deployment/frontend-staging "frontend=${FRONTEND_IMAGE}" -n $NAMESPACE
 print_status "Frontend deployed"
 
 # 6. Wait for deployments to be ready
@@ -127,10 +142,14 @@ if kubectl get svc backend-staging -n $NAMESPACE >/dev/null 2>&1; then
     if python backend/tests/smoke/test_sprint3_staging_smoke.py http://localhost:8000; then
         print_status "Smoke tests passed"
     else
-        print_warning "Smoke tests failed (continuing anyway)"
+        print_error "Smoke tests failed. Rolling back backend deployment."
+        kill "$PF_PID" 2>/dev/null || true
+        kubectl rollout undo deployment/backend-staging -n $NAMESPACE || true
+        kubectl rollout status deployment/backend-staging -n $NAMESPACE --timeout=180s || true
+        exit 1
     fi
 
-    kill $PF_PID 2>/dev/null
+    kill "$PF_PID" 2>/dev/null || true
 else
     print_warning "Backend service not found. Skipping smoke tests."
 fi

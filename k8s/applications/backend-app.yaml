@@ -15,7 +15,7 @@ spec:
 
   source:
     repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
+    targetRevision: master
     path: k8s/backend
 
   destination:
@@ -69,14 +69,12 @@ spec:
 
   source:
     repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
-    path: k8s/backend
-
-    # Kustomize overrides for staging
-    kustomize:
-      images:
-        - name: devops-monitor-backend
-          newTag: staging
+    # Staging tracks the staging branch; CI commits image-tag bumps into
+    # k8s/staging/*.yaml (plain manifests, no kustomization.yaml exists).
+    # REQUIRES a `staging` branch to exist in this repo — create it before
+    # applying this Application, or it can never sync.
+    targetRevision: staging
+    path: k8s/staging
 
   destination:
     server: https://kubernetes.default.svc
@@ -89,49 +87,3 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
-
----
-# Backend Application (Production)
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: devops-monitor-backend-prod
-  namespace: argocd
-  labels:
-    app.kubernetes.io/name: devops-monitor-backend-prod
-    app.kubernetes.io/component: backend
-    app.kubernetes.io/environment: production
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: devops-monitor
-
-  source:
-    repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
-    path: k8s/backend
-
-    # Kustomize overrides for production
-    kustomize:
-      images:
-        - name: devops-monitor-backend
-          newTag: production
-
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: devops-monitor-prod
-
-  syncPolicy:
-    # Manual sync for production
-    automated:
-      prune: false
-      selfHeal: false
-      allowEmpty: false
-    syncOptions:
-      - CreateNamespace=true
-    retry:
-      limit: 5
-      backoff:
-        duration: 30s
-        factor: 2
-        maxDuration: 10m

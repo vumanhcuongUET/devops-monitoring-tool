@@ -15,7 +15,7 @@ spec:
 
   source:
     repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
+    targetRevision: master
     path: k8s/monitoring
 
   destination:
@@ -66,7 +66,7 @@ spec:
 
   source:
     repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
+    targetRevision: master
     path: k8s/monitoring/prometheus-rules.yaml
 
   destination:
@@ -98,7 +98,7 @@ spec:
 
   source:
     repoURL: https://github.com/vumanhcuongUET/devops-monitoring-tool
-    targetRevision: main
+    targetRevision: master
     path: k8s/monitoring/alertmanager-config.yaml
 
   destination:

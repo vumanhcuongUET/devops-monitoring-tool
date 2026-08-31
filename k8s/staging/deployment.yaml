@@ -48,7 +48,7 @@ spec:
 
       containers:
       - name: backend
-        image: devops-monitor-backend:v1.0.0-phase8
+        image: ghcr.io/vumanhcuonguet/devops-monitoring-tool/backend:staging-set-by-ci
         imagePullPolicy: IfNotPresent
 
         ports:

@@ -5,7 +5,7 @@ These tests verify component interactions and end-to-end flows.
 
 import asyncio
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -175,68 +175,94 @@ class TestApprovalTrackerPersistence:
         await tracker.delete(unique_action_id)
 
 
+class FakeStream:
+    """Pipe reader that yields the given bytes then EOF (the executor reads
+    streams directly since the Phase 15 capture cap — communicate() mocks
+    here used to spin forever because an AsyncMock read never returns
+    EOF)."""
+
+    def __init__(self, data: bytes = b""):
+        self._data = data
+
+    async def read(self, n: int = -1) -> bytes:
+        size = len(self._data) if n < 0 else min(n, len(self._data))
+        chunk, self._data = self._data[:size], self._data[size:]
+        return chunk
+
+
+class HangingStream:
+    """Stream whose read never completes — drives the timeout path."""
+
+    async def read(self, n: int = -1) -> bytes:
+        await asyncio.sleep(3600)
+        return b""
+
+
+class FakeProcess:
+    """Process with real stream objects for the executor's capped reads."""
+
+    def __init__(self, stdout: bytes = b"", stderr: bytes = b"",
+                 returncode: int = 0, hang: bool = False):
+        self.stdout = HangingStream() if hang else FakeStream(stdout)
+        self.stderr = HangingStream() if hang else FakeStream(stderr)
+        self.returncode = returncode
+        self.killed = False
+
+    def kill(self):
+        self.killed = True
+
+    async def wait(self):
+        return self.returncode
+
+
 @pytest.mark.integration
 class TestExecutorWithErrorHandling:
     """Test executor error handling integration."""
 
     @pytest.mark.asyncio
     async def test_executor_timeout_handling(self):
-        """Test that executor handles command timeouts."""
+        """The executor kills a hung command and reports the timeout."""
         executor = CommandExecutor()
 
-        # Mock subprocess to timeout
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.communicate = AsyncMock(
-                side_effect=asyncio.TimeoutError("Command timed out")
-            )
-            mock_subprocess.return_value = mock_process
+            mock_subprocess.return_value = FakeProcess(hang=True)
 
-            result = await executor.execute("kubectl get pods")
+            result = await executor.execute("kubectl get pods", timeout_seconds=1)
 
-            assert result.success is False
-            # Check stderr or that success is False for timeout
-            assert result.success is False
+        assert result.success is False
+        assert "timed out" in (result.error_message or "")
 
     @pytest.mark.asyncio
     async def test_executor_command_failure_handling(self):
         """Test that executor handles command failures."""
         executor = CommandExecutor()
 
-        # Mock subprocess to return non-zero exit code
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.communicate = AsyncMock(
-                return_value=(b"", b"Error: pods not found")
+            mock_subprocess.return_value = FakeProcess(
+                stderr=b"Error: pods not found", returncode=1
             )
-            mock_process.returncode = 1
-            mock_subprocess.return_value = mock_process
 
             result = await executor.execute("kubectl get pods")
 
-            assert result.success is False
-            assert result.exit_code == 1
-            assert "not found" in result.stderr
+        assert result.success is False
+        assert result.exit_code == 1
+        assert "not found" in result.stderr
 
     @pytest.mark.asyncio
     async def test_executor_success_case(self):
         """Test successful command execution."""
         executor = CommandExecutor()
 
-        # Mock subprocess to return success
         with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            mock_process = AsyncMock()
-            mock_process.communicate = AsyncMock(
-                return_value=(b"pod/test-pod ready", b"")
+            mock_subprocess.return_value = FakeProcess(
+                stdout=b"pod/test-pod ready", returncode=0
             )
-            mock_process.returncode = 0
-            mock_subprocess.return_value = mock_process
 
             result = await executor.execute("kubectl get pods")
 
-            assert result.success is True
-            assert result.exit_code == 0
-            assert "ready" in result.stdout
+        assert result.success is True
+        assert result.exit_code == 0
+        assert "ready" in result.stdout
 
 
 @pytest.mark.integration

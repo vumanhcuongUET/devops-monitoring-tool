@@ -185,9 +185,9 @@ metadata:
 type: Opaque
 stringData:
   postgres-user: "postgres"
-  postgres-password: "CHANGE_ME_IN_PRODUCTION"
+  postgres-password: ""
   analytics-user: "analytics_user"
-  analytics-password: "CHANGE_ME_IN_PRODUCTION"
+  analytics-password: ""
   postgres-db: "devops_monitoring"
 
 ---

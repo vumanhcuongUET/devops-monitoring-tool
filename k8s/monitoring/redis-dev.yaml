@@ -28,7 +28,8 @@ metadata:
   namespace: development
 type: Opaque
 stringData:
-  redis-password: "dev_redis_password"
+  # Generate per-cluster: openssl rand -hex 24. Provide out-of-band, not in git.
+  redis-password: ""
 
 ---
 apiVersion: apps/v1

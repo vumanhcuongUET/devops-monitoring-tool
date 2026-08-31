@@ -38,7 +38,8 @@ metadata:
   namespace: staging
 type: Opaque
 stringData:
-  redis-password: "staging_redis_change_me"
+  # Generate per-cluster: openssl rand -hex 24. Provide out-of-band, not in git.
+  redis-password: ""
 
 ---
 apiVersion: apps/v1

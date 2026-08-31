@@ -151,10 +151,13 @@ AUTH_SECRET=a1b2c3d4e5f6...64chars
 API_KEY=["f6e5d4c3b2a1...64chars"]
 ```
 
-**QUAN TRỌNG:** Copy chính xác vào `.env`:
+**QUAN TRỌNG:** KHÔNG copy giá trị ví dụ. Chạy lệnh generate ở trên và dán kết quả
+thật vào `.env` — một môi trường dùng chung key ví dụ công khai sẽ có signing key
+đã bị lộ:
 ```bash
-AUTH_SECRET=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d
-API_KEYS=["f6e5d4c3b2a10987654321fedcba09876543210abcdef1234567890abcdef12"]
+# Generate fresh values and paste them in (never reuse the documented examples):
+AUTH_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+API_KEYS="[\"$(python3 -c "import secrets; print(secrets.token_hex(32))")\"]"
 ```
 
 #### 3.3. OPTIONAL - AI Features (Triage Cards)

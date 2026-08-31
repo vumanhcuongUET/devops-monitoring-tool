@@ -89,7 +89,7 @@ kubectl apply -f k8s/namespace.yaml
 
 # 2) PostgreSQL (namespace 'postgres') — optional, chỉ cần khi bật DATABASE_ENABLED
 kubectl apply -f k8s/postgresql/namespace.yaml
-kubectl apply -f k8s/postgresql/secret.yaml     # điền mật khẩu trước
+tạo Secret postgres-credentials out-of-band (template: k8s/templates/postgres-credentials-template.yaml)
 kubectl apply -f k8s/postgresql/configmap.yaml
 kubectl apply -f k8s/postgresql/deployment.yaml
 kubectl apply -f k8s/postgresql/service.yaml
@@ -179,7 +179,7 @@ kubectl -n devops-monitor scale deploy/monitor-frontend --replicas=4
 ### A.9. Tùy chọn
 
 - **Monitoring stack**: `k8s/monitoring/` — Prometheus (scrape `/metrics` của backend, alert rules đã fix A1), Alertmanager, Grafana dashboards
-- **Staging**: `k8s/staging/` (namespace + deployment + secrets-template + RBAC riêng)
+- **Staging**: `k8s/staging/` (namespace + deployment + RBAC riêng; secret template ở `k8s/templates/`)
 - **GitOps**: `k8s/applications/` + `k8s/argocd/` — ArgoCD Application trỏ về repo này
 - **Secrets operator**: `k8s/external-secrets/`, Vault HA ở `k8s/secrets/`
 - **Backup**: `k8s/postgresql/backup-cronjob.yaml`, `k8s/redis/backup-cronjob.yaml`; runbook khôi phục ở `docs/disaster-recovery-runbook.md`

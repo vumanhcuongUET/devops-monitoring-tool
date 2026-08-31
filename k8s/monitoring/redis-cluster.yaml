@@ -54,8 +54,9 @@ metadata:
   namespace: monitoring
 type: Opaque
 stringData:
-  redis-password: "CHANGE_ME_IN_PRODUCTION"
-  sentinel-password: "CHANGE_ME_IN_PRODUCTION"
+  # Generate per-cluster out-of-band; never commit.
+  redis-password: ""
+  sentinel-password: ""
 
 ---
 # StatefulSet for Redis Master

@@ -28,7 +28,7 @@ from anthropic.types import (
 )
 from prometheus_client import REGISTRY
 
-from app.config import settings
+from app.settings import settings
 from app.services.llm_client import (
     FAST_MODEL,
     LLMClient,
@@ -256,10 +256,21 @@ class TestCompactJsonPrompts:
             time_range=timedelta(minutes=30),
         )
 
+    @staticmethod
+    def _unwrap(dump: str) -> str:
+        """Strip the prompt-injection boundary wrapper from a data block."""
+        from app.security import UNTRUSTED_DATA_CLOSE, UNTRUSTED_DATA_OPEN
+
+        dump = dump.strip()
+        if dump.startswith(UNTRUSTED_DATA_OPEN):
+            dump = dump[len(UNTRUSTED_DATA_OPEN):].strip()
+            dump = dump[: dump.index(UNTRUSTED_DATA_CLOSE)].strip()
+        return dump
+
     def test_log_json_block_is_single_line(self, llm):
         prompt = self._prompt(llm, logs=[{"level": "ERROR", "message": "x\nystack"}])
 
-        dump = prompt.split("```json")[1].split("```")[0].strip()
+        dump = self._unwrap(prompt.split("```json")[1].split("```")[0])
         # Compact serialization: the JSON payload is one line (escaped \n
         # inside messages is fine — that's data, not formatting).
         assert len(dump.splitlines()) == 1
@@ -267,7 +278,7 @@ class TestCompactJsonPrompts:
     def test_metrics_json_block_is_compact(self, llm):
         prompt = self._prompt(llm, metrics={"cpu": 90, "mem": {"used": 1, "total": 2}})
 
-        block = prompt.split("```json")[1].split("```")[0].strip()
+        block = self._unwrap(prompt.split("```json")[1].split("```")[0])
         assert "\n" not in block
         assert '"mem": {"used": 1' in block  # separators without padding
 
@@ -580,8 +591,9 @@ class TestInputBudgetLadder:
         logs = self._logs({"ERROR": 80, "INFO": 80, "WARNING": 40})
 
         # The default section (~30 logs) doesn't fit a tiny budget; the
-        # first ladder rung keeps error/critical only.
-        prompt = self._prompt(llm, logs, budget=150)
+        # first ladder rung keeps error/critical only. Budget includes the
+        # ~10-token prompt-injection wrapper around the logs block.
+        prompt = self._prompt(llm, logs, budget=260)
 
         assert "reduced quotas applied by the input budget" in prompt
         assert "### Logs (Elasticsearch)" in prompt

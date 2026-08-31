@@ -17,7 +17,7 @@ from app.actions.validator import get_command_validator
 from app.approvals.store import get_approval_history, get_approval_tracker
 from app.audit.logger import get_audit_logger
 from app.models.audit import AuditEventType
-from app.config import settings
+from app.settings import settings
 from app.feedback.collector import get_feedback_collector
 from app.governance.permission_checker import get_permission_checker
 from app.governance.opa_client import PolicyDecision, get_opa_client

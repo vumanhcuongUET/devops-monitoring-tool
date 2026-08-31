@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 import pathlib
 
-from app.config import settings as _settings
+from app.settings import settings as _settings
 STATE_FILE = str(pathlib.Path(_settings.DATA_DIR) / "alert_state.json")
 HISTORY_FILE = str(pathlib.Path(_settings.DATA_DIR) / "alert_history.json")
 

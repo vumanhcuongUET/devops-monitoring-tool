@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from app.services.llm_input import truncate_text
+from app.security import wrap_untrusted_data
 
 from .base import AgentResponse, BaseAgent
 
@@ -107,14 +108,7 @@ Context:
 - Error entries: {len(error_logs)}
 - Identified patterns: {len(error_patterns)}
 
-Sample logs:
-{log_sample}
-
-Detected error patterns:
-{self._format_error_patterns(error_patterns)}
-
-Detected anomalies:
-{self._format_anomalies(anomalies)}
+{wrap_untrusted_data(f"Sample logs:\n{log_sample}\n\nDetected error patterns:\n{self._format_error_patterns(error_patterns)}\n\nDetected anomalies:\n{self._format_anomalies(anomalies)}")}
 
 Provide analysis focusing on root causes and actionable recommendations.
 """

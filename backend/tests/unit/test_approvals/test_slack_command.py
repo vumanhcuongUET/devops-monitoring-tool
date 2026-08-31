@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.config import settings
+from app.settings import settings
 
 SLACK_SIGNATURE_VERSION = "v0"
 

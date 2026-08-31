@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, Field
 
-from app.config import (
+from app.configmgmt import (
     AuditAction,
     AuditLogger,
     ChangeType,
@@ -683,7 +683,7 @@ async def sanitize_config(
         Sanitized configuration
     """
     try:
-        from app.config.security import SecurityLevel
+        from app.configmgmt.security import SecurityLevel
 
         global _security
         if not _security:

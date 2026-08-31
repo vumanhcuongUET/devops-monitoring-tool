@@ -39,7 +39,7 @@ def _build_context(num_logs: int = 50) -> dict:
 @pytest.fixture
 def orchestrator(monkeypatch) -> AgentOrchestrator:
     """Orchestrator whose agents hit a mocked Claude API."""
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
     orch = AgentOrchestrator(model_selector=ModelSelector())

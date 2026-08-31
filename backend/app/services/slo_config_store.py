@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from app.config import settings
+from app.settings import settings
 
 CONFIGS_FILE = str(Path(settings.DATA_DIR) / "slo_configs.json")
 _DEFAULTS_FILE = os.path.join(

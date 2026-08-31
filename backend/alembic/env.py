@@ -24,7 +24,7 @@ sys.path.insert(0, str(backend_dir))
 
 # Import all models to ensure they're registered with SQLAlchemy
 import app.database.models  # noqa: F401
-from app.config import settings
+from app.settings import settings
 from app.database.base import Base
 
 # Alembic Config object

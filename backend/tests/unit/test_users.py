@@ -4,7 +4,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.config import settings
+from app.settings import settings
 from app.main import app
 
 
@@ -203,7 +203,7 @@ def test_logout_revocation_floor(tmp_path, monkeypatch):
     """Phase 15: /auth/logout bumps min_iat — tokens minted before it die,
     tokens minted after keep working."""
     from app.auth import create_token, decode_token
-    from app.config import settings
+    from app.settings import settings
     import app.users as users_mod
     from app.users import (
         create_user,

@@ -15,7 +15,7 @@ from app.models.audit import (
     ChainOfThoughtEntry,
 )
 
-from app.config import settings as _settings
+from app.settings import settings as _settings
 AUDIT_LOG_FILE = str(pathlib.Path(_settings.DATA_DIR) / "audit_log.jsonl")
 # Pre-Phase-14 format (whole-file JSON list, rewritten on every event)
 LEGACY_AUDIT_LOG_FILE = str(pathlib.Path(_settings.DATA_DIR) / "audit_log.json")

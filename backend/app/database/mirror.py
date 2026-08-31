@@ -8,7 +8,7 @@ database failure must never break the action path (Phase 11 E2E lesson).
 import asyncio
 import logging
 
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

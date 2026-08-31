@@ -328,7 +328,7 @@ def get_teams_approval_notifier() -> TeamsApprovalNotifier:
     global _teams_notifier
 
     if _teams_notifier is None:
-        from app.config import settings
+        from app.settings import settings
 
         # Check if Teams webhook is configured
         webhook_url = getattr(settings, "TEAMS_WEBHOOK_URL", None)

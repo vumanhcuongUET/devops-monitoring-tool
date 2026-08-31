@@ -245,7 +245,7 @@ def create_redis_rate_limiter() -> RedisRateLimiter:
     Returns:
         Configured RedisRateLimiter instance
     """
-    from app.config import settings
+    from app.settings import settings
 
     return RedisRateLimiter(
         redis_host=settings.REDIS_HOST,

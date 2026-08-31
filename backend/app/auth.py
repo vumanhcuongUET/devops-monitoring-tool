@@ -4,7 +4,7 @@ import hmac
 import json
 import time
 
-from app.config import settings
+from app.settings import settings
 
 
 def _is_valid_api_key(key: str) -> bool:

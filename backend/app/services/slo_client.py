@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from app.config import settings
+from app.settings import settings
 from app.models.slo import SloApiDetail, SloConfig, SloResult
 from app.services.elasticsearch_client import ElasticsearchClient
 

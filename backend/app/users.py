@@ -20,7 +20,7 @@ import secrets
 import time
 from pathlib import Path
 
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

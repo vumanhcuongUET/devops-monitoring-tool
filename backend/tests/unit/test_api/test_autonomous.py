@@ -18,7 +18,7 @@ from app.main import app
 @pytest.fixture
 async def autonomous_client(monkeypatch) -> AsyncClient:
     """Create async client for autonomous API testing with auth disabled."""
-    from app.config import settings
+    from app.settings import settings
 
     # Disable auth for testing
     monkeypatch.setattr(settings, "AUTH_ENABLED", False)

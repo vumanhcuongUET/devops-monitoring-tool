@@ -5,7 +5,7 @@ from typing import Any
 from kubernetes import client
 from kubernetes import config as k8s_config
 
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

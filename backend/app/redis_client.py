@@ -21,7 +21,7 @@ def get_redis():
         import redis.asyncio as redis
 
         from app.approvals.store import build_redis_url
-        from app.config import settings
+        from app.settings import settings
 
         url, _, _, _ = build_redis_url(db=settings.REDIS_DB_ALERTS)
         # Phase 15: leader-lock/fanout must not hang on a stuck socket — a

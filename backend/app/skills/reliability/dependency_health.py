@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from app.config import settings
+from app.settings import settings
 from app.skills.base import (
     AnalysisResult,
     BaseSkill,

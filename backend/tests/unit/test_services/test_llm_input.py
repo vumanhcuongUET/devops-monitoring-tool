@@ -117,7 +117,9 @@ class TestDedupeAlerts:
 
 class TestEstimateTokens:
     def test_rough_ratio(self):
-        assert estimate_tokens("a" * 400) == 100
+        # chars//3 — deliberately conservative (over-estimates tokens vs the
+        # chars//4 heuristic) so the input-budget guard fails closed.
+        assert estimate_tokens("a" * 400) == 133
 
     def test_empty(self):
         assert estimate_tokens("") == 0

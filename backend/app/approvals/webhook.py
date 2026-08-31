@@ -18,11 +18,28 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.approvals.slack import get_slack_approval_notifier
-from app.config import settings
+from app.approvals.chatops import ChatopsApprovalDenied, resolve_chatops_approver
+from app.settings import settings
+
+
 
 # Lazy import to avoid circular import with actions/engine
 # from app.actions.engine import get_action_engine
 from app.models.actions import ApproveActionRequest, RejectActionRequest
+
+
+def _approver_mapping(channel: str) -> dict[str, str]:
+    """Chat->platform-user map from the real settings singleton.
+
+    Module-level `settings` is a common test-patch target, so the gate reads
+    through a deferred import instead of the module-global name.
+    """
+    from app.settings import settings as real_settings
+
+    return {
+        "slack": real_settings.SLACK_APPROVER_MAP,
+        "teams": real_settings.TEAMS_APPROVER_MAP,
+    }[channel]
 
 # 5 min replay window — same order as the Slack timestamp check
 TEAM_WEBHOOK_REPLAY_WINDOW_SECONDS = 300
@@ -207,15 +224,41 @@ async def slack_approval_webhook(
         engine = get_action_engine()
         slack_notifier = get_slack_approval_notifier()
 
-        if action_type == "approve_action":
-            # Approve the action
-            result = await engine.approve_action(
-                action_id=action_id,
-                request=ApproveActionRequest(
-                    approved_by=user_name,
-                    comment=f"Approved via Slack by {user_name}",
-                ),
-            )
+        if action_type in ("approve_action", "reject_action"):
+            # Phase B gate: Slack identity maps to a local platform user that
+            # becomes attribution + auth_user (RBAC narrowing + self-approval
+            # ban). Chat membership alone never decides approvals.
+            try:
+                approver = resolve_chatops_approver(
+                    _approver_mapping("slack"), [user_id, user_name], "slack"
+                )
+            except ChatopsApprovalDenied as e:
+                logger.warning("Slack %s by %s/%s denied: %s", action_type, user_name, user_id, e)
+                return {"response_type": "ephemeral", "text": f"⛔ {e}"}
+
+            try:
+                if action_type == "approve_action":
+                    result = await engine.approve_action(
+                        action_id=action_id,
+                        request=ApproveActionRequest(
+                            approved_by=approver,
+                            comment=f"Approved via Slack by {user_name}",
+                        ),
+                        auth_user=approver,
+                    )
+                else:
+                    result = await engine.reject_action(
+                        action_id=action_id,
+                        request=RejectActionRequest(
+                            rejected_by=approver,
+                            reason=f"Rejected via Slack by {user_name}",
+                        ),
+                        auth_user=approver,
+                    )
+            except (PermissionError, ValueError) as e:
+                # Engine RBAC/self-approval denial or unknown/not-pending id.
+                logger.warning("Slack %s of %s refused: %s", action_type, action_id, e)
+                return {"response_type": "ephemeral", "text": f"⛔ Refused: {e}"}
 
             # Send confirmation to Slack
             await slack_notifier.send_approval_status(
@@ -225,32 +268,11 @@ async def slack_approval_webhook(
             )
 
             # Update the original message
+            emoji = "✅" if action_type == "approve_action" else "❌"
+            verb = "approved" if action_type == "approve_action" else "rejected"
             return {
                 "response_type": "ephemeral",
-                "text": f"✅ Action {action_id} has been approved by {user_name}",
-            }
-
-        elif action_type == "reject_action":
-            # For reject, we need a reason - in real implementation,
-            # we'd open a modal to collect the reason
-            result = await engine.reject_action(
-                action_id=action_id,
-                request=RejectActionRequest(
-                    rejected_by=user_name,
-                    reason=f"Rejected via Slack by {user_name}",
-                ),
-            )
-
-            # Send confirmation to Slack
-            await slack_notifier.send_approval_status(
-                action=result,
-                status=result.status,
-                user=user_name,
-            )
-
-            return {
-                "response_type": "ephemeral",
-                "text": f"❌ Action {action_id} has been rejected by {user_name}",
+                "text": f"{emoji} Action {action_id} has been {verb} by {user_name}",
             }
 
         elif action_type == "view_action":
@@ -389,15 +411,72 @@ async def teams_approval_webhook(
         engine = get_action_engine()
         teams_notifier = get_teams_approval_notifier()
 
-        if action_type == "approve_action":
-            # Approve the action
-            result = await engine.approve_action(
-                action_id=action_id,
-                request=ApproveActionRequest(
-                    approved_by=user_name,
-                    comment=f"Approved via Teams by {user_name}",
-                ),
-            )
+        if action_type in ("approve_action", "reject_action"):
+            # Phase B gate: Teams identity maps to a local platform user that
+            # becomes attribution + auth_user (RBAC + self-approval ban apply).
+            try:
+                approver = resolve_chatops_approver(
+                    _approver_mapping("teams"), [user_id, user_name], "teams"
+                )
+            except ChatopsApprovalDenied as e:
+                logger.warning("Teams %s by %s/%s denied: %s", action_type, user_name, user_id, e)
+                return {
+                    "type": "invokeResponse",
+                    "value": {"status": 403, "body": {"type": "TextBlock", "text": f"⛔ {e}"}},
+                }
+
+            try:
+                if action_type == "approve_action":
+                    result = await engine.approve_action(
+                        action_id=action_id,
+                        request=ApproveActionRequest(
+                            approved_by=approver,
+                            comment=f"Approved via Teams by {user_name}",
+                        ),
+                        auth_user=approver,
+                    )
+                else:
+                    result = await engine.reject_action(
+                        action_id=action_id,
+                        request=RejectActionRequest(
+                            rejected_by=approver,
+                            reason=f"Rejected via Teams by {user_name}",
+                        ),
+                        auth_user=approver,
+                    )
+            except (PermissionError, ValueError) as e:
+                logger.warning("Teams %s of %s refused: %s", action_type, action_id, e)
+                return {
+                    "type": "invokeResponse",
+                    "value": {"status": 403, "body": {"type": "TextBlock", "text": f"⛔ Refused: {e}"}},
+                }
+
+            if action_type == "reject_action":
+                # Send confirmation to Teams
+                await teams_notifier.send_approval_status(
+                    action=result,
+                    status=result.status,
+                    user=user_name,
+                )
+                return {
+                    "type": "invokeResponse",
+                    "value": {
+                        "status": 200,
+                        "body": {
+                            "type": "AdaptiveCard",
+                            "version": "1.4",
+                            "body": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"❌ Action {action_id[:8]} has been rejected by {user_name}",
+                                    "weight": "Bolder",
+                                    "color": "Warning",
+                                    "size": "Medium",
+                                }
+                            ],
+                        }
+                    },
+                }
 
             # Send confirmation to Teams
             await teams_notifier.send_approval_status(
@@ -420,44 +499,6 @@ async def teams_approval_webhook(
                                 "text": f"✅ Action {action_id[:8]} has been approved by {user_name}",
                                 "weight": "Bolder",
                                 "color": "Good",
-                                "size": "Medium",
-                            }
-                        ],
-                    }
-                },
-            }
-
-        elif action_type == "reject_action":
-            # For reject, we'd normally collect reason via modal
-            result = await engine.reject_action(
-                action_id=action_id,
-                request=RejectActionRequest(
-                    rejected_by=user_name,
-                    reason=f"Rejected via Teams by {user_name}",
-                ),
-            )
-
-            # Send confirmation to Teams
-            await teams_notifier.send_approval_status(
-                action=result,
-                status=result.status,
-                user=user_name,
-            )
-
-            # Return adaptive card update
-            return {
-                "type": "invokeResponse",
-                "value": {
-                    "status": 200,
-                    "body": {
-                        "type": "AdaptiveCard",
-                        "version": "1.4",
-                        "body": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"❌ Action {action_id[:8]} has been rejected by {user_name}",
-                                "weight": "Bolder",
-                                "color": "Warning",
                                 "size": "Medium",
                             }
                         ],

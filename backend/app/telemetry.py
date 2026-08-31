@@ -25,7 +25,7 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

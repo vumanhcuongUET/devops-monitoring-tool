@@ -265,7 +265,7 @@ class Sprint3Validator:
 
         try:
             # Check imports work
-            from app.config import settings
+            from app.settings import settings
 
             self.print_result("All imports successful", True)
 

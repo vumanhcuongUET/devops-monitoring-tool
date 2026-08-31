@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.settings import settings
 from app.models.actions import Action, ActionStatus
 from app.security import is_url_allowed
 

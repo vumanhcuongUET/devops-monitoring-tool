@@ -74,7 +74,7 @@ def orchestrator(monkeypatch):
     A dummy API key keeps the real agents' Anthropic clients constructible;
     they are then replaced so no LLM call can ever happen.
     """
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
     orch = AgentOrchestrator()
@@ -403,7 +403,7 @@ class TestModelSelectionWiring:
     @pytest.fixture
     def orchestrator_with_selector(self, monkeypatch):
         from app.agents.model_selector import ModelSelector
-        from app.config import settings
+        from app.settings import settings
 
         monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
         orch = AgentOrchestrator(model_selector=ModelSelector())

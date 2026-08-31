@@ -96,7 +96,7 @@ class TestKubernetesConnectionPooling:
     @pytest.mark.asyncio
     async def test_kubernetes_client_uses_connection_pool(self):
         """Test that Kubernetes client is configured with connection pooling."""
-        from app.config import settings
+        from app.settings import settings
         from app.services.kubernetes_client import KubernetesClient
 
         with patch("app.services.kubernetes_client.k8s_config") as mock_config:
@@ -118,7 +118,7 @@ class TestConnectionPoolConfiguration:
 
     def test_default_pool_sizes(self):
         """Test that default pool sizes are set correctly."""
-        from app.config import settings
+        from app.settings import settings
 
         # ES_MAX_CONNECTIONS removed with the invalid kwarg (review N1)
         assert hasattr(settings, "PROM_MAX_CONNECTIONS")
@@ -130,7 +130,7 @@ class TestConnectionPoolConfiguration:
 
     def test_pool_size_values_are_positive(self):
         """Test that pool sizes are positive integers."""
-        from app.config import settings
+        from app.settings import settings
 
         assert settings.PROM_MAX_CONNECTIONS > 0
         assert settings.K8S_MAX_CONNECTIONS > 0

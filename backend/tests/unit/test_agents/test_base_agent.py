@@ -12,7 +12,7 @@ from anthropic.types import Message, TextBlock, Usage
 from prometheus_client import REGISTRY
 
 from app.agents.base import AgentResponse, BaseAgent
-from app.config import settings
+from app.settings import settings
 
 
 def _metric(name: str, path: str, model: str) -> float:
@@ -73,7 +73,9 @@ class TestQueryClaude:
 
         system = agent.client.messages.create.call_args.kwargs["system"]
         assert isinstance(system, list)
-        assert system[0]["text"] == "You are a stub expert."
+        # Template ships with the prompt-injection boundary contract appended.
+        assert system[0]["text"].startswith("You are a stub expert.")
+        assert "<monitoring_data>" in system[0]["text"]
         assert system[0]["cache_control"] == {"type": "ephemeral"}
 
     async def test_usage_is_recorded_under_agents_path(self, agent):

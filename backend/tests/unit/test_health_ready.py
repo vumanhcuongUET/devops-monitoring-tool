@@ -27,9 +27,9 @@ _REDIS_FLAGS = (
 
 
 def _no_redis(monkeypatch):
-    monkeypatch.setattr("app.config.settings.REDIS_URL", None)
+    monkeypatch.setattr("app.settings.settings.REDIS_URL", None)
     for flag in _REDIS_FLAGS[1:]:
-        monkeypatch.setattr(f"app.config.settings.{flag}", False)
+        monkeypatch.setattr(f"app.settings.settings.{flag}", False)
 
 
 class _FakeES:
@@ -82,7 +82,7 @@ def test_health_ready_all_up(monkeypatch):
         prometheus_client=_FakeProm(),
         k8s_client=_FakeK8s(),
     )
-    monkeypatch.setattr("app.config.settings.AUTH_ENABLED", False)
+    monkeypatch.setattr("app.settings.settings.AUTH_ENABLED", False)
     client = TestClient(app)  # no lifespan — the endpoint probes app.state
 
     resp = client.get("/health/ready")
@@ -107,7 +107,7 @@ def test_health_ready_one_down_is_degraded_not_503(monkeypatch):
         prometheus_client=_FakeProm(),
         k8s_client=_FakeK8s(),
     )
-    monkeypatch.setattr("app.config.settings.AUTH_ENABLED", False)
+    monkeypatch.setattr("app.settings.settings.AUTH_ENABLED", False)
     client = TestClient(app)
 
     resp = client.get("/health/ready")
@@ -129,7 +129,7 @@ def test_health_ready_all_down_returns_503(monkeypatch):
         prometheus_client=_FakeProm(up=False),
         k8s_client=_FakeK8s(available=False),
     )
-    monkeypatch.setattr("app.config.settings.AUTH_ENABLED", False)
+    monkeypatch.setattr("app.settings.settings.AUTH_ENABLED", False)
     client = TestClient(app)
 
     resp = client.get("/health/ready")
@@ -151,7 +151,7 @@ def test_health_ready_k8s_empty_node_list_is_down(monkeypatch):
         prometheus_client=_FakeProm(),
         k8s_client=_FakeK8s(available=True, nodes=()),  # list_nodes swallows errors
     )
-    monkeypatch.setattr("app.config.settings.AUTH_ENABLED", False)
+    monkeypatch.setattr("app.settings.settings.AUTH_ENABLED", False)
     client = TestClient(app)
 
     body = client.get("/health/ready").json()
@@ -164,7 +164,7 @@ def test_health_ready_missing_clients_are_skipped(monkeypatch):
 
     _no_redis(monkeypatch)
     _install(monkeypatch)  # no clients attached at all (lifespan never ran)
-    monkeypatch.setattr("app.config.settings.AUTH_ENABLED", False)
+    monkeypatch.setattr("app.settings.settings.AUTH_ENABLED", False)
     client = TestClient(app)
 
     resp = client.get("/health/ready")
@@ -180,8 +180,8 @@ def test_health_ready_is_auth_exempt(monkeypatch):
 
     _no_redis(monkeypatch)
     _install(monkeypatch)
-    monkeypatch.setattr("app.config.settings.AUTH_ENABLED", True)
-    monkeypatch.setattr("app.config.settings.API_KEYS", [])
+    monkeypatch.setattr("app.settings.settings.AUTH_ENABLED", True)
+    monkeypatch.setattr("app.settings.settings.API_KEYS", [])
     client = TestClient(app)
 
     assert client.get("/health/ready").status_code == 200
@@ -194,7 +194,7 @@ async def test_engine_counts_eval_errors_and_beats(monkeypatch):
     stamps the heartbeat gauge — silent `continue` used to hide both."""
     from app.alerting.engine import AlertEngine
 
-    monkeypatch.setattr("app.config.settings.ALERT_STATE_USE_REDIS", False)
+    monkeypatch.setattr("app.settings.settings.ALERT_STATE_USE_REDIS", False)
     engine = AlertEngine()
     monkeypatch.setattr(
         engine, "_fetch_prometheus", AsyncMock(side_effect=ConnectionError("prom down"))

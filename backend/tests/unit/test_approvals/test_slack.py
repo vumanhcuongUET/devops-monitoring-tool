@@ -391,7 +391,7 @@ class TestSlackApprovalNotifierIntegration:
     def test_notifier_with_webhook_from_env(self, monkeypatch):
         """Test notifier initialization with webhook from environment."""
         from app.approvals.slack import SlackApprovalNotifier
-        from app.config import settings
+        from app.settings import settings
 
         # Set webhook URL in settings (simulating env var)
         monkeypatch.setattr(settings, "SLACK_APPROVAL_WEBHOOK_URL", "https://hooks.slack.com/test")

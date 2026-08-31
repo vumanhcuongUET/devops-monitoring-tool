@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app.config import settings
+from app.settings import settings
 from app.security import SSRFProtection
 
 

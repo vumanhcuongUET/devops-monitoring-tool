@@ -12,7 +12,8 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from app.config import settings
+from app.settings import settings
+from app.security import DATA_BOUNDARY_INSTRUCTION
 from app.llm_metrics import record_request, record_usage
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,9 @@ class BaseAgent(ABC):
         system_blocks = [
             {
                 "type": "text",
-                "text": self.get_prompt_template(),
+                # The boundary contract is appended to every agent template so
+                # untrusted monitoring data can never read as instructions.
+                "text": self.get_prompt_template() + DATA_BOUNDARY_INSTRUCTION,
                 "cache_control": {"type": "ephemeral"},
             }
         ]
@@ -143,7 +146,14 @@ class BaseAgent(ABC):
             record_usage(
                 path="agents", model=selected_model, usage=getattr(response, "usage", None)
             )
-            return response.content[0].text
+            # content blocks are not guaranteed to start with a text block
+            # (tool_use/thinking first would IndexError on [0]).
+            text_parts = [
+                block.text
+                for block in response.content
+                if getattr(block, "type", "") == "text"
+            ]
+            return "\n".join(text_parts)
         except Exception as e:
             logger.error(f"Error querying Claude for agent {self.name}: {e}")
             raise

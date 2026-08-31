@@ -53,7 +53,7 @@ class FeedbackCollector:
                 settings.DATA_DIR/feedback_history.json)
         """
         if storage_path is None:
-            from app.config import settings
+            from app.settings import settings
 
             storage_path = str(Path(settings.DATA_DIR) / "feedback_history.json")
         self.storage_path = Path(storage_path)

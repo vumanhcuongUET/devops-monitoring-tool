@@ -10,9 +10,11 @@ platform signature IS the authentication:
 - Chats are allowlisted via TELEGRAM_ALLOWED_CHAT_IDS; an empty list denies
   every chat (fail-closed).
 - Read-only commands only: /status, /help. Approve/reject arrives as
-  inline-keyboard callbacks whose `approve:<id>` / `reject:<id>` payload
-  format is shared with the Slack buttons — the branch lands in the same
-  engine.approve_action/reject_action path (RBAC + approval gates apply).
+  inline-keyboard callbacks gated by the Phase B mapping: the chat identity
+  must map to a local platform user (CHATOPS_APPROVALS_ENABLED +
+  TELEGRAM_APPROVER_MAP) that becomes both attribution and auth_user, so
+  per-user RBAC narrowing and the self-approval ban apply exactly as on the
+  web API.
 """
 
 import hmac
@@ -21,9 +23,15 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from app.approvals.chatops import HELP_TEXT, collect_system_status, format_status_text
+from app.approvals.chatops import (
+    HELP_TEXT,
+    ChatopsApprovalDenied,
+    collect_system_status,
+    format_status_text,
+    resolve_chatops_approver,
+)
 from app.approvals.telegram import get_telegram_notifier
-from app.config import settings
+from app.settings import settings
 from app.models.actions import ApproveActionRequest, RejectActionRequest
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -130,43 +138,86 @@ async def _handle_callback(request: Request, callback: dict, notifier) -> dict[s
 
     engine = get_action_engine()
 
-    if verb == "approve":
-        result = await engine.approve_action(
-            action_id=action_id,
-            request=ApproveActionRequest(
-                approved_by=f"telegram:{sender}",
-                comment=f"Approved via Telegram by {sender}",
-            ),
-        )
+    if verb in ("approve", "reject"):
+        # Phase B gate: chat membership alone must not decide approvals. The
+        # chat identity maps to a local platform user, which becomes both the
+        # attribution and auth_user — per-user RBAC and the self-approval ban
+        # in the engine only see canonical usernames.
+        try:
+            approver = resolve_chatops_approver(
+                settings.TELEGRAM_APPROVER_MAP, sender, "telegram"
+            )
+        except ChatopsApprovalDenied as e:
+            logger.warning("Telegram %s by %s denied: %s", verb, sender, e)
+            await notifier.send_message(chat_id, f"⛔ {e}")
+            return {"ok": True}
+
+        try:
+            if verb == "approve":
+                result = await engine.approve_action(
+                    action_id=action_id,
+                    request=ApproveActionRequest(
+                        approved_by=approver,
+                        comment=f"Approved via Telegram by {sender}",
+                    ),
+                    auth_user=approver,
+                )
+            else:
+                result = await engine.reject_action(
+                    action_id=action_id,
+                    request=RejectActionRequest(
+                        rejected_by=approver,
+                        reason=f"Rejected via Telegram by {sender}",
+                    ),
+                    auth_user=approver,
+                )
+        except PermissionError as e:
+            # Engine-side RBAC narrowing / self-approval ban fired.
+            logger.warning("Telegram %s of %s by %s refused: %s", verb, action_id, sender, e)
+            await notifier.send_message(chat_id, f"⛔ Refused: {e}")
+            return {"ok": True}
+        except ValueError as e:
+            # Unknown action id / not pending — surface to the chat, not a 500
+            # that makes Telegram retry forever.
+            await notifier.send_message(chat_id, f"⚠️ {e}")
+            return {"ok": True}
+
         await notifier.send_approval_status(
             action=result, status=result.status, user=sender, chat_id=chat_id
         )
         return {"ok": True}
 
-    if verb == "reject":
-        result = await engine.reject_action(
-            action_id=action_id,
-            request=RejectActionRequest(
-                rejected_by=f"telegram:{sender}",
-                reason=f"Rejected via Telegram by {sender}",
-            ),
-        )
-        await notifier.send_approval_status(
-            action=result, status=result.status, user=sender, chat_id=chat_id
-        )
-        return {"ok": True}
-
-    # view — same fields as the Slack/Teams view branch
+    # view — render the command from parsed_params, never the raw command
+    # string: the raw text originates in LLM recommendations, so an injected
+    # payload would be reflected verbatim into the chat.
     action_data = await engine.get_action(action_id)
     if not action_data:
         raise HTTPException(status_code=404, detail="Action not found")
     text = (
-        f"*Action:* `{action_data.get('command', '')}`\n"
+        f"*Action:* `{_command_display(action_data)}`\n"
         f"{action_data.get('description', '')}\n"
         f"Risk: {action_data.get('risk_level', 'unknown')}"
     )
     await notifier.send_message(chat_id, text)
     return {"ok": True}
+
+
+def _command_display(action_data: dict) -> str:
+    """Human-readable command from parsed params; sanitized raw as fallback.
+
+    The fallback string is LLM-originated (see the view branch comment), so
+    it is flattened and stripped of Markdown backticks before echoing into
+    the chat — never reflected verbatim.
+    """
+    parsed = action_data.get("parsed_params")
+    if isinstance(parsed, dict):
+        action = parsed.get("action", "?")
+        target = parsed.get("target") or parsed.get("resource") or ""
+        params = {k: v for k, v in parsed.items() if k not in ("action", "target", "resource")}
+        extras = " ".join(f"{k}={v}" for k, v in sorted(params.items()) if v not in (None, "", {}))
+        return f"{action} {target} {extras}".strip()
+    raw = str(action_data.get("command", ""))
+    return raw.replace("`", "'").replace("\n", " ")[:200]
 
 
 async def _handle_command(request: Request, message: dict, notifier) -> dict[str, Any]:

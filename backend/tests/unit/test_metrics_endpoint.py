@@ -62,7 +62,7 @@ def _probe_app() -> FastAPI:
 
 def test_metrics_endpoint_exposes_agent_series(monkeypatch):
     from app.main import app
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "AUTH_ENABLED", False)
     client = TestClient(app)  # no lifespan needed — mount exists at import
@@ -151,7 +151,7 @@ def test_http_metrics_exclude_the_scrape_endpoints():
 def test_http_metrics_wired_into_the_real_app(monkeypatch):
     """The middleware is registered on app.main (full CORS/auth/ratelimit stack)."""
     from app.main import app
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "AUTH_ENABLED", False)
     client = TestClient(app)

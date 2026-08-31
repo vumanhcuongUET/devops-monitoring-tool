@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.config import settings
+from app.settings import settings
 
 router = APIRouter()
 

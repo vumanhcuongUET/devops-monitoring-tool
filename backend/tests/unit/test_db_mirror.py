@@ -10,7 +10,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.fixture()
 async def db_enabled(tmp_path, monkeypatch):
     """Initialize the engine against a temp SQLite DB and enable mirroring."""
-    from app.config import settings
+    from app.settings import settings
     from app.database.session import close_engine, init_engine
 
     url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
@@ -81,7 +81,7 @@ async def test_approval_event_mirrors_to_db(db_enabled):
 
 async def test_mirror_skipped_when_db_disabled(monkeypatch):
     """With DATABASE_ENABLED=false (default) no write is attempted."""
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "DATABASE_ENABLED", False)
     from app.database.mirror import db_mirroring_enabled

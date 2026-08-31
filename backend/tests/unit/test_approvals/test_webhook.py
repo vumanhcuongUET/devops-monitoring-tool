@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
+from app.settings import settings
 from app.approvals.webhook import (
     SLACK_SIGNATURE_VERSION,
     approval_webhook_health,
@@ -220,7 +221,10 @@ class TestSlackApprovalWebhook:
         with patch("app.actions.engine.get_action_engine", return_value=mock_action_engine), \
              patch("app.approvals.webhook.get_slack_approval_notifier", return_value=mock_slack_notifier), \
              patch("app.approvals.webhook.verify_slack_signature", return_value=True), \
-             patch("app.approvals.webhook.settings") as mock_settings_class:
+             patch("app.approvals.webhook.settings") as mock_settings_class, \
+             patch.object(settings, "CHATOPS_APPROVALS_ENABLED", True), \
+             patch.object(settings, "SLACK_APPROVER_MAP", {"U123": "john.doe"}), \
+             patch("app.users.get_role", return_value="admin"):
 
             mock_settings_class.SLACK_SIGNING_SECRET = "test-secret"
             mock_settings_class.ALLOWED_WEBHOOK_IPS = None
@@ -234,6 +238,8 @@ class TestSlackApprovalWebhook:
         assert result["response_type"] == "ephemeral"
         assert "approved" in result["text"].lower()
         mock_action_engine.approve_action.assert_called_once()
+        # Phase B gate: auth_user is the mapped platform user.
+        assert mock_action_engine.approve_action.call_args.kwargs["auth_user"] == "john.doe"
 
     @pytest.mark.asyncio
     async def test_reject_action_happy_path(
@@ -260,7 +266,10 @@ class TestSlackApprovalWebhook:
         with patch("app.actions.engine.get_action_engine", return_value=mock_action_engine), \
              patch("app.approvals.webhook.get_slack_approval_notifier", return_value=mock_slack_notifier), \
              patch("app.approvals.webhook.verify_slack_signature", return_value=True), \
-             patch("app.approvals.webhook.settings") as mock_settings_class:
+             patch("app.approvals.webhook.settings") as mock_settings_class, \
+             patch.object(settings, "CHATOPS_APPROVALS_ENABLED", True), \
+             patch.object(settings, "SLACK_APPROVER_MAP", {"U123": "john.doe"}), \
+             patch("app.users.get_role", return_value="admin"):
 
             mock_settings_class.SLACK_SIGNING_SECRET = "test-secret"
             mock_settings_class.ALLOWED_WEBHOOK_IPS = None
@@ -273,6 +282,7 @@ class TestSlackApprovalWebhook:
 
         assert result["response_type"] == "ephemeral"
         assert "rejected" in result["text"].lower()
+        assert mock_action_engine.reject_action.call_args.kwargs["auth_user"] == "john.doe"
         mock_action_engine.reject_action.assert_called_once()
 
     @pytest.mark.asyncio

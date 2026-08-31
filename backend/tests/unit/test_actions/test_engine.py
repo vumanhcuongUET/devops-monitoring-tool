@@ -999,7 +999,7 @@ async def test_rollback_survives_real_audit_logger(
     status and re-raised — every rollback-triggering execution 500'd.
     """
     from app.audit.logger import AuditLogger
-    from app.config import settings as app_settings
+    from app.settings import settings as app_settings
     from app.models.actions import ExecutionResult
 
     monkeypatch.setattr(app_settings, "DATA_DIR", str(tmp_path))

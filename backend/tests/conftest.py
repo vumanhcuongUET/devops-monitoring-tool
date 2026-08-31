@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.config import Settings
+from app.settings import Settings
 
 # Import app modules
 from app.services.apm_client import ApmClient

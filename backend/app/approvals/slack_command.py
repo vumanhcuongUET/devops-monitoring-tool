@@ -24,7 +24,7 @@ from typing import Any
 
 from app.approvals.chatops import HELP_TEXT, collect_system_status, format_status_text
 from app.approvals.webhook import verify_slack_signature
-from app.config import settings
+from app.settings import settings
 from app.security import is_url_allowed
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])

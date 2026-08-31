@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.config import settings
+from app.settings import settings
 from app.services.elasticsearch_client import ElasticsearchClient
 
 

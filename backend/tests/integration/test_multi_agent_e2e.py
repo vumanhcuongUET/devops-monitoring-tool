@@ -46,7 +46,7 @@ def mock_claude(monkeypatch):
 @pytest.fixture
 def orchestrator(monkeypatch) -> AgentOrchestrator:
     """Real orchestrator with all six real agents wired up."""
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
     return AgentOrchestrator(model_selector=ModelSelector())

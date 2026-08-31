@@ -8,7 +8,7 @@ from app.actions.autonomous_executor import get_autonomous_executor
 from app.alerting.notifiers import EmailNotifier, SlackNotifier, WebhookNotifier
 from app.alerting.rules import load_rules
 from app.alerting.state import AlertHistory, AlertStateTracker
-from app.config import settings
+from app.settings import settings
 from app.metrics import ALERT_ENGINE_LAST_SUCCESS, ALERT_EVAL_ERRORS
 
 logger = logging.getLogger(__name__)
@@ -295,7 +295,7 @@ class AlertEngine:
             event: Alert event data
         """
         try:
-            from app.config import settings
+            from app.settings import settings
             from app.models.alerts import AlertEvent
 
             # Create AlertEvent model

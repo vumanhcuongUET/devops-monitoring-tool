@@ -65,10 +65,19 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""  # Claude API key for Triage Card generation
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"  # Default model (Sonnet 4)
     AI_MAX_TOKENS: int = 4096  # Max tokens for LLM response
+    AI_REQUEST_TIMEOUT_SECONDS: float = 60.0  # Per-call Anthropic timeout (SDK default is 600s)
+
     # Soft ceiling for one triage user prompt (~4 chars/token estimate). When
     # the prompt exceeds it, log payloads shrink down a severity-quota ladder
     # (info first) before the logs section is dropped entirely.
     AI_INPUT_BUDGET_TOKENS: int = 12000
+
+    # Telemetry: OTLP exporter endpoint (e.g. otel-collector.monitoring:4317).
+    # Empty = console span exporter fallback (telemetry.py).
+    OTLP_ENDPOINT: str = ""
+    # OTLP_ENDPOINT with a plaintext collector needs TLS off — the default
+    # (True) makes the gRPC exporter handshake TLS and silently drop spans.
+    OTLP_SECURE: bool = True
 
     # Phase 6: AI Input Optimization
 
@@ -93,6 +102,9 @@ class Settings(BaseSettings):
     # Teams Approval
     TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for card delivery (no longer an HMAC key — Phase 13)
     TEAMS_WEBHOOK_SECRET: str = ""  # Dedicated HMAC secret for Teams webhook verification
+    # Teams user id -> local username for card-button approvals (same gate as
+    # CHATOPS_APPROVALS_ENABLED + TELEGRAM/SLACK_APPROVER_MAP).
+    TEAMS_APPROVER_MAP: dict[str, str] = {}
 
     # Telegram chatops (Phase A: read queries + approve/reject buttons only —
     # no mutating commands from chat). The webhook secret is set when
@@ -101,6 +113,17 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""  # Bot token from @BotFather — enables the notifier + webhook
     TELEGRAM_WEBHOOK_SECRET: str = ""  # Must match X-Telegram-Bot-Api-Secret-Token
     TELEGRAM_ALLOWED_CHAT_IDS: list[int] = []  # Empty = deny all chats (fail-closed)
+
+    # Chatops approvals (Phase B gate): approve/reject from chat is denied
+    # until CHATOPS_APPROVALS_ENABLED is true AND the chat identity maps to a
+    # local platform user with a role. Without the mapping, chat membership
+    # alone would decide approvals and the self-approval ban would never fire
+    # (review finding, 2026-08-31).
+    CHATOPS_APPROVALS_ENABLED: bool = False
+    # Telegram username-or-numeric-id -> local username, e.g. {"cuong": "alice"}.
+    TELEGRAM_APPROVER_MAP: dict[str, str] = {}
+    # Slack user id (or display name) -> local username.
+    SLACK_APPROVER_MAP: dict[str, str] = {}
 
     # Phase 12 Sprint 3: OPA enforcement (default off — evaluation API only).
     # When true and OPA is reachable, execute_action denies on OPA DENY.

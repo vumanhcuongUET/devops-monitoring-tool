@@ -7,7 +7,7 @@ from prometheus_client import REGISTRY, Counter, Gauge, Histogram, generate_late
 from starlette.responses import Response
 
 from app.auth import _is_valid_api_key, _is_valid_token
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

@@ -273,7 +273,7 @@ async def test_create_redis_rate_limiter_from_env():
     """Test creating rate limiter from environment settings."""
     from unittest.mock import patch
 
-    from app.config import settings
+    from app.settings import settings
     from app.rate_limiting.redis_rate_limiter import create_redis_rate_limiter
 
     with patch("redis.asyncio.Redis") as mock_redis_cls:

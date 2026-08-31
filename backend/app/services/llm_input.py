@@ -169,7 +169,10 @@ def estimate_tokens(text: str) -> int:
     """
     if not text:
         return 0
-    return max(1, len(text) // 4)
+    # chars//3, not //4: JSON-dense and Vietnamese-diacritic text runs
+    # denser than 4 chars/token, so //4 systematically underestimates and
+    # lets oversized prompts through the budget guard.
+    return max(1, len(text) // 3)
 
 
 def slim_context(context: dict, quotas: dict[str, int] | None = None) -> dict:

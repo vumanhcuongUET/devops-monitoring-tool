@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.config import settings
+from app.settings import settings
 
 
 def _make_client() -> TestClient:
@@ -117,8 +117,15 @@ class TestCallbacks:
         )
         return engine
 
-    def test_approve_callback_uses_engine_with_chat_label(
-        self, telegram_env, mock_notifier, mock_engine
+    @pytest.fixture
+    def approval_gate(self, monkeypatch):
+        """Phase B gate on: chat user 'cuong' maps to platform user 'alice'."""
+        monkeypatch.setattr(settings, "CHATOPS_APPROVALS_ENABLED", True)
+        monkeypatch.setattr(settings, "TELEGRAM_APPROVER_MAP", {"cuong": "alice"})
+        monkeypatch.setattr("app.users.get_role", lambda username: "admin" if username == "alice" else None)
+
+    def test_approve_callback_maps_to_platform_user(
+        self, telegram_env, mock_notifier, mock_engine, approval_gate
     ):
         client = _make_client()
 
@@ -128,10 +135,14 @@ class TestCallbacks:
         assert r.json() == {"ok": True}
         mock_engine.approve_action.assert_awaited_once()
         request = mock_engine.approve_action.await_args.kwargs["request"]
-        assert request.approved_by == "telegram:cuong"
+        # Attribution is the canonical platform username, not "telegram:cuong" —
+        # the self-approval ban compares against created_by.
+        assert request.approved_by == "alice"
+        # auth_user drives per-user RBAC narrowing in the engine.
+        assert mock_engine.approve_action.await_args.kwargs["auth_user"] == "alice"
         mock_notifier.send_approval_status.assert_awaited_once()
 
-    def test_reject_callback(self, telegram_env, mock_notifier, mock_engine):
+    def test_reject_callback(self, telegram_env, mock_notifier, mock_engine, approval_gate):
         client = _make_client()
 
         r = client.post(
@@ -142,6 +153,56 @@ class TestCallbacks:
 
         assert r.status_code == 200
         mock_engine.reject_action.assert_awaited_once()
+        request = mock_engine.reject_action.await_args.kwargs["request"]
+        assert request.rejected_by == "alice"
+        assert mock_engine.reject_action.await_args.kwargs["auth_user"] == "alice"
+
+    def test_approve_denied_when_gate_disabled(self, telegram_env, mock_notifier, mock_engine):
+        """CHATOPS_APPROVALS_ENABLED defaults off — buttons refuse, engine untouched."""
+        client = _make_client()
+
+        r = client.post("/approvals/webhook/telegram", headers=_headers(), json=_callback())
+
+        assert r.status_code == 200
+        mock_engine.approve_action.assert_not_awaited()
+        assert "⛔" in mock_notifier.send_message.await_args.args[1]
+
+    def test_approve_denied_for_unmapped_sender(
+        self, telegram_env, mock_notifier, mock_engine, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "CHATOPS_APPROVALS_ENABLED", True)
+        monkeypatch.setattr(settings, "TELEGRAM_APPROVER_MAP", {"someone-else": "alice"})
+        client = _make_client()
+
+        r = client.post("/approvals/webhook/telegram", headers=_headers(), json=_callback())
+
+        assert r.status_code == 200
+        mock_engine.approve_action.assert_not_awaited()
+
+    def test_approve_denied_when_mapped_user_has_no_role(
+        self, telegram_env, mock_notifier, mock_engine, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "CHATOPS_APPROVALS_ENABLED", True)
+        monkeypatch.setattr(settings, "TELEGRAM_APPROVER_MAP", {"cuong": "alice"})
+        monkeypatch.setattr("app.users.get_role", lambda username: None)
+        client = _make_client()
+
+        r = client.post("/approvals/webhook/telegram", headers=_headers(), json=_callback())
+
+        assert r.status_code == 200
+        mock_engine.approve_action.assert_not_awaited()
+
+    def test_engine_permission_denial_surfaced_to_chat(
+        self, telegram_env, mock_notifier, mock_engine, approval_gate
+    ):
+        """Engine-side RBAC/self-approval denial → chat message, not a 500."""
+        mock_engine.approve_action = AsyncMock(side_effect=PermissionError("lacks approve"))
+        client = _make_client()
+
+        r = client.post("/approvals/webhook/telegram", headers=_headers(), json=_callback())
+
+        assert r.status_code == 200
+        assert "Refused" in mock_notifier.send_message.await_args.args[1]
 
     def test_malformed_callback_data_rejected(self, telegram_env, mock_notifier, mock_engine):
         client = _make_client()

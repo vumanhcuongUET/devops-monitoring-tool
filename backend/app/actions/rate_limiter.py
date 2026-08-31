@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.actions.chain_monitor import get_chain_monitor
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

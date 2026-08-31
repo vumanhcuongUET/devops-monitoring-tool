@@ -8,7 +8,7 @@ import pathlib
 
 from app.models.actions import ActionStatus
 
-from app.config import settings as _settings
+from app.settings import settings as _settings
 STATE_FILE = str(pathlib.Path(_settings.DATA_DIR) / "approval_state.json")
 HISTORY_FILE = str(pathlib.Path(_settings.DATA_DIR) / "approval_history.json")
 
@@ -21,7 +21,7 @@ def build_redis_url(db: int | None = None) -> tuple[str, str, int, str | None]:
     """
     from urllib.parse import urlparse
 
-    from app.config import settings
+    from app.settings import settings
 
     if settings.REDIS_URL:
         parsed = urlparse(settings.REDIS_URL)
@@ -53,7 +53,7 @@ class ApprovalStateTracker:
                 RedisApprovalHistory,
                 RedisApprovalStore,
             )
-            from app.config import settings
+            from app.settings import settings
 
             _, host, port, password = build_redis_url()
 
@@ -274,7 +274,7 @@ def get_approval_history(use_redis: bool = False) -> ApprovalHistory:
         if use_redis:
 
             from app.approvals.redis_store import RedisApprovalHistory
-            from app.config import settings
+            from app.settings import settings
 
             _, host, port, password = build_redis_url()
 

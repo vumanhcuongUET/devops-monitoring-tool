@@ -4,7 +4,7 @@ from typing import Any
 
 from elasticsearch import AsyncElasticsearch
 
-from app.config import settings
+from app.settings import settings
 
 # Default _source projection for search_logs. Full documents can be huge
 # (stack traces, kubernetes metadata, agent fields); every current caller

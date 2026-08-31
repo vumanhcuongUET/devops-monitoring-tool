@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 import httpx
 import pathlib
 
-from app.config import settings
+from app.settings import settings
 from app.models.slo import SloConfig
 from app.services.slo_client import SloClient
 
-from app.config import settings as _settings
+from app.settings import settings as _settings
 
 logger = logging.getLogger(__name__)
 

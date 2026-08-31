@@ -7,7 +7,7 @@ secret now lives in DATA_DIR/auth_secret.key (0600) and is reused.
 
 import os
 
-from app.config import Settings
+from app.settings import Settings
 
 
 def _settings(tmp_path, **overrides) -> Settings:

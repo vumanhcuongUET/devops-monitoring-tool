@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.agents.orchestrator import AgentOrchestrator
-from app.config import settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

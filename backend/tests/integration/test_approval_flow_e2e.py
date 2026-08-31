@@ -24,7 +24,7 @@ from fastapi import FastAPI
 
 from app.actions.autonomous_executor import get_autonomous_executor
 from app.actions.engine import get_action_engine
-from app.config import settings
+from app.settings import settings
 from app.models.actions import (
     ActionStatus,
     CreateActionRequest,
@@ -171,13 +171,21 @@ class TestApprovalFlowE2E:
 
             original_secret = settings.SLACK_SIGNING_SECRET
             settings.SLACK_SIGNING_SECRET = SIGNING_SECRET
-            try:
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=webhook_app), base_url="http://test"
-                ) as client:
-                    resp = await client.post("/approvals/webhook/slack", content=body, headers=headers)
-            finally:
-                settings.SLACK_SIGNING_SECRET = original_secret
+            # Phase B approval gate: the chat identity maps to a platform user.
+            original_gate = settings.CHATOPS_APPROVALS_ENABLED
+            original_map = settings.SLACK_APPROVER_MAP
+            settings.CHATOPS_APPROVALS_ENABLED = True
+            settings.SLACK_APPROVER_MAP = {"U123": "alice"}
+            with patch("app.users.get_role", return_value="admin"):
+                try:
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=webhook_app), base_url="http://test"
+                    ) as client:
+                        resp = await client.post("/approvals/webhook/slack", content=body, headers=headers)
+                finally:
+                    settings.SLACK_SIGNING_SECRET = original_secret
+                    settings.CHATOPS_APPROVALS_ENABLED = original_gate
+                    settings.SLACK_APPROVER_MAP = original_map
 
             assert resp.status_code == 200, resp.text
             approved_state = await engine.approval_tracker.get(action_id)
@@ -260,12 +268,23 @@ class TestApprovalFlowE2E:
             from app.approvals.webhook import router as webhook_router
             webhook_app.include_router(webhook_router)
 
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=webhook_app), base_url="http://test"
-            ) as client:
-                resp = await client.post("/approvals/webhook/slack", content=body, headers=headers)
+            # Gate on so the request reaches the ENGINE's RBAC denial (the
+            # thing under test) rather than the chat-membership gate.
+            original_gate = settings.CHATOPS_APPROVALS_ENABLED
+            original_map = settings.SLACK_APPROVER_MAP
+            try:
+                settings.CHATOPS_APPROVALS_ENABLED = True
+                settings.SLACK_APPROVER_MAP = {"U123": "alice"}
+                with patch("app.users.get_role", return_value="admin"):
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=webhook_app), base_url="http://test"
+                    ) as client:
+                        resp = await client.post("/approvals/webhook/slack", content=body, headers=headers)
+            finally:
+                settings.CHATOPS_APPROVALS_ENABLED = original_gate
+                settings.SLACK_APPROVER_MAP = original_map
             assert resp.status_code == 200, resp.text
-            assert "not permitted" in resp.text or "denied" in resp.text.lower() or "🚫" in resp.text
+            assert "Refused" in resp.text or "not permitted" in resp.text or "denied" in resp.text.lower() or "🚫" in resp.text
 
             denied_state = await engine.approval_tracker.get(action_id)
             assert denied_state["status"] == ActionStatus.PENDING

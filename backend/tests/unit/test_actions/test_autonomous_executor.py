@@ -23,7 +23,7 @@ def _isolated_rate_limit_state(tmp_path, monkeypatch):
     Phase 14 (residual 3) — without isolation, recorded executions would
     leak between tests through the shared state file.
     """
-    from app.config import settings
+    from app.settings import settings
 
     monkeypatch.setattr(settings, "DATA_DIR", str(tmp_path))
 

@@ -19,6 +19,8 @@ from app.api.v1.overview import (
     _get_k8s_health,
 )
 
+from app.settings import settings
+
 logger = logging.getLogger(__name__)
 
 _EMOJI = {
@@ -70,6 +72,55 @@ async def _safe(coro):
         return await coro
     except Exception as e:  # noqa: BLE001 — a dead source is data, not a crash
         return e
+
+
+class ChatopsApprovalDenied(PermissionError):
+    """Chat identity may not approve/reject (gate off, unmapped, or roleless)."""
+
+
+def resolve_chatops_approver(
+    mapping: dict[str, str], senders: str | list[str], channel: str
+) -> str:
+    """Map a chat identity to the local platform user allowed to decide.
+
+    `senders` may be one identifier or several (Slack/Teams payloads carry
+    both a stable user id and a changeable display name; the map may be keyed
+    by either — the first identifier that matches wins).
+
+    Fail-closed on every step: master gate off, unmapped sender, or a mapped
+    username with no local role all deny. The returned username becomes BOTH
+    the attribution (`approved_by`) and the authenticated identity
+    (`auth_user`) — per-user RBAC narrowing and the self-approval ban in the
+    action engine only work on that canonical identity, never on
+    "telegram:<name>" labels.
+    """
+    if not settings.CHATOPS_APPROVALS_ENABLED:
+        raise ChatopsApprovalDenied(
+            f"{channel} approvals are disabled (set CHATOPS_APPROVALS_ENABLED)"
+        )
+    if isinstance(senders, str):
+        senders = [senders]
+    platform_user = None
+    matched = None
+    for sender in senders:
+        if not sender:
+            continue
+        platform_user = mapping.get(sender) or mapping.get(sender.lower())
+        if platform_user:
+            matched = sender
+            break
+    if not platform_user:
+        raise ChatopsApprovalDenied(
+            f"{channel} user {senders[0]!r} is not mapped to a platform user"
+        )
+    from app.users import get_role
+
+    if get_role(platform_user) is None:
+        raise ChatopsApprovalDenied(
+            f"mapped platform user {platform_user!r} has no local role"
+        )
+    del matched
+    return platform_user
 
 
 def format_status_text(status: dict[str, Any]) -> str:

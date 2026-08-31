@@ -4,7 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.auth import _is_valid_token, create_token
-from app.config import settings
+from app.settings import settings
 from app.main import app
 
 

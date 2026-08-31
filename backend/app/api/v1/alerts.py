@@ -12,7 +12,7 @@ from app.models.alerts import (
     NamespaceAlertStats,
 )
 
-from app.config import settings as _settings
+from app.settings import settings as _settings
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 

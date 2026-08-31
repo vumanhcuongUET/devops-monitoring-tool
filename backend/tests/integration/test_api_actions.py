@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import settings
+from app.settings import settings
 from app.main import app
 from app.models.actions import ActionStatus, RiskLevel
 
@@ -364,7 +364,7 @@ class TestActionsAPIAuthentication:
     def test_actions_protected_without_auth(self, client, monkeypatch):
         """Test that actions are protected without authentication."""
         # Enable auth
-        from app.config import settings
+        from app.settings import settings
         original_auth = settings.AUTH_ENABLED
         monkeypatch.setattr(settings, "AUTH_ENABLED", True)
 
@@ -381,7 +381,7 @@ class TestActionsAPIAuthentication:
 
     def test_actions_with_valid_api_key(self, client, monkeypatch):
         """Test actions with valid API key."""
-        from app.config import settings
+        from app.settings import settings
 
         # Setup auth
         monkeypatch.setattr(settings, "AUTH_ENABLED", True)

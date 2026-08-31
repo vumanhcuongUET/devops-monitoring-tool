@@ -296,7 +296,7 @@ class TestDistributedStateIntegration:
         """Test that different components use separate Redis databases."""
         from app.alerting.redis_store import RedisAlertStore
         from app.approvals.redis_store import RedisApprovalStore
-        from app.config import settings
+        from app.settings import settings
         from app.rate_limiting.redis_rate_limiter import RedisRateLimiter
 
         # Verify each component uses its own DB
@@ -328,7 +328,7 @@ class TestDistributedStateUnitTests:
     @pytest.mark.asyncio
     async def test_redis_db_settings_are_configured(self):
         """Test that Redis DB settings are properly configured."""
-        from app.config import settings
+        from app.settings import settings
 
         # Verify all Redis DB settings exist
         assert hasattr(settings, "REDIS_HOST")
@@ -348,7 +348,7 @@ class TestDistributedStateUnitTests:
     @pytest.mark.asyncio
     async def test_redis_toggle_settings_exist(self):
         """Test that Redis toggle settings exist."""
-        from app.config import settings
+        from app.settings import settings
 
         assert hasattr(settings, "ALERT_STATE_USE_REDIS")
         assert hasattr(settings, "APPROVAL_STATE_USE_REDIS")

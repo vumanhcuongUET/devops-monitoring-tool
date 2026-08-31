@@ -25,7 +25,7 @@ RECONNECT_SECONDS = 3
 
 
 def fanout_enabled() -> bool:
-    from app.config import settings
+    from app.settings import settings
 
     return settings.WS_FANOUT_USE_REDIS
 

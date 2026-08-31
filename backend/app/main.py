@@ -15,7 +15,7 @@ from app.api.ws.live import manager as ws_manager
 from app.api.ws.live import router as ws_router
 from app.auth import _is_valid_api_key, decode_token
 from app.users import get_min_iat, get_role
-from app.config import settings
+from app.settings import settings
 from app.middleware.security import SecurityHeadersMiddleware
 from app.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS_TOTAL
 from app.rate_limit import RateLimitMiddleware
@@ -208,7 +208,7 @@ async def lifespan(app: FastAPI):
     from app.approvals.store import get_approval_tracker
 
     # Phase 7 Sprint 4: Configuration Management
-    from app.config import (
+    from app.configmgmt import (
         AuditLogger,
         ConfigSecurity,
         ConfigValidator,
@@ -239,6 +239,10 @@ async def lifespan(app: FastAPI):
     # Phase 12 H1: when ALERT_ENGINE_LEADER_LOCK is on (multi-replica), every
     # pod starts run_as_leader; one pod wins the Redis lock and runs the
     # engine/SLO reporter, the others poll. Off (default) = today's behavior.
+    # Tracks the live alert-engine task for supervision (else branch) and
+    # shutdown cancellation (both branches).
+    engine_task: dict = {"current": None}
+
     if settings.ALERT_ENGINE_LEADER_LOCK:
         from app.alerting.leader import RedisLeaderLock, run_as_leader
 
@@ -252,6 +256,7 @@ async def lifespan(app: FastAPI):
                 engine_lock,
             )
         )
+        engine_task["current"] = alert_task
         slo_reporter = SloReporter(slo_client=app.state.slo_client)
         slo_reporter.leadership = slo_lock
         slo_task = asyncio.create_task(
@@ -263,7 +268,25 @@ async def lifespan(app: FastAPI):
         )
         logger.info("Phase 12 H1: alert engine + SLO reporter under Redis leader lock")
     else:
-        alert_task = asyncio.create_task(alert_engine.start(app.state))
+        # Supervision: a background task that dies outside its per-cycle
+        # try/except must be restarted, not silently lost. `current` tracks
+        # the live task so (a) a superseded callback never restarts a stale
+        # chain and (b) shutdown cancels the replacement, not just the first
+        # task.
+        def _supervise(task: asyncio.Task, name: str, start_fn) -> None:
+            if engine_task["current"] is not task or task.cancelled():
+                return  # superseded by an earlier restart, or shut down
+            exc = task.exception()  # retrieved, so the loop never warns
+            logger.error("%s exited unexpectedly (%s) — restarting", name, exc)
+            engine_task["current"] = asyncio.create_task(start_fn())
+            engine_task["current"].add_done_callback(
+                lambda t: _supervise(t, name, start_fn)
+            )
+
+        engine_task["current"] = asyncio.create_task(alert_engine.start(app.state))
+        engine_task["current"].add_done_callback(
+            lambda t: _supervise(t, "alert-engine", lambda: alert_engine.start(app.state))
+        )
 
         slo_reporter = SloReporter(slo_client=app.state.slo_client)
         slo_task = asyncio.create_task(slo_reporter.start(app.state))
@@ -403,7 +426,9 @@ async def lifespan(app: FastAPI):
     yield
 
     alert_engine.stop()
-    alert_task.cancel()
+    # Cancel the live instance — supervision may have replaced the original.
+    if engine_task["current"] is not None:
+        engine_task["current"].cancel()
     slo_reporter.stop()
     slo_task.cancel()
     if fanout_task is not None:
@@ -654,6 +679,52 @@ async def logout(request: Request):
     return {"success": True, "logged_out": bool(sub and sub != "service")}
 
 
+# Login brute-force guard: the global IP rate limit (60 req/min) still allows
+# ~60 password guesses per minute per address, indefinitely. Two budgets:
+# per (client IP, username) — stops one account being hammered — and per IP,
+# because rotating usernames defeats any per-account cap (password spray).
+_LOGIN_FAIL_LIMIT = 5
+_LOGIN_IP_FAIL_LIMIT = 20
+_LOGIN_FAIL_WINDOW_SECONDS = 300.0
+_login_failures: dict[tuple[str, str], list[float]] = {}
+_login_ip_failures: dict[str, list[float]] = {}
+
+
+def _prune(window: dict, key, now: float) -> list[float]:
+    recent = [t for t in window.get(key, []) if now - t < _LOGIN_FAIL_WINDOW_SECONDS]
+    window[key] = recent
+    return recent
+
+
+def _login_gate(client_ip: str, username: str) -> None:
+    """429 when this (ip, username) pair or this IP has too many failures."""
+    now = time.monotonic()
+    # Coarse sweep keeps the dicts bounded under distributed probing.
+    if len(_login_failures) > 5000:
+        for key in [k for k, v in _login_failures.items() if not v]:
+            _login_failures.pop(key, None)
+    if len(_login_ip_failures) > 5000:
+        for key in [k for k, v in _login_ip_failures.items() if not v]:
+            _login_ip_failures.pop(key, None)
+    pair = _prune(_login_failures, (client_ip, username), now)
+    per_ip = _prune(_login_ip_failures, client_ip, now)
+    if len(pair) >= _LOGIN_FAIL_LIMIT or len(per_ip) >= _LOGIN_IP_FAIL_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts; try again later",
+        )
+
+
+def _login_record_failure(client_ip: str, username: str) -> None:
+    now = time.monotonic()
+    _login_failures.setdefault((client_ip, username), []).append(now)
+    _login_ip_failures.setdefault(client_ip, []).append(now)
+
+
+def _login_record_success(client_ip: str, username: str) -> None:
+    _login_failures.pop((client_ip, username), None)
+
+
 @app.post("/api/v1/auth/login", include_in_schema=True)
 async def login(request: Request):
     """Username/password login — mints a user token (sub=<username>).
@@ -673,9 +744,12 @@ async def login(request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
+    client_ip = request.client.host if request.client else "unknown"
+    _login_gate(client_ip, username)
     # scrypt burns real CPU — keep it off the event loop
     role = await asyncio.to_thread(verify_login, username, password)
     if role is None:
+        _login_record_failure(client_ip, username)
         logger.warning("Failed login for %r", username or "<empty>")
         # Phase 15 P3: login failures are security events — audit them.
         try:
@@ -691,6 +765,7 @@ async def login(request: Request):
         except Exception as audit_err:  # auditing must never break login
             logger.warning("LOGIN_FAILED audit write failed: %s", audit_err)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    _login_record_success(client_ip, username)
     return {
         "access_token": create_token(username),
         "token_type": "bearer",

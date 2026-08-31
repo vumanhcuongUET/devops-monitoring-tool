@@ -127,16 +127,51 @@ Still open (design-needed or low priority):
 
 ## P3 — hardening batch (one PR)
 
-AUTH_SECRET per-process random breaks multi-worker/dev persistence (derive
-from file under DATA_DIR); Slack verify logs expected HMAC (replayable) — log
-failure+IP only; raw `str(e)` in unauthenticated webhook 500s; audit gaps
-(`log_action_created` lacks user; 401s/login failures unaudited); time-window
-next-allowed math + end-hour off-by-one + unknown-env fail-open; impact
-estimator real-cluster path unreachable (dry_run=True hardcoded); engine
-hardcodes approval-gating constants (20 pods/10 replicas); rollback actions
-auto-created can never execute in production (DELETE not in prod matrix);
-OPA client log hygiene; frontend api `WS_URL`/constants cleanup; npm audit
-gating strategy.
+Fixed 2026-08-31 (fourth same-day batch, closes the P3 ledger):
+
+1. [x] AUTH_SECRET: when unset (non-production only — production still
+   requires the explicit env), a secret is derived once and persisted to
+   `DATA_DIR/auth_secret.key` (0600, O_EXCL so concurrent workers converge
+   on one key). The per-process random used to invalidate every token on
+   restart and broke multi-worker uvicorn. Unusable DATA_DIR degrades to the
+   old per-process random; the now-dead main.py warning removed.
+2. [x] Slack verify no longer logs the expected HMAC (log readers could
+   replay it to forge approvals); logs the rejection only — the caller
+   already logs client IP. Covered by a caplog regression test.
+3. [x] Unauthenticated webhook 500s return a generic detail; the raw
+   exception (hosts, query shapes) stays in server logs (`exc_info=True`).
+4. [x] Audit gaps: `log_action_created` now carries the authenticated user
+   (falls back to the server-validated `created_by`); middleware 401s emit
+   `AUTH_DENIED` and failed logins emit `LOGIN_FAILED` (both `success=False`
+   with path/method/client) — audit failures never break auth.
+5. [x] Time-window enforcer: `end_hour` is exclusive (a "9-17" window no
+   longer stretches to 17:59; `always-available` is `end_hour=24`); unknown
+   environments now FAIL CLOSED (no mapping used to bypass windows
+   entirely); `_calculate_next_allowed_time` rewritten — the old loop
+   advanced one day per *checked* day, so a blocked run (Fri evening before
+   a weekend) returned a day earlier than the truth. Tests pin Fri 20:00
+   → Mon 09:00 and Mon 06:00 → 09:00.
+6. [x] Impact estimator: `estimate(dry_run=True)` was hardcoded at the
+   engine call site, so the real-cluster path (Phase 12 B3) was unreachable.
+   Now `dry_run=k8s_client is None` — real counts when a client exists,
+   and the estimator's own exception fallback still covers a failed query.
+7. [x] Approval-gating heuristics (20 pods / 10 deployments / 10 rollout
+   pods) moved into `ImpactThresholds` (`heuristic_namespace_counts`,
+   `heuristic_rollout_pods`) — they force approval, so they are
+   deployment config, not code constants; defaults unchanged.
+8. [x] Auto-rollback honesty: the engine checks the rollback command
+   against the environment matrix before creating the PENDING action.
+   Production (view/scale/approve) can never execute DELETE/ROLLBACK
+   commands, so the plan is recorded on the ROLLBACK_TRIGGERED audit event
+   with `auto_creation: "skipped"` + `skip_reason` for manual execution
+   instead of creating an action that dies with PermissionError at execute.
+9. [x] OPA client hygiene: the UNKNOWN-result warning is generic (raw
+   exception stays in server logs); the decision cache is swept once past
+   1000 keys — distinct inputs previously accumulated forever.
+10. [x] Frontend: dead httpOnly-cookie contract removed from `client.ts`
+    (`withCredentials` + stale comments) — `/auth/refresh` is
+    bearer-based; the test now asserts no cookie contract. (npm audit
+    gating itself was already made blocking-at-critical in Wave 3.)
 
 ## Explicitly clean (verified this round)
 
@@ -149,11 +184,17 @@ everywhere, real CI test gates for all three suites.
 
 ## Status
 
-Wave 1-3 fixed same-day (2026-08-31); P2/P3 above are the tracked ledger for
-follow-up batches. P2-4 closed in the third same-day batch (capped capture on
-both execution paths + bounded `timeout_seconds`). Gates at close: backend
-1245 collected / unit suite green (incl. capped-capture + timeout-bound
-tests), ruff/bandit/compileall clean, frontend tsc + 159 vitest +
-build + npm-audit clean, phase-12 manual smoke re-run 18/18 GREEN with the
-new dry-run semantics (dry-run keeps APPROVED; same-action real execute;
-no rate-limit wait needed since dry runs no longer burn the cooldown slot).
+Wave 1-3 fixed same-day (2026-08-31); P2-4 closed in the third same-day batch
+(capped capture on both execution paths + bounded `timeout_seconds`); the P3
+hardening batch closed in the fourth (see above). Remaining open items are
+the design-needed P2s: 3/7 (per-subcommand depth + full SSRF IP-pinning),
+10 (frontend error-state UX), 12 (k8s ArgoCD/kustomize/networkpolicy/secrets
+cleanup), 13b (ai_assistant audit-chain migration).
+
+Gates at P3 close (2026-08-31): backend 990 unit tests green (incl. the 13
+new P3 tests: secret persistence, HMAC log hygiene, AUTH_DENIED/rollback
+prod behavior, window math), ruff/bandit/compileall clean, frontend tsc +
+159 vitest + build + npm-audit (0 vulnerabilities) clean. Phase-12 manual
+smoke re-run from the third batch: 18/18 GREEN with the new dry-run
+semantics (dry-run keeps APPROVED; same-action real execute; no rate-limit
+wait needed since dry runs no longer burn the cooldown slot).

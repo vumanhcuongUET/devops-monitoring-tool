@@ -52,6 +52,20 @@ class ImpactThresholds:
     namespace_wide_critical: bool = True  # Treat namespace-wide ops as critical
     cluster_wide_always_critical: bool = True  # Always treat cluster-wide ops as critical
 
+    # Heuristic fallback counts, used only when no cluster client is
+    # available (or the live query failed). They directly drive approval
+    # gating (HIGH/CRITICAL impact forces approval), so they are deployment
+    # config, not code constants — tune them per cluster via
+    # get_impact_estimator(ImpactThresholds(...)).
+    heuristic_namespace_counts: dict[str, int] = field(default_factory=lambda: {
+        "pods": 20,
+        "deployments": 10,
+        "services": 5,
+        "configmaps": 10,
+        "secrets": 15,
+    })
+    heuristic_rollout_pods: int = 10  # Typical deployment size for restarts
+
 
 class ImpactEstimator:
     """Estimate the impact of actions before execution.
@@ -386,15 +400,9 @@ class ImpactEstimator:
             # Namespace-wide or broader operation
             # Use conservative estimates based on operation type
             if operation in ("delete", "remove") and resource_type:
-                # Estimate typical namespace resource counts
-                counts = {
-                    "pods": 20,
-                    "deployments": 10,
-                    "services": 5,
-                    "configmaps": 10,
-                    "secrets": 15,
-                }
-                count = counts.get(resource_type.lower(), 5)
+                count = self.thresholds.heuristic_namespace_counts.get(
+                    resource_type.lower(), 5
+                )
                 impacts.append(ResourceImpact(
                     resource_type=resource_type,
                     affected_count=count,
@@ -404,7 +412,7 @@ class ImpactEstimator:
                 # Rollout restart affects deployment's pods
                 impacts.append(ResourceImpact(
                     resource_type="pods",
-                    affected_count=10,  # Typical deployment size
+                    affected_count=self.thresholds.heuristic_rollout_pods,
                     namespace=namespace,
                 ))
             else:

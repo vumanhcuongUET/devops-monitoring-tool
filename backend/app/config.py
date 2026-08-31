@@ -1,3 +1,4 @@
+import os
 import secrets
 from pathlib import Path
 
@@ -175,14 +176,13 @@ class Settings(BaseSettings):
                     "Generate with: python -c 'import secrets; print(secrets.token_hex(32))'"
                 )
 
-        # Warn about empty AUTH_SECRET in non-production
+        # Warn about empty AUTH_SECRET in non-production. Derive one and
+        # persist it under DATA_DIR: a per-process random broke multi-worker
+        # deployments (each worker signed with a different key) and logged
+        # every user out on restart. Production still must set AUTH_SECRET
+        # explicitly (checked above).
         if self.AUTH_ENABLED and not self.AUTH_SECRET:
-            logger.warning(
-                "AUTH_SECRET is empty. Generating a secure random secret for development. "
-                "Set AUTH_SECRET in .env for persistence."
-            )
-            # Generate a cryptographically secure secret
-            self.AUTH_SECRET = secrets.token_hex(32)
+            self.AUTH_SECRET = self._load_or_create_auth_secret()
 
         # Warn about empty API_KEYS in development
         if self.AUTH_ENABLED and not self.API_KEYS:
@@ -192,6 +192,47 @@ class Settings(BaseSettings):
             )
 
         return self
+
+    def _load_or_create_auth_secret(self) -> str:
+        """Load the derived AUTH_SECRET from DATA_DIR, creating it once.
+
+        The file is created O_EXCL with 0600 so concurrent workers converge
+        on one key instead of clobbering each other. Any filesystem failure
+        degrades to the old per-process random (single-worker dev only).
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+        key_path = Path(self.DATA_DIR) / "auth_secret.key"
+        try:
+            if key_path.exists():
+                secret = key_path.read_text().strip()
+                if secret:
+                    return secret
+                key_path.unlink()  # empty/corrupt file — regenerate
+
+            secret = secrets.token_hex(32)
+            key_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                # Another worker won the race — use theirs.
+                return key_path.read_text().strip() or secrets.token_hex(32)
+            with os.fdopen(fd, "w") as f:
+                f.write(secret)
+            logger.warning(
+                "AUTH_SECRET is empty. Generated a random secret and stored it at %s — "
+                "tokens survive restarts, but set AUTH_SECRET in .env for production.",
+                key_path,
+            )
+            return secret
+        except OSError as e:
+            logger.warning(
+                "Could not persist AUTH_SECRET under %s (%s) — using a per-process "
+                "random secret; tokens will not survive a restart.",
+                self.DATA_DIR, e,
+            )
+            return secrets.token_hex(32)
 
 
 settings = Settings()

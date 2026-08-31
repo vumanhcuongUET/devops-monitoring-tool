@@ -2,7 +2,8 @@
  * API Client with short-lived token auth.
  *
  * - Attaches the access token from the token manager to every request
- * - On 401: tries one token refresh (httpOnly cookie) and retries the request
+ * - On 401: tries one bearer-based token refresh (POST /auth/refresh with
+ *   the Authorization header) and retries the request
  * - If refresh fails: clears the token and dispatches 'auth-required'
  *   (App.tsx listens for it and drops back to the login screen)
  */
@@ -18,7 +19,6 @@ export const api: AxiosInstance = axios.create({
   baseURL: API_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
-  withCredentials: true, // Enable cookies for httpOnly support
 });
 
 // ============================================
@@ -89,8 +89,9 @@ async function refreshAccessToken(): Promise<string | null> {
 
 async function _doRefresh(): Promise<string | null> {
   try {
+    // Bearer-based refresh contract: the backend reads the Authorization
+    // header — no cookies are involved anywhere in the auth flow.
     const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {}, {
-      withCredentials: true, // Send httpOnly cookie
       headers: tokenManager.getAccessToken()
         ? { Authorization: `Bearer ${tokenManager.getAccessToken()}` }
         : {},

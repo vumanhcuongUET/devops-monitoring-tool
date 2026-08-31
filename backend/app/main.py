@@ -82,19 +82,36 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     # user's min_iat (set by /auth/logout) are dead.
                     if int(payload.get("iat", 0)) < get_min_iat(sub):
                         logger.warning("Rejected revoked token for user %r", sub)
-                        return fastapi.responses.JSONResponse(
-                            status_code=401, content={"detail": "Token revoked"}
-                        )
+                        return self._deny(request, "Token revoked", user=sub)
                     request.state.user = sub
                     request.state.auth_method = "user_token"
                 else:
                     logger.warning("Rejected token for revoked/unknown user %r", sub)
-                    return fastapi.responses.JSONResponse(status_code=401, content={"detail": "User no longer exists"})
+                    return self._deny(request, "User no longer exists", user=sub)
                 return await call_next(request)
 
-        return fastapi.responses.JSONResponse(
-            status_code=401, content={"detail": "Unauthorized"}
-        )
+        return self._deny(request, "Unauthorized")
+
+    @staticmethod
+    def _deny(request, detail: str, user: str | None = None):
+        """401 with an audit trail — Phase 15 P3: 401s used to leave no trace."""
+        try:
+            from app.audit.logger import get_audit_logger
+            from app.models.audit import AuditEventType
+
+            get_audit_logger().log_event(
+                event_type=AuditEventType.AUTH_DENIED,
+                user=user,
+                details={
+                    "path": request.url.path,
+                    "method": request.method,
+                    "client": request.client.host if request.client else None,
+                },
+                success=False,
+            )
+        except Exception as e:  # auditing must never break auth
+            logger.warning("AUTH_DENIED audit write failed: %s", e)
+        return fastapi.responses.JSONResponse(status_code=401, content={"detail": detail})
 
 
 def _route_pattern(scope: dict) -> str:
@@ -378,8 +395,8 @@ async def lifespan(app: FastAPI):
         ORCHESTRATOR_UP.set(0)
         logger.warning(f"Phase 10 Sprint 3: Agent orchestrator initialization failed: {e}")
 
-    if settings.AUTH_ENABLED and not settings.AUTH_SECRET:
-        logger.warning("AUTH_ENABLED=true but AUTH_SECRET is empty — generate one!")
+    # (AUTH_ENABLED + empty AUTH_SECRET is impossible past config validation —
+    # config.py derives and persists a secret under DATA_DIR.)
     if settings.AUTH_ENABLED and not settings.API_KEYS:
         logger.warning("AUTH_ENABLED=true but API_KEYS is empty — no one can authenticate!")
 
@@ -660,6 +677,19 @@ async def login(request: Request):
     role = await asyncio.to_thread(verify_login, username, password)
     if role is None:
         logger.warning("Failed login for %r", username or "<empty>")
+        # Phase 15 P3: login failures are security events — audit them.
+        try:
+            from app.audit.logger import get_audit_logger
+            from app.models.audit import AuditEventType
+
+            get_audit_logger().log_event(
+                event_type=AuditEventType.LOGIN_FAILED,
+                user=username or None,
+                details={"client": request.client.host if request.client else None},
+                success=False,
+            )
+        except Exception as audit_err:  # auditing must never break login
+            logger.warning("LOGIN_FAILED audit write failed: %s", audit_err)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return {
         "access_token": create_token(username),

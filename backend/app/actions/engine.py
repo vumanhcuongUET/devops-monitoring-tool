@@ -157,7 +157,11 @@ class ActionEngine:
             action_id=action_id,
             command=command,
             k8s_client=k8s_client,
-            dry_run=True,  # Use heuristics for now, can be configurable
+            # Real cluster counts when the engine holds a client (Phase 12
+            # B3); heuristics otherwise. The hardcoded dry_run=True made the
+            # real-cluster path unreachable — every estimate used the same
+            # made-up counts (20 pods / 10 deployments) for gating.
+            dry_run=k8s_client is None,
         )
 
         # High and Critical impact actions require approval (Phase 8 Day 7)
@@ -206,12 +210,15 @@ class ActionEngine:
             },
         )
 
-        # Log action creation
+        # Log action creation — attribute it to the authenticated identity
+        # (Phase 15 P3: the created event used to be userless, breaking the
+        # audit chain between creation and the approve/execute events).
         self.audit_logger.log_action_created(
             action_id=action_id,
             triage_card_id=request.triage_card_id,
             project=request.project,
             command=command,
+            user=auth_user or request.created_by,
         )
 
         # Add to approval tracker — full snapshot so get/list can rebuild the Action
@@ -667,7 +674,31 @@ class ActionEngine:
                 )
 
                 if should_rollback and rollback_plan:
-                    # Log rollback trigger
+                    # Phase 15 P3: only create the rollback action when this
+                    # environment's matrix can actually execute it. The prod
+                    # matrix (view/scale/approve) denies DELETE and ROLLBACK
+                    # commands, so the auto-created action was approved-by-
+                    # design but dead — PermissionError on every execute.
+                    rollback_perm = self.permission_checker.check_command(
+                        command=rollback_plan.rollback_command,
+                        environment=environment,
+                        project=project,
+                    )
+                    auto_creation = "created" if rollback_perm.allowed else "skipped"
+                    if not rollback_perm.allowed:
+                        logger.warning(
+                            f"Rollback plan for {action_id} not executable in "
+                            f"'{environment}' ({rollback_perm.reason}) — plan "
+                            f"recorded for manual execution only"
+                        )
+                    else:
+                        logger.warning(
+                            f"Rollback triggered for action {action_id} due to: {triggered_conditions}"
+                        )
+
+                    # One audit event covers both the trigger and whether an
+                    # executable action was spawned or the plan was recorded
+                    # for manual execution only.
                     self.audit_logger.log_event(
                         event_type=AuditEventType.ROLLBACK_TRIGGERED,
                         user=request.executed_by,
@@ -676,40 +707,42 @@ class ActionEngine:
                         details={
                             "triggered_conditions": triggered_conditions,
                             "rollback_command": rollback_plan.rollback_command,
+                            "auto_creation": auto_creation,
+                            **({} if rollback_perm.allowed else
+                               {"skip_reason": rollback_perm.reason}),
                         },
                     )
-                    logger.warning(
-                        f"Rollback triggered for action {action_id} due to: {triggered_conditions}"
-                    )
 
-                    # Phase 12 Sprint 3: finish the feature — create a real
-                    # PENDING rollback action so it enters the normal approval
-                    # flow (previously this only logged the plan).
-                    rollback_rec = Recommendation(
-                        priority=1,
-                        action=f"Rollback after failed action {action_id}",
-                        command=rollback_plan.rollback_command,
-                        reason=(
-                            f"Automatic rollback triggered by failed action "
-                            f"{action_id}: {triggered_conditions}"
-                        ),
-                        risk=SeverityLevel.HIGH,
-                        estimated_impact="Restores pre-execution state",
-                    )
-                    rollback_request = CreateActionRequest(
-                        triage_card_id=f"rollback-{action_id}",
-                        recommendation_id=f"rollback-{action_id}",
-                        project=project,
-                        created_by=f"rollback:{action_id}",
-                    )
-                    rollback_action = await self.create_action_from_recommendation(
-                        request=rollback_request,
-                        recommendation=rollback_rec,
-                    )
-                    logger.info(
-                        f"Rollback action {rollback_action.id} created "
-                        f"(status={rollback_action.status.value}, pending approval)"
-                    )
+                    if rollback_perm.allowed:
+                        # Phase 12 Sprint 3: finish the feature — create a
+                        # real PENDING rollback action so it enters the
+                        # normal approval flow (previously this only logged
+                        # the plan).
+                        rollback_rec = Recommendation(
+                            priority=1,
+                            action=f"Rollback after failed action {action_id}",
+                            command=rollback_plan.rollback_command,
+                            reason=(
+                                f"Automatic rollback triggered by failed action "
+                                f"{action_id}: {triggered_conditions}"
+                            ),
+                            risk=SeverityLevel.HIGH,
+                            estimated_impact="Restores pre-execution state",
+                        )
+                        rollback_request = CreateActionRequest(
+                            triage_card_id=f"rollback-{action_id}",
+                            recommendation_id=f"rollback-{action_id}",
+                            project=project,
+                            created_by=f"rollback:{action_id}",
+                        )
+                        rollback_action = await self.create_action_from_recommendation(
+                            request=rollback_request,
+                            recommendation=rollback_rec,
+                        )
+                        logger.info(
+                            f"Rollback action {rollback_action.id} created "
+                            f"(status={rollback_action.status.value}, pending approval)"
+                        )
 
             # Record action in rate limiter after successful execution (Phase 8).
             # Dry runs are not recorded: they mutate nothing, and counting them

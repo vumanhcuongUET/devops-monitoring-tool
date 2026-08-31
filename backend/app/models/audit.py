@@ -24,6 +24,8 @@ class AuditEventType(str, Enum):
     CHAIN_LIMIT_EXCEEDED = "chain_limit_exceeded"  # Action blocked due to chain limit
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"  # Action blocked due to rate limit
     COOLDOWN_ACTIVE = "cooldown_active"  # Action blocked due to cooldown period
+    AUTH_DENIED = "auth_denied"  # Request rejected by the auth middleware (401)
+    LOGIN_FAILED = "login_failed"  # Failed /auth/login attempt
 
 
 class ChainOfThoughtEntry(BaseModel):

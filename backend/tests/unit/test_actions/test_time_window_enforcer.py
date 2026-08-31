@@ -134,7 +134,7 @@ class TestTimeWindowEnforcer:
         assert result.is_allowed is True
 
     def test_check_time_window_no_config(self):
-        """Test environment with no window configuration."""
+        """Unknown environment → denied (Phase 15 P3 fail-closed)."""
         enforcer = TimeWindowEnforcer()
 
         # Remove all environment mappings
@@ -144,8 +144,54 @@ class TestTimeWindowEnforcer:
             environment="test-env",
         )
 
-        assert result.is_allowed is True
+        assert result.is_allowed is False
         assert "No time window configured" in result.reason
+        assert "fail closed" in result.reason
+
+    def test_end_hour_exclusive(self):
+        """Phase 15 P3: a '9-17' window ends at 17:00, not 17:59."""
+        enforcer = TimeWindowEnforcer()
+
+        enforcer.set_environment_window("production", "business-hours")
+
+        before_end = datetime(2024, 1, 15, 16, 59, 0, tzinfo=timezone.utc)  # Monday
+        at_end = datetime(2024, 1, 15, 17, 0, 0, tzinfo=timezone.utc)
+
+        assert enforcer.check_time_window("production", action_time=before_end).is_allowed is True
+        assert enforcer.check_time_window("production", action_time=at_end).is_allowed is False
+
+    def test_always_available_covers_last_hour(self):
+        """Phase 15 P3: the 24/7 window really is 24/7 (end_hour=24)."""
+        enforcer = TimeWindowEnforcer()
+
+        late = datetime(2024, 1, 15, 23, 30, 0, tzinfo=timezone.utc)  # Monday
+        result = enforcer.check_time_window("development", action_time=late)
+
+        assert result.is_allowed is True
+
+    def test_next_allowed_after_weekend(self):
+        """Phase 15 P3: Friday 20:00 → next allowed is Monday 09:00.
+
+        The old loop advanced one day per *checked* day, so blocked days
+        between now and the next allowed day made it land early.
+        """
+        enforcer = TimeWindowEnforcer()
+
+        friday_evening = datetime(2024, 1, 12, 20, 0, 0, tzinfo=timezone.utc)  # Friday
+        result = enforcer.check_time_window("production", action_time=friday_evening)
+
+        assert result.is_allowed is False
+        assert result.next_allowed_time == datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+
+    def test_next_allowed_before_start_today(self):
+        """Monday 06:00 → next allowed is today at 09:00."""
+        enforcer = TimeWindowEnforcer()
+
+        early = datetime(2024, 1, 15, 6, 0, 0, tzinfo=timezone.utc)  # Monday
+        result = enforcer.check_time_window("production", action_time=early)
+
+        assert result.is_allowed is False
+        assert result.next_allowed_time == datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
 
     def test_add_custom_window(self):
         """Test adding a custom time window."""

@@ -84,7 +84,9 @@ def verify_slack_signature(
     expected_signature = f"{SLACK_SIGNATURE_VERSION}=" + digest.hex()
 
     if not hmac.compare_digest(expected_signature, signature):
-        logger.warning(f"Signature mismatch: expected {expected_signature}, got {signature}")
+        # Never log the expected signature: anyone who can read the logs
+        # could replay it and forge approvals. The caller logs the client IP.
+        logger.warning("Slack signature mismatch (rejected)")
         return False
 
     return True
@@ -284,8 +286,10 @@ async def slack_approval_webhook(
         logger.warning(f"Slack webhook action denied: {e}")
         return {"response_type": "ephemeral", "text": f"🚫 {e}"}
     except Exception as e:
-        logger.error(f"Error processing Slack webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        # Unauthenticated path: the raw exception can carry internal details
+        # (hosts, query shapes) — keep it in server logs only.
+        logger.error("Error processing Slack webhook: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal error processing Slack webhook") from e
 
 
 @router.post("/webhook/teams")
@@ -517,8 +521,10 @@ async def teams_approval_webhook(
             "value": {"status": 200, "body": {"type": "message", "text": f"🚫 {e}"}},
         }
     except Exception as e:
-        logger.error(f"Error processing Teams webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        # Unauthenticated path: the raw exception can carry internal details
+        # (hosts, query shapes) — keep it in server logs only.
+        logger.error("Error processing Teams webhook: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal error processing Teams webhook") from e
 
 
 @router.get("/health")

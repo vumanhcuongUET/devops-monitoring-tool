@@ -84,7 +84,7 @@ class TimeWindowEnforcer:
             description="No time restrictions (24/7)",
             window_type=WindowType.DAILY,
             start_hour=0,
-            end_hour=23,  # Use 23 (11 PM) since 24 is not valid for time class
+            end_hour=24,  # end_hour is exclusive; 24 means "through 23:59"
             timezone="UTC",
             emergency_override=False,
             environments=["development", "staging"],
@@ -168,10 +168,14 @@ class TimeWindowEnforcer:
         # Get the window for this environment
         window_name = self._environment_windows.get(environment)
         if window_name is None:
-            # No window configured, allow by default
+            # Phase 15 P3: fail closed. An environment without a mapping
+            # (typo, new project tag) used to bypass time windows entirely.
             return WindowCheckResult(
-                is_allowed=True,
-                reason=f"No time window configured for environment '{environment}'",
+                is_allowed=False,
+                reason=(
+                    f"No time window configured for environment '{environment}' "
+                    f"— denying (fail closed; map it via set_environment_window)"
+                ),
                 current_time=action_time,
             )
 
@@ -211,11 +215,11 @@ class TimeWindowEnforcer:
 
         # Check if current hour is within the window
         if window.start_hour <= window.end_hour:
-            # Normal case: e.g., 9 AM - 5 PM
-            # Use <= for end_hour to include the last hour
-            hour_allowed = window.start_hour <= current_hour <= window.end_hour
+            # Normal case: e.g., 9 AM - 5 PM → [9, 17). end_hour is
+            # exclusive — the old `<=` stretched a "9-17" window to 17:59.
+            hour_allowed = window.start_hour <= current_hour < window.end_hour
         else:
-            # Overnight case: e.g., 10 PM - 2 AM
+            # Overnight case: e.g., 10 PM - 2 AM → [22, 24) ∪ [0, 2)
             hour_allowed = current_hour >= window.start_hour or current_hour < window.end_hour
 
         is_allowed = day_allowed and hour_allowed
@@ -232,8 +236,8 @@ class TimeWindowEnforcer:
             window_name=window_name,
             reason=f"{'Allowed' if is_allowed else 'Not allowed'} in time window '{window_name}'",
             current_time=action_time,
-            window_start=time(window.start_hour, 0),
-            window_end=time(window.end_hour, 0),
+            window_start=time(window.start_hour % 24, 0),
+            window_end=time(window.end_hour % 24, 0),
             next_allowed_time=next_allowed,
             emergency_override_available=window.emergency_override and allow_emergency_override,
         )
@@ -245,48 +249,36 @@ class TimeWindowEnforcer:
     ) -> datetime:
         """Calculate the next time when actions will be allowed.
 
+        Walks forward one calendar day at a time (in the window's timezone)
+        and returns the first window start strictly after `current_time` on
+        an allowed day. Day offsets are added absolutely: the previous loop
+        advanced one day per *checked* day, so a run of non-allowed days
+        (e.g. Friday evening before a weekend block) landed on the wrong day
+        and could also return a time earlier than `current_time`.
+
         Args:
             current_time: Current time in window's timezone
             window: Time window configuration
 
         Returns:
-            Next allowed datetime
+            Next allowed datetime (UTC)
         """
-        current_hour = current_time.hour
-        current_day = current_time.weekday()
-
-        # Check if we're before the window start time today
-        if current_hour < window.start_hour:
-            # Window starts later today
-            if window.allowed_days is None or current_day in window.allowed_days:
-                return current_time.replace(
-                    hour=window.start_hour,
-                    minute=0,
-                    second=0,
-                    microsecond=0,
-                )
-
-        # Find the next allowed day and time
-        next_time = current_time.replace(minute=0, second=0, microsecond=0)
-
-        for day_offset in range(7):  # Check up to 7 days ahead
-            check_day = (current_day + day_offset) % 7
-
-            if window.allowed_days is not None and check_day not in window.allowed_days:
-                continue
-
-            # Add day_offset to get to the next allowed day
-            if day_offset > 0:
-                from datetime import timedelta
-                next_time += timedelta(days=1)
-                # Reset to start of this day
-                next_time = next_time.replace(hour=window.start_hour, minute=0, second=0, microsecond=0)
-                return next_time.astimezone(timezone.utc)
-
-        # Fallback: return tomorrow at start time
         from datetime import timedelta
+
+        for day_offset in range(8):  # a week, plus one for safety
+            day = (current_time + timedelta(days=day_offset)).date()
+            if window.allowed_days is not None and day.weekday() not in window.allowed_days:
+                continue
+            candidate = datetime.combine(
+                day, time(window.start_hour % 24, 0), tzinfo=current_time.tzinfo
+            )
+            if candidate > current_time:
+                return candidate.astimezone(timezone.utc)
+
+        # Unreachable for sane configs (allowed_days None or non-empty always
+        # admits a day within a week); defensive fallback.
         return (current_time + timedelta(days=1)).replace(
-            hour=window.start_hour,
+            hour=window.start_hour % 24,
             minute=0,
             second=0,
             microsecond=0,

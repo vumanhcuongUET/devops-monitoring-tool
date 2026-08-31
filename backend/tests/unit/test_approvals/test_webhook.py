@@ -81,6 +81,28 @@ class TestVerifySlackSignature:
         result = verify_slack_signature(body, timestamp, invalid_signature, "test-secret")
         assert result is False
 
+    def test_mismatch_log_does_not_leak_expected_signature(self, caplog):
+        """Phase 15 P3: the rejection log must not contain the expected
+        HMAC — anyone who can read the logs could replay it."""
+        import logging
+        import time
+        timestamp = str(int(time.time()))
+        body = b'{"payload": "test"}'
+        sig_basestring = f"{SLACK_SIGNATURE_VERSION}:{timestamp}:{body.decode('utf-8')}"
+        digest = hmac.new(
+            b"test-secret",
+            sig_basestring.encode(),
+            hashlib.sha256
+        ).digest()
+        expected_signature = f"{SLACK_SIGNATURE_VERSION}=" + digest.hex()
+
+        with caplog.at_level(logging.WARNING, logger="app.approvals.webhook"):
+            result = verify_slack_signature(body, timestamp, "v0=wrong", "test-secret")
+
+        assert result is False
+        assert expected_signature not in caplog.text
+        assert "test-secret" not in caplog.text
+
     def test_old_timestamp_replay_attack(self):
         """Test timestamp validation rejects old timestamps."""
         # Use very old timestamp (100 seconds ago - beyond tolerance)

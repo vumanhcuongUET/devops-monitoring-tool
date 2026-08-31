@@ -31,10 +31,12 @@ describe('API Client', () => {
     const axios = (await import('axios')).default
     expect(axios.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        timeout: 15000,
-        withCredentials: true
+        timeout: 15000
       })
     )
+    // Phase 15 P3: auth is bearer-token based — no cookie contract.
+    const call = (axios.create as ReturnType<typeof vi.fn>).mock.calls[0][0] ?? {}
+    expect(call.withCredentials).toBeUndefined()
   })
 
   it('attaches request interceptor for auth', async () => {

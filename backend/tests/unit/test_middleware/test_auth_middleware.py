@@ -101,3 +101,47 @@ def test_revoked_token_rejected(mock_settings):
 
     assert r.status_code == 401
     assert r.json()["detail"] == "Token revoked"
+
+
+@patch("app.main.settings")
+def test_unauthorized_request_is_audited(mock_settings):
+    """Phase 15 P3: middleware 401s leave an AUTH_DENIED audit entry."""
+    from app.models.audit import AuditEventType
+
+    mock_settings.AUTH_ENABLED = True
+    app = FastAPI()
+    app.add_middleware(AuthMiddleware)
+
+    @app.get("/api/v1/overview")
+    def overview_stub():
+        return {"ok": True}
+
+    with patch("app.audit.logger.get_audit_logger") as mock_get_logger:
+        client = TestClient(app)
+        r = client.get("/api/v1/overview")
+
+    assert r.status_code == 401
+    mock_get_logger.return_value.log_event.assert_called_once()
+    kwargs = mock_get_logger.return_value.log_event.call_args.kwargs
+    assert kwargs["event_type"] == AuditEventType.AUTH_DENIED
+    assert kwargs["details"]["path"] == "/api/v1/overview"
+    assert kwargs["success"] is False
+
+
+@patch("app.main.settings")
+def test_audit_failure_does_not_break_auth(mock_settings):
+    """Phase 15 P3: an audit write failure must not take down the 401."""
+    mock_settings.AUTH_ENABLED = True
+    app = FastAPI()
+    app.add_middleware(AuthMiddleware)
+
+    @app.get("/api/v1/overview")
+    def overview_stub():
+        return {"ok": True}
+
+    with patch("app.audit.logger.get_audit_logger", side_effect=RuntimeError("disk full")):
+        client = TestClient(app)
+        r = client.get("/api/v1/overview")
+
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Unauthorized"

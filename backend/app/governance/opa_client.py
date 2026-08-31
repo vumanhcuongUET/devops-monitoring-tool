@@ -113,6 +113,10 @@ class OPAClient:
     - Supports dry-run mode for testing
     """
 
+    # Cache entries are swept once the dict grows past this; without it the
+    # dict grew forever (distinct action inputs never share keys).
+    MAX_CACHE_KEYS = 1000
+
     def __init__(
         self,
         opa_url: str | None = None,
@@ -219,9 +223,16 @@ class OPAClient:
                         metadata={"opa_version": "v1"},
                     )
 
-                    # Cache the result
+                    # Cache the result, sweeping expired entries when the
+                    # dict grows unbounded (one key per distinct input).
                     if self.enable_cache:
-                        self._cache[cache_key] = (datetime.now(timezone.utc), evaluation_result)
+                        now = datetime.now(timezone.utc)
+                        if len(self._cache) >= self.MAX_CACHE_KEYS:
+                            self._cache = {
+                                k: v for k, v in self._cache.items()
+                                if (now - v[0]).total_seconds() < self._cache_ttl
+                            }
+                        self._cache[cache_key] = (now, evaluation_result)
 
                     return evaluation_result
                 else:
@@ -251,10 +262,13 @@ class OPAClient:
                 ],
             )
         except Exception as e:
-            logger.error(f"OPA evaluation error: {e}")
+            # Log hygiene: the raw exception (internal URL, query error) stays
+            # in server logs; the result the caller may surface keeps a
+            # generic message.
+            logger.error("OPA evaluation error: %s", e, exc_info=True)
             return PolicyEvaluationResult(
                 decision=PolicyDecision.UNKNOWN,
-                warnings=[f"Policy evaluation failed: {e!s}"],
+                warnings=["Policy evaluation failed — see server logs for details"],
             )
 
     async def evaluate_batch(

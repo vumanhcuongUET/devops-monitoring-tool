@@ -1041,6 +1041,85 @@ async def test_rollback_survives_real_audit_logger(
 
 
 @pytest.mark.asyncio
+async def test_failed_action_in_prod_skips_dead_rollback_action(
+    action_engine, mock_approval_tracker
+):
+    """Phase 15 P3: production's matrix (view/scale/approve) can never
+    execute the generated rollback command (DELETE/ROLLBACK) — the engine
+    must record the plan for manual execution instead of creating a
+    PENDING action that dies with PermissionError at execute time."""
+    from app.models.audit import AuditEventType
+
+    # business-hours would deny a real weekend/night run — the window check
+    # is not what this test exercises.
+    window_enforcer = MagicMock()
+    window_enforcer.check_time_window.return_value = MagicMock(is_allowed=True)
+    with patch("app.actions.engine.get_time_window_enforcer", return_value=window_enforcer):
+        await _run_prod_rollback_scenario(action_engine, mock_approval_tracker)
+
+    statuses = [
+        c.kwargs.get("status") for c in mock_approval_tracker.set_status.call_args_list
+    ]
+    assert not any(s == ActionStatus.PENDING for s in statuses), (
+        "no executable rollback action may be created in production"
+    )
+    rollback_events = [
+        c for c in action_engine.audit_logger.log_event.call_args_list
+        if c.kwargs.get("event_type") == AuditEventType.ROLLBACK_TRIGGERED
+    ]
+    assert rollback_events, "rollback trigger must still be audited"
+    details = rollback_events[-1].kwargs["details"]
+    assert details["auto_creation"] == "skipped"
+    assert details["rollback_command"] == "kubectl delete -f bad.yaml"
+
+
+async def _run_prod_rollback_scenario(action_engine, mock_approval_tracker):
+    state = {
+        "id": "act-fail-prod",
+        "status": ActionStatus.APPROVED,
+        "command": "kubectl apply -f bad.yaml",
+        "command_type": CommandType.KUBECTL,
+        "parsed_params": CommandParams(
+            command_type=CommandType.KUBECTL, action="apply", resource_type="configmap",
+        ),
+        "project": "test-project",
+        "title": "Apply config",
+        "description": "Apply config",
+        "context": {"environment": "production"},
+    }
+    mock_approval_tracker.get = AsyncMock(return_value=state)
+    action_engine.env_aware_executor.execute = AsyncMock(return_value=ExecutionResult(
+        success=False, exit_code=1, stdout="", stderr="boom", duration_seconds=0.1,
+    ))
+    action_engine.feedback = MagicMock()
+    # Call order: 1) execute gate for the ORIGINAL command (the operator got
+    # it approved), 2) the new rollback gate — the rollback command is not
+    # executable in production.
+    action_engine.permission_checker.check_command.side_effect = [
+        MagicMock(
+            allowed=True,
+            reason="Allowed",
+            required_permission=MagicMock(value="modify"),
+            requires_approval=False,
+            to_dict=lambda: {"allowed": True, "requires_approval": False},
+        ),
+        MagicMock(
+            allowed=False,
+            reason="Action 'delete' requires human approval in production",
+            required_permission=MagicMock(value="delete"),
+            requires_approval=True,
+            to_dict=lambda: {"allowed": False, "requires_approval": True},
+        ),
+    ]
+
+    request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+    result = await action_engine.execute_action("act-fail-prod", request)
+
+    assert result.status == ActionStatus.FAILED
+    return result
+
+
+@pytest.mark.asyncio
 async def test_dry_run_keeps_action_approved(action_engine, mock_approval_tracker):
     """Phase 15: a dry run must not consume the approval — status stays
     APPROVED so the operator can execute for real afterwards."""

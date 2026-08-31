@@ -28,6 +28,16 @@ LLM_OUTPUT_TOKENS = Counter(
     "Output (completion) tokens consumed by LLM calls",
     ["path", "model"],
 )
+LLM_CACHE_READ_TOKENS = Counter(
+    "llm_cache_read_tokens_total",
+    "Prompt tokens billed at the cache-read discount rate",
+    ["path", "model"],
+)
+LLM_CACHE_CREATION_TOKENS = Counter(
+    "llm_cache_creation_tokens_total",
+    "Prompt tokens billed once to populate the ephemeral prompt cache",
+    ["path", "model"],
+)
 
 
 def _usage_field(usage: Any, name: str) -> int:
@@ -48,6 +58,11 @@ def record_request(path: str, model: str) -> None:
 def record_usage(path: str, model: str, usage: Any) -> None:
     """Record input/output tokens from an Anthropic usage object or dict.
 
+    Also records the prompt-cache fields when present (`cache_read_input_tokens`,
+    `cache_creation_input_tokens`) — without them the cache discount can't be
+    observed, so prompt-caching savings were invisible (token-optimization
+    follow-up, 2026-08-31).
+
     Tolerates None (call failed / usage never arrived) and missing fields —
     partial data still increments whatever counters it can.
     """
@@ -57,3 +72,9 @@ def record_usage(path: str, model: str, usage: Any) -> None:
         LLM_INPUT_TOKENS.labels(path=path, model=model).inc(input_tokens)
     if output_tokens:
         LLM_OUTPUT_TOKENS.labels(path=path, model=model).inc(output_tokens)
+    cache_read = _usage_field(usage, "cache_read_input_tokens")
+    if cache_read:
+        LLM_CACHE_READ_TOKENS.labels(path=path, model=model).inc(cache_read)
+    cache_creation = _usage_field(usage, "cache_creation_input_tokens")
+    if cache_creation:
+        LLM_CACHE_CREATION_TOKENS.labels(path=path, model=model).inc(cache_creation)

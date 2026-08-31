@@ -71,6 +71,30 @@ class TestRecordUsage:
         assert _value("llm_input_tokens_total", "simple_stream", "m-labels") >= 10
         assert _value("llm_input_tokens_total", "triage", "m-labels") == 0
 
+    def test_cache_tokens_are_recorded(self):
+        """Token-optimization 2026-08-31: cache fields must be observable."""
+        before_read = _value("llm_cache_read_tokens_total", "triage", "m-cache")
+        before_create = _value("llm_cache_creation_tokens_total", "triage", "m-cache")
+
+        record_usage("triage", "m-cache", {
+            "input_tokens": 200,
+            "output_tokens": 100,
+            "cache_read_input_tokens": 5000,
+            "cache_creation_input_tokens": 1200,
+        })
+
+        assert _value("llm_cache_read_tokens_total", "triage", "m-cache") == before_read + 5000
+        assert _value("llm_cache_creation_tokens_total", "triage", "m-cache") == before_create + 1200
+
+    def test_cache_fields_absent_is_a_no_op(self):
+        before_read = _value("llm_cache_read_tokens_total", "health", "m-nocache")
+        before_create = _value("llm_cache_creation_tokens_total", "health", "m-nocache")
+
+        record_usage("health", "m-nocache", {"input_tokens": 3, "output_tokens": 1})
+
+        assert _value("llm_cache_read_tokens_total", "health", "m-nocache") == before_read
+        assert _value("llm_cache_creation_tokens_total", "health", "m-nocache") == before_create
+
 
 @pytest.mark.unit
 class TestRecordRequest:

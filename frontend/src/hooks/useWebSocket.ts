@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { WS_URL } from '../utils/constants';
+import { getTokenManager } from '../auth/tokenManager';
 import type { OverviewResponse, AlertEvent } from '../types';
 import toast from 'react-hot-toast';
 
@@ -15,6 +16,7 @@ const stateListeners = new Set<StateListener>();
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let connected = false;
+let reconnectDelay = 5000;
 
 function notifyState(value: boolean) {
   connected = value;
@@ -42,9 +44,18 @@ function dispatchMessage(msg: WsMessage) {
 
 function connect() {
   if (ws) return;
-  ws = new WebSocket(WS_URL);
+  // The backend requires an authenticated token on /ws/live (query param,
+  // same HMAC token as HTTP); re-read it on every connect so a refreshed
+  // token is picked up. Phase 15: previously the socket sent no token at
+  // all, so any AUTH_ENABLED deployment got a 4403 loop.
+  const token = getTokenManager().getAccessToken();
+  const url = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
+  ws = new WebSocket(url);
 
-  ws.onopen = () => notifyState(true);
+  ws.onopen = () => {
+    reconnectDelay = 5000;
+    notifyState(true);
+  };
   ws.onmessage = (event) => {
     try {
       dispatchMessage(JSON.parse(event.data));
@@ -52,10 +63,18 @@ function connect() {
       // ignore malformed messages
     }
   };
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     ws = null;
     notifyState(false);
-    reconnectTimer = setTimeout(connect, 5000);
+    if (event.code === 4403) {
+      // Auth rejected (missing/expired/revoked token): surface it like the
+      // HTTP client does instead of hammering the server forever.
+      window.dispatchEvent(new Event('auth-required'));
+      return;
+    }
+    // Exponential backoff, capped at 60s
+    reconnectTimer = setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 60000);
   };
   ws.onerror = () => ws?.close();
 }

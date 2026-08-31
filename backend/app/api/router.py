@@ -16,6 +16,8 @@ from app.api.v1.overview import router as overview_router
 from app.api.v1.skills import router as skills_router  # Phase 3
 from app.api.v1.slo import router as slo_router
 from app.approvals.webhook import router as approvals_webhook_router  # Phase 2
+from app.approvals.telegram_webhook import router as telegram_webhook_router  # Phase A chatops
+from app.approvals.slack_command import router as slack_command_router  # Phase A chatops
 
 v1_router = APIRouter(prefix="/api/v1")
 v1_router.include_router(overview_router)
@@ -37,3 +39,5 @@ v1_router.include_router(config_router.router)  # Phase 7 Sprint 4
 api_router = APIRouter()
 api_router.include_router(v1_router)
 api_router.include_router(approvals_webhook_router)  # Phase 2 - webhook endpoints
+api_router.include_router(telegram_webhook_router)  # Phase A chatops - Telegram
+api_router.include_router(slack_command_router)  # Phase A chatops - /devops command

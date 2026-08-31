@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     TEAMS_WEBHOOK_URL: str = ""  # Teams webhook URL for card delivery (no longer an HMAC key — Phase 13)
     TEAMS_WEBHOOK_SECRET: str = ""  # Dedicated HMAC secret for Teams webhook verification
 
+    # Telegram chatops (Phase A: read queries + approve/reject buttons only —
+    # no mutating commands from chat). The webhook secret is set when
+    # registering the bot's webhook URL; allowed chats are fail-closed:
+    # an empty list denies every chat.
+    TELEGRAM_BOT_TOKEN: str = ""  # Bot token from @BotFather — enables the notifier + webhook
+    TELEGRAM_WEBHOOK_SECRET: str = ""  # Must match X-Telegram-Bot-Api-Secret-Token
+    TELEGRAM_ALLOWED_CHAT_IDS: list[int] = []  # Empty = deny all chats (fail-closed)
+
     # Phase 12 Sprint 3: OPA enforcement (default off — evaluation API only).
     # When true and OPA is reachable, execute_action denies on OPA DENY.
     OPA_ENFORCE: bool = False

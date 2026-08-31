@@ -259,6 +259,26 @@ OPA policy **evaluation** API (fail-closed evaluation). The default enforcement 
 
 See `docs/phase-3-governance-skills.md` for detailed implementation.
 
+### Chatops (Phase A, 2026-08-31): Telegram + Slack read-only
+
+Both chat channels answer **"hệ thống đang thế nào?"** and host approval
+buttons — there is deliberately NO path from chat to a mutating command
+(Phase B is blocked on chat-user → local-user mapping):
+
+- **Telegram** (`POST /approvals/webhook/telegram`): verified by
+  `X-Telegram-Bot-Api-Secret-Token` == `TELEGRAM_WEBHOOK_SECRET` (required
+  when auth enabled); chats allowlisted via `TELEGRAM_ALLOWED_CHAT_IDS`
+  (empty = deny all, fail-closed). `/status` answers with the overview
+  health snapshot; `approve:<id>` / `reject:<id>` inline-keyboard callbacks
+  land in the same `engine.approve_action/reject_action` path as Slack.
+- **Slack** `/devops <sub>` (`POST /approvals/webhook/slack/command`): same
+  signature scheme as the approval webhook; ACKs in <3s and delivers via
+  `response_url` (SSRF-guarded). `status`/`help` only.
+- Shared read-only resolver: `app/approvals/chatops.py` (reuses the
+  overview endpoint's health derivations verbatim).
+
+See `docs/chatops-telegram-slack.md`.
+
 ### Security
 
 The platform has undergone comprehensive security review (Aug 2026) and is **APPROVED FOR PRODUCTION**:

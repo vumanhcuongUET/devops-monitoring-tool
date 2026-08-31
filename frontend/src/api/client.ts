@@ -75,7 +75,19 @@ api.interceptors.response.use(
 // ============================================
 // TOKEN REFRESH
 // ============================================
+// Phase 15: one in-flight refresh shared by every queued 401 — concurrent
+// requests used to race N parallel refresh calls.
+let refreshInFlight: Promise<string | null> | null = null;
+
 async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = _doRefresh().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+async function _doRefresh(): Promise<string | null> {
   try {
     const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {}, {
       withCredentials: true, // Send httpOnly cookie
@@ -106,8 +118,21 @@ export { tokenManager };
  * Logout and clear tokens
  */
 export async function logout(): Promise<void> {
-  // No backend logout endpoint exists — tokens are stateless JWTs; clearing
-  // the local token is the whole logout.
+  // Phase 15: POST /auth/logout revokes every token issued to this user
+  // (per-user min_iat floor). Best-effort — clear locally regardless so a
+  // dead backend still ends the session.
+  try {
+    const accessToken = tokenManager.getAccessToken();
+    if (accessToken) {
+      await axios.post(
+        `${API_URL}/api/v1/auth/logout`,
+        {},
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+    }
+  } catch {
+    // ignore — local clear happens either way
+  }
   tokenManager.clear();
 }
 

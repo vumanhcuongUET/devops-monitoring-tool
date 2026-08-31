@@ -83,6 +83,8 @@ async def create_action(request: Request, body: CreateActionRequest) -> ActionRe
         auth_user = getattr(request.state, "user", None)
         if auth_user:
             body.created_by = auth_user
+        elif getattr(request.state, "auth_method", "") == "api_key" and body.created_by:
+            body.created_by = f"service:{body.created_by}"
 
         # Create the action (auth_user narrows the creation-time permission
         # check — Phase 14)
@@ -170,6 +172,11 @@ async def approve_action(
                     body.approved_by, user,
                 )
             body.approved_by = user
+        elif getattr(request.state, "auth_method", "") == "api_key" and body.approved_by:
+            # Phase 15: a service credential keeps its label but is marked
+            # service-asserted — an unprefixed name would forge the audit
+            # trail and sidestep the self-approval ban.
+            body.approved_by = f"service:{body.approved_by}"
         action = await engine.approve_action(action_id, body, auth_user=user)
 
         # Broadcast WebSocket event
@@ -212,6 +219,8 @@ async def reject_action(
                     body.rejected_by, user,
                 )
             body.rejected_by = user
+        elif getattr(request.state, "auth_method", "") == "api_key" and body.rejected_by:
+            body.rejected_by = f"service:{body.rejected_by}"
         action = await engine.reject_action(action_id, body, auth_user=user)
 
         # Broadcast WebSocket event
@@ -255,6 +264,8 @@ async def execute_action(
                     body.executed_by, user,
                 )
             body.executed_by = user
+        elif getattr(request.state, "auth_method", "") == "api_key" and body.executed_by:
+            body.executed_by = f"service:{body.executed_by}"
         action = await engine.execute_action(action_id, body, auth_user=user)
 
         # Broadcast WebSocket event. A dry run keeps the action APPROVED —

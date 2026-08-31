@@ -76,11 +76,19 @@ class EmailNotifier:
             msg["From"] = self.from_addr
             msg["To"] = ", ".join(self.to_addrs)
 
-            with smtplib.SMTP(self.host, self.port) as server:
-                if self.user:
-                    server.starttls()
-                    server.login(self.user, self.password)
-                server.sendmail(self.from_addr, self.to_addrs, msg.as_string())
+            # Phase 15: smtplib blocks — run it off the event loop with a
+            # socket timeout so a hung SMTP server can't freeze the alert
+            # engine's notification path.
+            import asyncio
+
+            def _deliver() -> None:
+                with smtplib.SMTP(self.host, self.port, timeout=10) as server:
+                    if self.user:
+                        server.starttls()
+                        server.login(self.user, self.password)
+                    server.sendmail(self.from_addr, self.to_addrs, msg.as_string())
+
+            await asyncio.to_thread(_deliver)
             return True
         except Exception as e:
             logger.error("Email notification failed: %s", e)

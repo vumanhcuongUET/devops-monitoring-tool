@@ -320,7 +320,11 @@ async def teams_approval_webhook(
         else:
             hmac_key = None
 
-        if settings.ENVIRONMENT == "production" and not hmac_key:
+        # Phase 15: the auth middleware exempts /approvals/webhook/* because
+        # the platform signature IS the authentication — so an unkeyed Teams
+        # webhook means UNAUTHENTICATED approve/reject, not just a production
+        # concern. Required whenever auth is enabled (was: production only).
+        if (settings.AUTH_ENABLED or settings.ENVIRONMENT == "production") and not hmac_key:
             logger.error(
                 "Teams webhook signature key not configured - rejecting Teams webhook request. "
                 "Set TEAMS_WEBHOOK_SECRET."
@@ -340,15 +344,20 @@ async def teams_approval_webhook(
 
             # isinstance guard: direct callers (tests) may skip FastAPI's Header default
             ts = x_timestamp if isinstance(x_timestamp, str) else None
+            if not ts:
+                # Without the timestamp the HMAC covers only the body and a
+                # captured request replays forever — Phase 15 makes it
+                # mandatory (was a deprecation warning).
+                logger.error("Teams X-Timestamp header missing - replay protection required")
+                raise HTTPException(
+                    status_code=401,
+                    detail="X-Timestamp header is required for Teams webhook replay protection"
+                )
             if not verify_teams_hmac_signature(raw_body, authorization, hmac_key, timestamp=ts):
                 logger.warning(f"Invalid Teams signature from {request.client.host if request.client else 'unknown'}")
                 raise HTTPException(status_code=401, detail="Invalid signature")
-            if not ts:
-                logger.warning(
-                    "Teams webhook verified without X-Timestamp (replay window not enforced); "
-                    "the header becomes mandatory next release."
-                )
         else:
+            # Reachable only when AUTH_ENABLED=false (dev with auth off)
             logger.warning(
                 f"Teams webhook signature verification disabled (ENVIRONMENT={settings.ENVIRONMENT}). "
                 "Set TEAMS_WEBHOOK_SECRET for production security."

@@ -197,3 +197,31 @@ def test_store_cache_sees_external_writes(user_store):
     user_store.write_text(_json.dumps(data))
 
     assert get_role("kim") == "admin"
+
+
+def test_logout_revocation_floor(tmp_path, monkeypatch):
+    """Phase 15: /auth/logout bumps min_iat — tokens minted before it die,
+    tokens minted after keep working."""
+    from app.auth import create_token, decode_token
+    from app.config import settings
+    import app.users as users_mod
+    from app.users import (
+        create_user,
+        get_min_iat,
+        revoke_user_tokens,
+    )
+
+    monkeypatch.setattr(settings, "DATA_DIR", str(tmp_path))
+    users_mod._cache, users_mod._cache_mtime = None, 0.0
+
+    create_user("carl", "pw-carl", "operator")
+    old_token = create_token("carl")
+    old_iat = decode_token(old_token)["iat"]
+
+    assert revoke_user_tokens("carl") is True
+    assert get_min_iat("carl") >= old_iat
+    assert get_min_iat("missing") == 0
+    assert revoke_user_tokens("missing") is False
+
+    new_token = create_token("carl")
+    assert decode_token(new_token)["iat"] >= get_min_iat("carl")

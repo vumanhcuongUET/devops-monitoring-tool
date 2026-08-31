@@ -533,8 +533,11 @@ class ActionEngine:
                 f"Permission denied for action {action_id}: {permission_result.reason}"
             )
 
-        # Optional OPA enforcement (Phase 12 Sprint 3, flag-gated, default off):
-        # when OPA_ENFORCE and the OPA server is reachable, a DENY decision blocks.
+        # Optional OPA enforcement (Phase 12 Sprint 3, flag-gated, default off).
+        # Phase 15: enforcement is fail-closed — DENY blocks, an undefined or
+        # unevaluable policy blocks, and an unexpected evaluation error blocks.
+        # (Previously exceptions were logged and the action allowed, and an
+        # OPA `{}` response with no result evaluated to ALLOW.)
         if settings.OPA_ENFORCE:
             try:
                 opa_result = await get_opa_client().evaluate_action(
@@ -543,17 +546,19 @@ class ActionEngine:
                     environment=environment,
                     user=request.executed_by,
                 )
-                if opa_result.decision == PolicyDecision.DENY:
-                    violations = [v.description for v in opa_result.violations]
-                    raise PermissionError(
-                        f"Action {action_id} denied by OPA policy: {violations}"
-                    )
-            except PermissionError:
-                raise
             except Exception as e:
-                # OPA unreachable/misconfigured must not hard-block execution
-                # when enforcement is best-effort; log loudly instead.
-                logger.warning(f"OPA enforcement check failed (allowing): {e}")
+                raise PermissionError(
+                    f"Action {action_id}: OPA enforcement could not evaluate the policy: {e}"
+                ) from e
+            if opa_result.decision == PolicyDecision.UNKNOWN:
+                raise PermissionError(
+                    f"Action {action_id}: OPA returned no policy decision (fail closed)"
+                )
+            if opa_result.decision == PolicyDecision.DENY:
+                violations = [v.description for v in opa_result.violations]
+                raise PermissionError(
+                    f"Action {action_id} denied by OPA policy: {violations}"
+                )
 
         # Time-window enforcement (Phase 12 Sprint 3 — wired into the real path):
         # executions outside the environment's safe window are blocked + audited.

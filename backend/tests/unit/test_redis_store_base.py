@@ -123,13 +123,15 @@ class TestConstruction:
             assert kwargs["socket_connect_timeout"] == 5
             assert kwargs["socket_timeout"] == 5
 
-    def test_history_client_has_no_socket_timeouts(self):
+    def test_history_client_has_socket_timeouts(self):
+        """Phase 15: history writes run inside request/execution paths — a
+        stuck socket must raise, not hang the loop (was: no timeouts)."""
         with patch("redis.asyncio.Redis") as mock_redis_cls:
             RedisAlertHistory()
         kwargs = mock_redis_cls.call_args.kwargs
         assert kwargs["decode_responses"] is True
-        assert "socket_connect_timeout" not in kwargs
-        assert "socket_timeout" not in kwargs
+        assert kwargs["socket_connect_timeout"] == 5
+        assert kwargs["socket_timeout"] == 5
 
     def test_ttl_defaults_are_domain_specific(self):
         approvals, _ = make_store(RedisApprovalStore)

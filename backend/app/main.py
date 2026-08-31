@@ -14,7 +14,7 @@ from app.api.router import api_router
 from app.api.ws.live import manager as ws_manager
 from app.api.ws.live import router as ws_router
 from app.auth import _is_valid_api_key, decode_token
-from app.users import get_role
+from app.users import get_min_iat, get_role
 from app.config import settings
 from app.middleware.security import SecurityHeadersMiddleware
 from app.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS_TOTAL
@@ -58,6 +58,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         api_key = request.headers.get("X-API-Key")
         if api_key and _is_valid_api_key(api_key):
             request.state.user = None  # service identity, no per-user RBAC
+            # Phase 15: lets attribution-stamping endpoints tell an
+            # authenticated service credential apart from an unauthenticated
+            # request, so client-asserted labels get marked, not trusted.
+            request.state.auth_method = "api_key"
             return await call_next(request)
 
         # Check Bearer token
@@ -72,8 +76,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 sub = payload.get("sub", "service")
                 if sub == "service":
                     request.state.user = None
+                    request.state.auth_method = "api_key"
                 elif get_role(sub) is not None:
+                    # Phase 15 logout/revocation: tokens issued before the
+                    # user's min_iat (set by /auth/logout) are dead.
+                    if int(payload.get("iat", 0)) < get_min_iat(sub):
+                        logger.warning("Rejected revoked token for user %r", sub)
+                        return fastapi.responses.JSONResponse(
+                            status_code=401, content={"detail": "Token revoked"}
+                        )
                     request.state.user = sub
+                    request.state.auth_method = "user_token"
                 else:
                     logger.warning("Rejected token for revoked/unknown user %r", sub)
                     return fastapi.responses.JSONResponse(status_code=401, content={"detail": "User no longer exists"})
@@ -598,6 +611,23 @@ async def refresh_auth_token(request: Request):
         "token_type": "bearer",
         "expires_in": settings.AUTH_TOKEN_TTL_SECONDS,
     }
+
+
+@app.post("/api/v1/auth/logout", include_in_schema=True)
+async def logout(request: Request):
+    """Phase 15 logout/revocation: invalidate every token issued to the
+    authenticated user so far (stateless HMAC tokens carry iat; the user
+    store keeps a per-user floor). Idempotent; safe with a dead session."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token required")
+    payload = decode_token(auth[7:])
+    sub = (payload or {}).get("sub")
+    if payload and sub and sub != "service" and get_role(sub) is not None:
+        from app.users import revoke_user_tokens
+
+        await asyncio.to_thread(revoke_user_tokens, sub)
+    return {"success": True, "logged_out": bool(sub and sub != "service")}
 
 
 @app.post("/api/v1/auth/login", include_in_schema=True)

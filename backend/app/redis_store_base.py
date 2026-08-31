@@ -343,7 +343,10 @@ class BaseRedisHistory(BaseRedisStore):
             max_entries: Maximum entries to keep in the list
             retention_days: Days to retain history (TTL)
         """
-        super().__init__(redis_host, redis_port, redis_password, redis_db)
+        # Phase 15: history writes run inside request/execution paths — a
+        # stuck socket must raise, not hang the loop (state stores already
+        # pass socket_timeouts=True for the same reason).
+        super().__init__(redis_host, redis_port, redis_password, redis_db, socket_timeouts=True)
         self.max_entries = max_entries
         self.retention_seconds = retention_days * 86400  # Convert to seconds
 

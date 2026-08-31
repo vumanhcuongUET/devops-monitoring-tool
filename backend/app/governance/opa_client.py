@@ -129,7 +129,7 @@ class OPAClient:
         self.opa_url = opa_url or getattr(settings, "OPA_URL", "http://localhost:8181")
         self.timeout = timeout
         self.enable_cache = enable_cache
-        self._cache: dict[str, PolicyEvaluationResult] = {}
+        self._cache: dict[str, tuple[datetime, PolicyEvaluationResult]] = {}
         self._cache_ttl = 60  # Cache for 60 seconds
 
     async def evaluate_action(
@@ -150,11 +150,15 @@ class OPAClient:
         Returns:
             PolicyEvaluationResult with decision and violations
         """
-        # Check cache
+        # Check cache (entries carry a timestamp; the TTL is actually honored —
+        # Phase 15: previously decisions, DENYs included, cached forever)
         cache_key = self._generate_cache_key(action, project, environment, user)
         if self.enable_cache and cache_key in self._cache:
-            logger.debug(f"OPA cache hit for {cache_key}")
-            return self._cache[cache_key]
+            cached_at, cached = self._cache[cache_key]
+            if (datetime.now(timezone.utc) - cached_at).total_seconds() < self._cache_ttl:
+                logger.debug(f"OPA cache hit for {cache_key}")
+                return cached
+            del self._cache[cache_key]
 
         # Build input for OPA
         input_data = {
@@ -175,8 +179,16 @@ class OPAClient:
                 if response.status_code == 200:
                     result = response.json()
 
-                    # Parse response
-                    allowed = result.get("result", True)
+                    # Parse response. A missing "result" (OPA returns {} for an
+                    # undefined policy) is NOT an allow — Phase 15: treat it as
+                    # UNKNOWN so fail-closed callers (OPA_ENFORCE) block.
+                    raw_allowed = result.get("result")
+                    if raw_allowed is None:
+                        return PolicyEvaluationResult(
+                            decision=PolicyDecision.UNKNOWN,
+                            warnings=["OPA returned no result for the policy path"],
+                        )
+                    allowed = bool(raw_allowed)
                     decision = PolicyDecision.ALLOW if allowed else PolicyDecision.DENY
 
                     # Extract violations if denied
@@ -209,7 +221,7 @@ class OPAClient:
 
                     # Cache the result
                     if self.enable_cache:
-                        self._cache[cache_key] = evaluation_result
+                        self._cache[cache_key] = (datetime.now(timezone.utc), evaluation_result)
 
                     return evaluation_result
                 else:

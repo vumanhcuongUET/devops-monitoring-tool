@@ -953,7 +953,9 @@ class TestOPAEnforcement:
                 await action_engine.execute_action("act-123", request)
 
     @pytest.mark.asyncio
-    async def test_opa_unreachable_does_not_block(self, action_engine, mock_approval_tracker):
+    async def test_opa_unreachable_fails_closed(self, action_engine, mock_approval_tracker):
+        """Phase 15: OPA_ENFORCE is enforcement — an unevaluable policy must
+        block, not silently allow (the old test asserted the opposite)."""
         mock_approval_tracker.get = AsyncMock(return_value=self._approved_state())
         opa = MagicMock()
         opa.evaluate_action = AsyncMock(side_effect=RuntimeError("connection refused"))
@@ -962,9 +964,27 @@ class TestOPAEnforcement:
              patch("app.actions.engine.get_opa_client", return_value=opa):
             mock_settings.OPA_ENFORCE = True
             request = ExecuteActionRequest(executed_by="operator", dry_run=False)
-            action = await action_engine.execute_action("act-123", request)
+            with pytest.raises(PermissionError, match="could not evaluate"):
+                await action_engine.execute_action("act-123", request)
 
-        assert action.status == ActionStatus.EXECUTED
+    @pytest.mark.asyncio
+    async def test_opa_undefined_policy_fails_closed(self, action_engine, mock_approval_tracker):
+        """Phase 15: OPA returns {} for an undefined policy — that is UNKNOWN,
+        not ALLOW; enforcement must block."""
+        from app.governance.opa_client import PolicyEvaluationResult, PolicyDecision
+
+        mock_approval_tracker.get = AsyncMock(return_value=self._approved_state())
+        opa = MagicMock()
+        opa.evaluate_action = AsyncMock(return_value=PolicyEvaluationResult(
+            decision=PolicyDecision.UNKNOWN, warnings=["no result"],
+        ))
+
+        with patch("app.actions.engine.settings") as mock_settings, \
+             patch("app.actions.engine.get_opa_client", return_value=opa):
+            mock_settings.OPA_ENFORCE = True
+            request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+            with pytest.raises(PermissionError, match="no policy decision"):
+                await action_engine.execute_action("act-123", request)
 
 
 @pytest.mark.asyncio

@@ -47,11 +47,24 @@ class KubernetesClient:
         'cluster unreachable' apart from 'zero deployments')."""
         return self._safe()
 
+    @staticmethod
+    def _raise_if_total_failure(failed: int, attempted: int, what: str) -> None:
+        """Phase 15: partial failures degrade gracefully (per-ns skip), but a
+        TOTAL failure previously read as "zero resources" — alert rules then
+        treated an API outage as a healthy cluster. Raise so the fetch is
+        counted as failed (ALERT_EVAL_ERRORS / overview error path)."""
+        if attempted and failed == attempted:
+            raise ConnectionError(
+                f"Kubernetes API failed for all {attempted} namespace(s) while listing {what}"
+            )
+
+
     async def list_pods(self, namespace: str | None = None) -> list[dict[str, Any]]:
         if not self._safe():
             return []
         namespaces = [namespace] if namespace else settings.K8S_NAMESPACES
         pods: list[dict] = []
+        failed = 0
         for ns in namespaces:
             try:
                 result = await asyncio.wait_for(
@@ -68,7 +81,9 @@ class KubernetesClient:
                         "node": p.spec.node_name or "",
                     })
             except Exception:
+                failed += 1
                 continue
+        self._raise_if_total_failure(failed, len(namespaces), "pods")
         return pods
 
     async def list_deployments(self, namespace: str | None = None) -> list[dict[str, Any]]:
@@ -76,6 +91,7 @@ class KubernetesClient:
             return []
         namespaces = [namespace] if namespace else settings.K8S_NAMESPACES
         deployments: list[dict] = []
+        failed = 0
         for ns in namespaces:
             try:
                 result = await asyncio.wait_for(
@@ -92,7 +108,9 @@ class KubernetesClient:
                         "image": d.spec.template.spec.containers[0].image if d.spec.template.spec.containers else "",
                     })
             except Exception:
+                failed += 1
                 continue
+        self._raise_if_total_failure(failed, len(namespaces), "deployments")
         return deployments
 
     async def list_nodes(self) -> list[dict[str, Any]]:
@@ -119,6 +137,7 @@ class KubernetesClient:
             return []
         namespaces = [namespace] if namespace else settings.K8S_NAMESPACES
         events: list[dict] = []
+        failed = 0
         for ns in namespaces:
             try:
                 result = await asyncio.wait_for(
@@ -134,7 +153,9 @@ class KubernetesClient:
                         "object": f"{e.involved_object.kind}/{e.involved_object.name}" if e.involved_object else "",
                     })
             except Exception:
+                failed += 1
                 continue
+        self._raise_if_total_failure(failed, len(namespaces), "events")
         return sorted(events, key=lambda x: x["timestamp"], reverse=True)[:50]
 
 

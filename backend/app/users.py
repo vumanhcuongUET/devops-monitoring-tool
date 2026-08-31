@@ -84,9 +84,15 @@ def _load_users() -> dict:
 
 
 def _save_users(users: dict) -> None:
+    # Phase 15: atomic write created 0600 from the start — write_text+chmod
+    # left hashes briefly world-readable and a crash mid-write truncated the
+    # file (every login fails, every token rejected).
     global _cache, _cache_mtime
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    USERS_FILE.write_text(json.dumps(users, indent=2))
+    fd = os.open(USERS_FILE.with_suffix(".tmp"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(users, indent=2))
+    os.replace(USERS_FILE.with_suffix(".tmp"), USERS_FILE)
     os.chmod(USERS_FILE, 0o600)
     _cache, _cache_mtime = users, USERS_FILE.stat().st_mtime
 
@@ -166,3 +172,22 @@ if __name__ == "__main__":
     else:
         for name, role in sorted(list_users().items()):
             print(f"{name}: {role}")
+
+
+def revoke_user_tokens(username: str) -> bool:
+    """Phase 15 logout/revocation: bump the user's min-issued-at so every
+    token minted before now is rejected at the middleware."""
+    import time
+
+    users = _load_users()
+    if username not in users:
+        return False
+    users[username]["min_iat"] = int(time.time())
+    _save_users(users)
+    return True
+
+
+def get_min_iat(username: str | None) -> int:
+    if not username:
+        return 0
+    return int(_load_users().get(username, {}).get("min_iat", 0))

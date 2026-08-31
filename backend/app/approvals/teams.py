@@ -58,6 +58,14 @@ class TeamsApprovalNotifier:
             logger.error("Teams webhook URL not configured")
             return False
 
+        # Phase 15: the Slack and generic webhooks validate destination URLs
+        # against the internal-IP blocklist — Teams skipped that entirely.
+        from app.security import is_url_allowed
+
+        if not is_url_allowed(self.webhook_url):
+            logger.error(f"Teams webhook URL blocked by SSRF protection: {self.webhook_url}")
+            return False
+
         # Build Adaptive Card
         card = self._build_approval_card(
             action=action,

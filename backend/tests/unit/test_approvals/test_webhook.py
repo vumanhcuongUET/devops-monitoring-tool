@@ -503,11 +503,12 @@ class TestTeamsApprovalWebhook:
 
     @pytest.mark.asyncio
     async def test_teams_webhook_invalid_action_id_returns_400(self, mock_request):
-        """Test Teams webhook rejects payload without actionId."""
+        """Teams webhook rejects payload without actionId (auth off, signed gate skipped)."""
         mock_request.body.return_value = b'{"test": "data"}'
 
         with patch("app.approvals.webhook.settings") as mock_settings_class:
             mock_settings_class.ENVIRONMENT = "development"
+            mock_settings_class.AUTH_ENABLED = False
             mock_settings_class.TEAMS_WEBHOOK_SECRET = ""
             mock_settings_class.TEAMS_WEBHOOK_URL = None
 
@@ -536,13 +537,14 @@ class TestTeamsApprovalWebhook:
     @pytest.mark.asyncio
     async def test_teams_webhook_secret_keyed_hmac_passes_gate(self, mock_request):
         """S4: HMAC keyed with TEAMS_WEBHOOK_SECRET passes the signature gate."""
-        import hashlib
-        import hmac as hmac_module
+
+        import time as time_module
 
         body = b'{"test": "data"}'
         mock_request.body = AsyncMock(return_value=body)
         secret = "dedicated-teams-secret"
-        sig = "sha256=" + hmac_module.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        ts = str(int(time_module.time()))
+        sig = self._ts_sig(secret, body, ts)
 
         with patch("app.approvals.webhook.settings") as mock_settings_class:
             mock_settings_class.ENVIRONMENT = "production"
@@ -550,7 +552,7 @@ class TestTeamsApprovalWebhook:
             mock_settings_class.TEAMS_WEBHOOK_URL = None
 
             with pytest.raises(HTTPException) as exc_info:
-                await teams_approval_webhook(mock_request, authorization=sig)
+                await teams_approval_webhook(mock_request, authorization=sig, x_timestamp=ts)
 
         # Passed the signature gate; fails later on missing actionId
         assert exc_info.value.status_code == 400
@@ -611,11 +613,14 @@ class TestTeamsApprovalWebhook:
 
     @pytest.mark.asyncio
     async def test_teams_webhook_dev_optional_signature(self, mock_request):
-        """Test development mode allows processing without signature (reaches payload parse)."""
+        """AUTH_ENABLED=false (dev with auth off) still processes unsigned —
+        Phase 15: with auth ON an unkeyed Teams webhook rejects 500 even in
+        dev, because the platform signature IS the authentication there."""
         mock_request.body.return_value = b'{"test": "data"}'
 
         with patch("app.approvals.webhook.settings") as mock_settings_class:
             mock_settings_class.ENVIRONMENT = "development"
+            mock_settings_class.AUTH_ENABLED = False
             mock_settings_class.TEAMS_WEBHOOK_SECRET = ""
             mock_settings_class.TEAMS_WEBHOOK_URL = None
 
@@ -625,6 +630,44 @@ class TestTeamsApprovalWebhook:
         # Unsigned dev request passes signature gate and fails on missing actionId
         assert exc_info.value.status_code == 400
 
+
+    @pytest.mark.asyncio
+    async def test_teams_webhook_unkeyed_rejects_when_auth_enabled(self, mock_request):
+        """Phase 15: signature IS the auth on the exempt webhook path — an
+        unkeyed Teams webhook must reject even outside production."""
+        mock_request.body.return_value = b'{"test": "data"}'
+
+        with patch("app.approvals.webhook.settings") as mock_settings_class:
+            mock_settings_class.ENVIRONMENT = "development"
+            mock_settings_class.AUTH_ENABLED = True
+            mock_settings_class.TEAMS_WEBHOOK_SECRET = ""
+            mock_settings_class.TEAMS_WEBHOOK_URL = None
+
+            with pytest.raises(HTTPException) as exc_info:
+                await teams_approval_webhook(mock_request, authorization=None)
+
+        assert exc_info.value.status_code == 500
+        assert "not configured" in str(exc_info.value.detail).lower()
+
+    @pytest.mark.asyncio
+    async def test_teams_webhook_missing_timestamp_rejected(self, mock_request):
+        """Phase 15: without X-Timestamp the HMAC covers only the body and a
+        captured request replays forever — the header is now mandatory."""
+        body = b'{"test": "data"}'
+        mock_request.body = AsyncMock(return_value=body)
+
+        with patch("app.approvals.webhook.settings") as mock_settings_class:
+            mock_settings_class.ENVIRONMENT = "production"
+            mock_settings_class.AUTH_ENABLED = True
+            mock_settings_class.TEAMS_WEBHOOK_SECRET = "dedicated-teams-secret"
+            mock_settings_class.TEAMS_WEBHOOK_URL = None
+
+            with pytest.raises(HTTPException) as exc_info:
+                await teams_approval_webhook(
+                    mock_request, authorization="sha256=" + "0" * 64, x_timestamp=None
+                )
+
+        assert exc_info.value.status_code == 401
 
     def _ts_sig(self, secret, body, ts):
         import hashlib

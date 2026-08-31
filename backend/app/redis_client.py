@@ -24,7 +24,15 @@ def get_redis():
         from app.config import settings
 
         url, _, _, _ = build_redis_url(db=settings.REDIS_DB_ALERTS)
-        _client = redis.Redis.from_url(url, decode_responses=True)
+        # Phase 15: leader-lock/fanout must not hang on a stuck socket — a
+        # renew that never returns never raises, so the grace logic can't
+        # detect a lost lock and a second engine starts duplicating alerts.
+        _client = redis.Redis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
     return _client
 
 

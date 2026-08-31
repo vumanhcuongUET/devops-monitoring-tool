@@ -76,3 +76,28 @@ def test_unversioned_webhook_mount_also_exempt(mock_settings):
     client = TestClient(app)
     r = client.post("/approvals/webhook/slack")
     assert r.status_code == 200
+
+
+@patch("app.main.settings")
+def test_revoked_token_rejected(mock_settings):
+    """Phase 15: a token whose iat precedes the user's min_iat floor is
+    rejected with 401 even though the signature is valid."""
+    import time as time_module
+
+    mock_settings.AUTH_ENABLED = True
+    app = FastAPI()
+    app.add_middleware(AuthMiddleware)
+
+    @app.get("/whoami")
+    def whoami():
+        return {"ok": True}
+
+    with patch("app.main.decode_token") as mock_decode, patch("app.main.get_role") as mock_role, \
+         patch("app.main.get_min_iat", return_value=int(time_module.time()) + 100):
+        mock_decode.return_value = {"sub": "alice", "iat": 1}
+        mock_role.return_value = "admin"
+        client = TestClient(app)
+        r = client.get("/whoami", headers={"Authorization": "Bearer f.a.k.e"})
+
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Token revoked"

@@ -1,11 +1,56 @@
 """Unit tests for Command Executor."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.actions.executor import CommandExecutor, get_command_executor
+from app.actions.executor import (
+    MAX_OUTPUT_BYTES,
+    CommandExecutor,
+    get_command_executor,
+    mark_truncated,
+    read_stream_capped,
+)
+
+
+class FakeStream:
+    """Minimal stand-in for a subprocess stdout/stderr pipe."""
+
+    def __init__(self, data: bytes = b""):
+        self._data = data
+
+    async def read(self, n: int = -1):
+        if not self._data:
+            return b""
+        size = len(self._data) if n < 0 else min(n, len(self._data))
+        chunk, self._data = self._data[:size], self._data[size:]
+        return chunk
+
+
+class HangingStream:
+    """Stream whose read never completes — drives the timeout path."""
+
+    async def read(self, n: int = -1):
+        await asyncio.sleep(3600)
+        return b""
+
+
+class FakeProcess:
+    """Process whose streams feed FakeStream (the executor no longer uses
+    communicate(); it reads the pipes directly with a capture cap)."""
+
+    def __init__(self, stdout=b"", stderr=b"", returncode=0, hang=False):
+        self.stdout = HangingStream() if hang else FakeStream(stdout)
+        self.stderr = HangingStream() if hang else FakeStream(stderr)
+        self.returncode = returncode
+        self.killed = False
+
+    def kill(self):
+        self.killed = True
+
+    async def wait(self):
+        return self.returncode
 
 
 class TestCommandExecutor:
@@ -26,10 +71,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_kubectl_command_success(self, executor):
         """Test successful kubectl command execution."""
-        # Mock asyncio.create_subprocess_exec
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"pod ready", b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"pod ready", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods")
@@ -42,10 +84,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_command_failure(self, executor):
         """Test command execution failure."""
-        # Mock failing process
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"", b"Error: pod not found"))
-        mock_process.returncode = 1
+        mock_process = FakeProcess(stderr=b"Error: pod not found", returncode=1)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get nonexistent-pod")
@@ -57,13 +96,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_command_timeout(self, executor):
         """Test command execution timeout."""
-        # Mock process that times out
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
-        mock_process.kill = MagicMock()
-        mock_process.wait = AsyncMock()
+        mock_process = FakeProcess(hang=True)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods", timeout_seconds=1)
@@ -143,10 +176,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_kubectl_with_namespace(self, executor):
         """Test execute_kubectl helper."""
-        # Mock process
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"result", b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"result", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute_kubectl(
@@ -173,10 +203,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_helm_upgrade(self, executor):
         """Test execute_helm helper."""
-        # Mock process
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"Release upgraded", b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"Release upgraded", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute_helm(
@@ -185,7 +212,6 @@ class TestCommandExecutor:
                 dry_run=False,
             )
 
-        assert result.success is True
         assert result.success is True
 
     @pytest.mark.asyncio
@@ -202,10 +228,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_argocd_sync(self, executor):
         """Test execute_argocd helper."""
-        # Mock process
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"Sync successful", b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"Sync successful", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute_argocd(
@@ -213,7 +236,6 @@ class TestCommandExecutor:
                 dry_run=False,
             )
 
-        assert result.success is True
         assert result.success is True
 
     @pytest.mark.asyncio
@@ -230,11 +252,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_with_custom_timeout(self, executor):
         """Test execution with custom timeout."""
-        # Mock process that will timeout
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
+        mock_process = FakeProcess(hang=True)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods", timeout_seconds=2)
@@ -245,10 +263,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_measures_duration(self, executor):
         """Test that execution duration is measured."""
-        # Mock fast process
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"done", b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"done", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods")
@@ -259,11 +274,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_unicode_handling(self, executor):
         """Test unicode handling in command output."""
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(
-            return_value=(b"Unicode: \xe2\x9c\x93 OK", b"")
-        )
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"Unicode: \xe2\x9c\x93 OK", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods")
@@ -273,11 +284,9 @@ class TestCommandExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_large_output(self, executor):
-        """Test handling of large command output."""
+        """Test handling of large command output (below the cap)."""
         large_output = b"x" * 100000
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(large_output, b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=large_output, returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods")
@@ -416,10 +425,7 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_shlex_parsing_preserves_quotes(self, executor):
         """Test that shlex parsing preserves quoted arguments."""
-        # Mock process
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(return_value=(b"result", b""))
-        mock_process.returncode = 0
+        mock_process = FakeProcess(stdout=b"result", returncode=0)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute('kubectl get pods -n "default"')
@@ -429,20 +435,107 @@ class TestCommandExecutor:
     @pytest.mark.asyncio
     async def test_execute_timeout_kills_process(self, executor):
         """Test that timeout kills the subprocess."""
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
-        mock_process.kill = MagicMock()
-        mock_process.wait = AsyncMock()
+        mock_process = FakeProcess(hang=True)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             result = await executor.execute("kubectl get pods", timeout_seconds=1)
 
         # Verify process was killed
-        mock_process.kill.assert_called_once()
+        assert mock_process.killed is True
         assert result.success is False
         assert "timed out" in result.error_message.lower()
+
+
+class TestOutputCap:
+    """Phase 15 P2-4: captured output is bounded. A runaway command used to
+    stream unbounded bytes into memory, the audit entry and the API response."""
+
+    @pytest.fixture
+    def executor(self):
+        executor = CommandExecutor()
+        executor.MAX_OUTPUT_BYTES = 100  # small cap for tests
+        return executor
+
+    @pytest.mark.asyncio
+    async def test_stdout_capped_and_marked(self, executor):
+        proc = FakeProcess(stdout=b"x" * 1000, returncode=0)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await executor.execute("kubectl get pods")
+
+        assert result.success is True
+        assert result.stdout.startswith("x" * 100)
+        assert "[output truncated at 100 bytes]" in result.stdout
+        # drain worked: process ran to completion, exit code preserved
+        assert result.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_stderr_capped_independently(self, executor):
+        proc = FakeProcess(stdout=b"fine", stderr=b"e" * 1000, returncode=1)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await executor.execute("kubectl get pods")
+
+        assert result.stdout == "fine"
+        assert result.stderr.startswith("e" * 100)
+        assert "[output truncated at 100 bytes]" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_exact_boundary_not_marked_truncated(self, executor):
+        """Output exactly at the cap fits — no false truncation marker."""
+        proc = FakeProcess(stdout=b"x" * 100, returncode=0)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await executor.execute("kubectl get pods")
+
+        assert result.stdout == "x" * 100
+        assert "truncated" not in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_below_cap_untouched(self, executor):
+        proc = FakeProcess(stdout=b"short", stderr=b"err", returncode=0)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await executor.execute("kubectl get pods")
+
+        assert result.stdout == "short"
+        assert result.stderr == "err"
+
+
+class TestReadStreamCapped:
+    """Unit coverage for the shared capped reader."""
+
+    @pytest.mark.asyncio
+    async def test_none_stream(self):
+        assert await read_stream_capped(None, 10) == (b"", False)
+
+    @pytest.mark.asyncio
+    async def test_multi_chunk_accumulation(self):
+        class Chunky:
+            def __init__(self, pieces):
+                self._pieces = list(pieces)
+
+            async def read(self, n=-1):
+                return self._pieces.pop(0) if self._pieces else b""
+
+        data, truncated = await read_stream_capped(Chunky([b"ab", b"cd", b"ef"]), 10)
+        assert (data, truncated) == (b"abcdef", False)
+
+    @pytest.mark.asyncio
+    async def test_partial_chunk_kept_and_flagged(self):
+        class Chunky:
+            def __init__(self, pieces):
+                self._pieces = list(pieces)
+
+            async def read(self, n=-1):
+                return self._pieces.pop(0) if self._pieces else b""
+
+        data, truncated = await read_stream_capped(Chunky([b"a" * 8, b"b" * 8]), 10)
+        assert data == b"a" * 8 + b"bb"
+        assert truncated is True
+
+    def test_mark_truncated(self):
+        assert mark_truncated(b"ok", False, 5) == b"ok"
+        assert mark_truncated(b"abcde", True, 5) == b"abcde\n[output truncated at 5 bytes]"
+
+    def test_default_cap_matches_module_constant(self):
+        assert CommandExecutor.MAX_OUTPUT_BYTES == MAX_OUTPUT_BYTES == 1_000_000
 
 
 class TestCommandExecutorSingleton:

@@ -76,6 +76,16 @@ Fixed 2026-08-31 (same day, second batch):
    middleware rejects tokens issued before it; frontend `logout()` calls it,
    Header gained a Logout button, refresh is single-flight per burst of 401s.
 
+Fixed 2026-08-31 (third batch, same day):
+
+4. [x] Subprocess output capped at 1MB/stream via shared `read_stream_capped`
+   (overflow drained to EOF so the child still runs to completion; marker
+   appended). Covers BOTH paths — `CommandExecutor._execute_safe` and the
+   engine's real path `EnvironmentAwareCommandExecutor.execute`, which still
+   used unbounded `communicate()`. `ExecuteActionRequest.timeout_seconds`
+   added (default 120, 10-600s bounded; the engine hardcoded 30s and killed
+   every ~45s helm upgrade). Exact-boundary capture is not falsely flagged.
+
 Also fixed: users.json atomic 0600 write (P3), ai_assistant `unit` pytest
 marker registered (P3).
 
@@ -86,7 +96,6 @@ Still open (design-needed or low priority):
    depth; IP-pinning for SSRF needs a custom httpx transport (check-then-use
    DNS rebind remains theoretically possible; Teams + notifiers now at least
    validate).
-4. Subprocess output size cap + `timeout_seconds` on ExecuteActionRequest.
 7. Full SSRF IP-pinning (see 3).
 10. Frontend: API errors render as empty data on 6/7 pages; AlertsPage
     delete no confirm/no catch; SkillsPage `alert()` + unvalidated project
@@ -129,8 +138,10 @@ everywhere, real CI test gates for all three suites.
 ## Status
 
 Wave 1-3 fixed same-day (2026-08-31); P2/P3 above are the tracked ledger for
-follow-up batches. Gates at close: backend 1182 unit tests green (+10
-fail-first tests), ruff/bandit/compileall clean, frontend tsc + 159 vitest +
+follow-up batches. P2-4 closed in the third same-day batch (capped capture on
+both execution paths + bounded `timeout_seconds`). Gates at close: backend
+1245 collected / unit suite green (incl. capped-capture + timeout-bound
+tests), ruff/bandit/compileall clean, frontend tsc + 159 vitest +
 build + npm-audit clean, phase-12 manual smoke re-run 18/18 GREEN with the
 new dry-run semantics (dry-run keeps APPROVED; same-action real execute;
 no rate-limit wait needed since dry runs no longer burn the cooldown slot).

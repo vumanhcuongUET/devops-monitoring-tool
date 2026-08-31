@@ -24,6 +24,7 @@ from typing import Any
 
 from app.governance.ai_rbac import ENVIRONMENT_PERMISSIONS, AIPermission
 from app.actions.parser import ALLOWED_BINARIES
+from app.actions.executor import MAX_OUTPUT_BYTES, mark_truncated, read_stream_capped
 from app.models.actions import ExecutionResult
 from app.utils.logging import sanitize_command
 
@@ -272,15 +273,25 @@ class EnvironmentAwareCommandExecutor:
                     stderr=asyncio.subprocess.PIPE,
                 )
 
+                # Phase 15: capture is capped per stream — same bound as the
+                # CommandExecutor path. A runaway command used to be able to
+                # stream unbounded bytes into memory and the audit entry.
                 try:
-                    stdout, stderr = await asyncio.wait_for(
-                        process.communicate(),
+                    (stdout, out_trunc), (stderr, err_trunc) = await asyncio.wait_for(
+                        asyncio.gather(
+                            read_stream_capped(process.stdout, MAX_OUTPUT_BYTES),
+                            read_stream_capped(process.stderr, MAX_OUTPUT_BYTES),
+                        ),
                         timeout=timeout_seconds,
                     )
+                    await process.wait()
                 except asyncio.TimeoutError:
                     process.kill()
                     await process.wait()
                     raise subprocess.TimeoutExpired(command, timeout_seconds) from None
+
+                stdout = mark_truncated(stdout, out_trunc, MAX_OUTPUT_BYTES)
+                stderr = mark_truncated(stderr, err_trunc, MAX_OUTPUT_BYTES)
 
                 result = ExecutionResult(
                     success=process.returncode == 0,

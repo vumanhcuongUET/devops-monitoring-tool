@@ -150,6 +150,9 @@ class ExecuteActionRequest(BaseModel):
 
     executed_by: str = Field(..., description="User triggering execution")
     dry_run: bool = Field(default=False, description="If true, validate but don't execute")
+    # Phase 15: was hardcoded at 30s in the engine — helm upgrades (est. 45s)
+    # were guaranteed killed. Bounded so a caller can't pin the executor.
+    timeout_seconds: int = Field(default=120, ge=10, le=600, description="Execution timeout (10-600s)")
 
 
 class ActionListResponse(BaseModel):

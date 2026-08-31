@@ -586,7 +586,7 @@ class ActionEngine:
             result = await self.env_aware_executor.execute(
                 command=command,
                 environment=env_enum,
-                timeout_seconds=getattr(request, 'timeout_seconds', 30) or 30,
+                timeout_seconds=getattr(request, 'timeout_seconds', 120) or 120,
                 dry_run=request.dry_run,
             )
 

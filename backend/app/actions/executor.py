@@ -9,6 +9,45 @@ from app.models.actions import ExecutionResult
 
 logger = logging.getLogger(__name__)
 
+# Phase 15: captured stdout/stderr per stream is capped (a runaway command
+# used to stream unbounded bytes into memory, the audit entry and the API
+# response). Overflow is drained to EOF and discarded so the process still
+# runs to completion — only the capture is bounded.
+MAX_OUTPUT_BYTES = 1_000_000
+
+_TRUNCATION_MARKER = b"\n[output truncated at %d bytes]"
+
+
+async def read_stream_capped(stream, limit: int = MAX_OUTPUT_BYTES) -> tuple[bytes, bool]:
+    """Read a subprocess stream to EOF, keeping at most ``limit`` bytes.
+
+    Returns ``(data, truncated)``. Bytes past the limit are drained and
+    discarded so the child never blocks on a full pipe.
+    """
+    if stream is None:
+        return b"", False
+    buf = bytearray()
+    truncated = False
+    while True:
+        chunk = await stream.read(65536)
+        if not chunk:
+            break
+        if len(buf) < limit:
+            space = limit - len(buf)
+            buf += chunk[:space]
+            if len(chunk) > space:
+                truncated = True
+        else:
+            truncated = True
+    return bytes(buf), truncated
+
+
+def mark_truncated(data: bytes, truncated: bool, limit: int = MAX_OUTPUT_BYTES) -> bytes:
+    """Append the truncation marker when the capture hit the cap."""
+    if truncated:
+        return data + (_TRUNCATION_MARKER % limit)
+    return data
+
 
 class CommandExecutor:
     """Execute shell commands with safety constraints."""
@@ -100,6 +139,9 @@ class CommandExecutor:
 
     def __init__(self):
         self._max_execution_time = 300  # 5 minutes default
+
+    # Kept as a class attribute for callers that reference it there.
+    MAX_OUTPUT_BYTES = MAX_OUTPUT_BYTES
 
     async def execute(
         self,
@@ -246,19 +288,28 @@ class CommandExecutor:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            # Wait for completion with timeout
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
+            # Phase 15: capture is capped per stream (see read_stream_capped).
+            limit = self.MAX_OUTPUT_BYTES
+
+            (stdout, out_trunc), (stderr, err_trunc) = await asyncio.wait_for(
+                asyncio.gather(
+                    read_stream_capped(process.stdout, limit),
+                    read_stream_capped(process.stderr, limit),
+                ),
                 timeout=timeout_seconds,
             )
+            await process.wait()
 
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+            stdout = mark_truncated(stdout, out_trunc, limit)
+            stderr = mark_truncated(stderr, err_trunc, limit)
 
             return ExecutionResult(
                 success=process.returncode == 0,
                 exit_code=process.returncode,
-                stdout=stdout.decode("utf-8", errors="replace") if stdout else "",
-                stderr=stderr.decode("utf-8", errors="replace") if stderr else "",
+                stdout=stdout.decode("utf-8", errors="replace"),
+                stderr=stderr.decode("utf-8", errors="replace"),
                 duration_seconds=duration,
                 timestamp=datetime.now(timezone.utc),
             )

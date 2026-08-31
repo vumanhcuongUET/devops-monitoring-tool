@@ -243,36 +243,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Phase 15: these gates are BLOCKING. They used to be continue-on-error
+      # across the board, so nothing here could ever fail the build.
+      # backend-lint already runs a blocking `bandit -ll`; safety stays
+      # advisory (its DB produces unactionable false positives on pinned
+      # versions); npm audit blocks at critical only to stay low-noise.
+
       # Python security scan
       - name: Run Bandit
         run: |
           pip install bandit
           bandit -r backend/app/ -f json -o bandit-report.json || true
-          bandit -r backend/app/ -f txt
-        continue-on-error: true
+          bandit -r backend/app/ -ll
 
       - name: Upload Bandit results
         uses: actions/upload-artifact@v5
+        if: always()
         with:
           name: bandit-report
           path: bandit-report.json
-        continue-on-error: true
 
       # Node security audit
       - name: Run npm audit
-        run: cd frontend && npm audit --audit-level=high || true
-        continue-on-error: true
+        run: cd frontend && npm audit --audit-level=critical
 
       # Secrets detection
+      # TODO(pin): pin the trufflehog ref to a commit SHA before this repo
+      # adopts an action-pinning policy; @main is a floating ref.
       - name: TruffleHog - Scan for secrets
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
           extra_args: --only-verified
-        continue-on-error: true
 
-      # Dependency vulnerability scan
+      # Dependency vulnerability scan (advisory — see note above)
       - name: Pip safety check
         run: |
           pip install safety
@@ -369,10 +374,14 @@ jobs:
           image-ref: ghcr.io/${{ github.repository }}/${{ matrix.component }}:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
-        continue-on-error: true
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          # Phase 15: blocking on CRITICAL/HIGH (was continue-on-error)
+        continue-on-error: false
 
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v4
+        if: always()
         with:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true

@@ -464,3 +464,35 @@ class TestCommandExecutorSingleton:
 
         assert executor is not None
         assert isinstance(executor, CommandExecutor)
+
+
+class TestFlagWhitelist:
+    """Phase 15 P1-2: the flag table must accept the option flags remediation
+    actions actually generate (previously only subcommands were listed, so
+    every real autonomous run failed its own check while dry-run succeeded)."""
+
+    def test_remotediation_flags_pass(self):
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "get", "pods", "-n", "ns", "-o", "json"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "get", "pods", "-o", "json", "-l", "app=web"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "scale", "deployment", "api", "--replicas=3"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "delete", "pod", "p", "--force", "--grace-period=0"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "rollout", "undo", "deployment", "api", "--to-revision=2"]) is None
+
+    def test_unknown_flag_rejected(self):
+        err = CommandExecutor.validate_command_flags(
+            ["kubectl", "get", "pods", "--totally-bogus"])
+        assert err is not None and "not allowed" in err
+
+    def test_exec_and_config_subcommands_removed(self):
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "exec", "web", "--", "ls"]) is not None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "config", "use-context", "prod"]) is not None
+
+    def test_non_whitelisted_binary(self):
+        assert CommandExecutor.validate_command_flags(["curl", "http://x"]) is not None

@@ -33,7 +33,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # platforms' own HMAC signature IS the authentication for these paths
     # (Slack fails hard without SLACK_SIGNING_SECRET; Teams fails hard in
     # production without TEAMS_WEBHOOK_SECRET — see approvals/webhook.py).
-    WEBHOOK_AUTH_PATHS = "/api/v1/approvals/webhook/"
+    # Both mount prefixes are exempt: the approvals router is reachable at
+    # /approvals/webhook/* (api_router) and /api/v1/approvals/webhook/*
+    # wherever the router is nested under the versioned prefix. Found live by
+    # the Phase 12 manual smoke: only the versioned prefix was exempt, so a
+    # real Slack callback hit the bearer check and 401'd before signature
+    # verification whenever AUTH_ENABLED.
+    WEBHOOK_AUTH_PATHS = ("/approvals/webhook/", "/api/v1/approvals/webhook/")
 
     async def dispatch(self, request, call_next):
         if not settings.AUTH_ENABLED:

@@ -16,13 +16,27 @@ class CommandExecutor:
     # Whitelist of allowed commands
     ALLOWED_COMMANDS = {
         "kubectl": {
+            # Subcommands plus the option flags remediation actions actually
+            # generate (`-o json`, `-l selector`, `--replicas`,
+            # `--grace-period`, `--force`, `--type`, `--to-revision`,
+            # `--cascade`, `--patch`). Before Phase 15 only subcommands were
+            # listed here, so every real autonomous remediation failed its own
+            # flag check while dry-run (which skips it) reported success.
+            # `exec` and `config` were removed: exec runs arbitrary in-pod
+            # commands, and config use-context is superseded by the
+            # stateless --context flag.
             "allowed_flags": ["get", "describe", "logs", "apply", "delete", "create",
-                             "config", "top", "auth", "rollout", "scale", "exec"],
+                             "top", "auth", "rollout", "scale",
+                             "o", "output", "l", "selector", "filename", "f",
+                             "force", "grace-period", "replicas", "type",
+                             "to-revision", "cascade", "patch", "p", "wait",
+                             "revision", "record"],
             "allowed_global_flags": ["-n", "--namespace", "--context", "--kubeconfig"],
         },
         "helm": {
             "allowed_flags": ["list", "install", "upgrade", "uninstall", "status", "ls",
-                             "history", "rollback", "get", "repo"],
+                             "history", "rollback", "get", "repo",
+                             "reuse-values", "set", "version", "wait"],
             "allowed_global_flags": ["-n", "--namespace", "--kubeconfig"],
         },
         "argocd": {
@@ -30,6 +44,44 @@ class CommandExecutor:
             "allowed_global_flags": [],
         },
     }
+
+    @classmethod
+    def validate_command_flags(cls, cmd_args: list[str]) -> str | None:
+        """Shared flag-whitelist check; returns an error string or None.
+
+        Used by CommandExecutor._execute_safe and (Phase 15) by the
+        env-aware executor's _validate_command so both execution paths
+        enforce the same table.
+        """
+        if not cmd_args:
+            return None
+        binary = cmd_args[0].lower()
+        config = cls.ALLOWED_COMMANDS.get(binary)
+        if config is None:
+            return f"Command '{binary}' not in whitelist"
+        allowed = set(config["allowed_flags"])
+        for g in config["allowed_global_flags"]:
+            allowed.add(g)
+            allowed.add(g.lstrip("-"))
+        # The first positional argument is the subcommand — it must be
+        # whitelisted explicitly (`kubectl exec`/`config` are not).
+        if len(cmd_args) > 1 and not cmd_args[1].startswith("-"):
+            if cmd_args[1] not in config["allowed_flags"]:
+                return f"Subcommand '{cmd_args[1]}' is not allowed for command '{binary}'"
+        i = 1
+        while i < len(cmd_args):
+            arg = cmd_args[i]
+            if arg.startswith("-"):
+                key = arg.split("=", 1)[0].lstrip("-")
+                if not key:
+                    return f"Separator '{arg}' is not allowed for command '{binary}'"
+                if key not in allowed:
+                    return f"Flag '{arg}' is not allowed for command '{binary}'"
+                # skip the value of a --flag value pair
+                if "=" not in arg and i + 1 < len(cmd_args) and not cmd_args[i + 1].startswith("-"):
+                    i += 1
+            i += 1
+        return None
 
     # Forbidden command patterns (additional layer of defense)
     FORBIDDEN_PATTERNS = [
@@ -172,45 +224,16 @@ class CommandExecutor:
                 timestamp=datetime.now(timezone.utc),
             )
 
-        # Validate flags and arguments against whitelist
-        allowed_config = self.ALLOWED_COMMANDS[command_name]
-        allowed_flags = set(allowed_config["allowed_flags"])
-        # Normalize global flags: store both with and without dashes
-        allowed_global_flags = set()
-        for flag in allowed_config["allowed_global_flags"]:
-            allowed_global_flags.add(flag)
-            allowed_global_flags.add(flag.lstrip("-"))
-
-        # Check each argument
-        i = 1
-        while i < len(cmd_args):
-            arg = cmd_args[i]
-
-            # Skip flag values (arguments that follow flags)
-            if arg.startswith("-") and i + 1 < len(cmd_args) and not cmd_args[i + 1].startswith("-"):
-                # This is a flag with a value, validate the flag and skip next arg
-                flag_name = arg
-                # Remove leading dashes for comparison
-                flag_key = flag_name.lstrip("-")
-                if flag_key not in allowed_flags and flag_key not in allowed_global_flags and flag_name not in allowed_global_flags:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
-                        timestamp=datetime.now(timezone.utc),
-                    )
-                i += 2
-                continue
-            elif arg.startswith("-"):
-                # Flag without value (boolean flag)
-                flag_name = arg
-                flag_key = flag_name.lstrip("-")
-                if flag_key not in allowed_flags and flag_key not in allowed_global_flags and flag_name not in allowed_global_flags:
-                    return ExecutionResult(
-                        success=False,
-                        error_message=f"Flag '{flag_name}' is not allowed for command '{command_name}'",
-                        timestamp=datetime.now(timezone.utc),
-                    )
-            i += 1
+        # Validate flags and arguments against the shared whitelist table
+        # (also enforced by the env-aware executor since Phase 15)
+        flag_error = self.validate_command_flags(cmd_args)
+        if flag_error is not None:
+            logger.error(f"{flag_error}")
+            return ExecutionResult(
+                success=False,
+                error_message=flag_error,
+                timestamp=datetime.now(timezone.utc),
+            )
 
         if dry_run:
             return await self._dry_run_safe(cmd_args)

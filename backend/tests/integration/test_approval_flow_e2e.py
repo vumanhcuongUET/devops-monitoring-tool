@@ -216,10 +216,12 @@ class TestApprovalFlowE2E:
         (ephemeral denial), not 500, so Slack does not retry the interaction."""
         engine = get_action_engine()
         original_registry = engine.registry
-        # Production default (no environment tag) — RBAC grants `approve` to
-        # nobody there, so the approve attempt must be denied.
+        # The read-only production matrix grants `approve` to nobody (plain
+        # production must keep APPROVE reachable — the old empty-tags deny
+        # here relied on the paradox the Phase 12 manual smoke fixed: prod
+        # approvals were impossible for anyone, admin included).
         engine.registry = _test_registry()
-        engine.registry.projects[0].tags = {}
+        engine.registry.projects[0].tags = {"environment": "production-read-only"}
 
         original_secret = settings.SLACK_SIGNING_SECRET
         settings.SLACK_SIGNING_SECRET = SIGNING_SECRET

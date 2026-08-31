@@ -49,25 +49,47 @@ async def create_action(request: Request, body: CreateActionRequest) -> ActionRe
     try:
         engine = get_action_engine()
 
-        # Get the Triage Card (would load from store in real implementation)
-        # For now, we'll create a mock recommendation
         from app.models.triage_card import Recommendation, SeverityLevel
 
-        mock_recommendation = Recommendation(
-            priority=1,
-            action="Mock action for testing",
-            command="kubectl get pods",
-            reason="Testing action creation",
-            risk=SeverityLevel.LOW,
-            estimated_impact="No impact (read-only)",
-        )
+        if body.command:
+            # Phase 15: use the caller-supplied recommendation content. It
+            # still goes through the full validator + RBAC + approval gating
+            # below — client input decides *what* is proposed, not *whether*
+            # it runs.
+            try:
+                risk = SeverityLevel(body.risk) if body.risk else SeverityLevel.LOW
+            except ValueError:
+                risk = SeverityLevel.LOW
+            recommendation = Recommendation(
+                priority=1,
+                action=body.title or body.command,
+                command=body.command,
+                reason=body.reason or "Requested via Actions API",
+                risk=risk,
+                estimated_impact="n/a",
+            )
+        else:
+            recommendation = Recommendation(
+                priority=1,
+                action="Mock action for testing",
+                command="kubectl get pods",
+                reason="Testing action creation",
+                risk=SeverityLevel.LOW,
+                estimated_impact="No impact (read-only)",
+            )
+
+        # Creator attribution is server-owned (same as approve/reject/
+        # execute): a client-chosen created_by defeats the self-approval ban.
+        auth_user = getattr(request.state, "user", None)
+        if auth_user:
+            body.created_by = auth_user
 
         # Create the action (auth_user narrows the creation-time permission
         # check — Phase 14)
         action = await engine.create_action_from_recommendation(
             request=body,
-            recommendation=mock_recommendation,
-            auth_user=getattr(request.state, "user", None),
+            recommendation=recommendation,
+            auth_user=auth_user,
         )
 
         # Broadcast WebSocket event
@@ -161,6 +183,9 @@ async def approve_action(
     except ValueError as e:
         logger.error(f"Failed to approve action {action_id}: {e}")
         return ActionResponse(success=False, error=str(e))
+    except PermissionError as e:
+        logger.warning(f"Permission denied approving action {action_id}: {e}")
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error approving action {action_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -200,6 +225,9 @@ async def reject_action(
     except ValueError as e:
         logger.error(f"Failed to reject action {action_id}: {e}")
         return ActionResponse(success=False, error=str(e))
+    except PermissionError as e:
+        logger.warning(f"Permission denied rejecting action {action_id}: {e}")
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error rejecting action {action_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -229,9 +257,16 @@ async def execute_action(
             body.executed_by = user
         action = await engine.execute_action(action_id, body, auth_user=user)
 
-        # Broadcast WebSocket event
+        # Broadcast WebSocket event. A dry run keeps the action APPROVED —
+        # broadcasting "action_failed" for it was misleading.
+        if body.dry_run and action.status == ActionStatus.APPROVED:
+            event_type = "action_dry_run"
+        elif action.status == ActionStatus.EXECUTED:
+            event_type = "action_executed"
+        else:
+            event_type = "action_failed"
         await manager.broadcast({
-            "type": "action_executed" if action.status == ActionStatus.EXECUTED else "action_failed",
+            "type": event_type,
             "data": action.model_dump(),
         })
 
@@ -240,6 +275,9 @@ async def execute_action(
     except ValueError as e:
         logger.error(f"Failed to execute action {action_id}: {e}")
         return ActionResponse(success=False, error=str(e))
+    except PermissionError as e:
+        logger.warning(f"Permission denied executing action {action_id}: {e}")
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error executing action {action_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

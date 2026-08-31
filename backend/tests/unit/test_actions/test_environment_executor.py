@@ -74,3 +74,37 @@ async def test_execute_malformed_command_returns_value_error():
         await ex.execute("")
     with pytest.raises(ValueError, match="Command validation failed"):
         await ex.execute('kubectl logs "')
+
+
+class TestExecutionResultFields:
+    """Phase 12 manual smoke: the deduped ExecutionResult lost `environment`
+    and `command`. Pydantic ignored the constructor kwargs, then
+    _log_execution crashed on the missing attribute after the subprocess had
+    already run — every real execution 500'd and never reached EXECUTED."""
+
+    def test_result_carries_environment_and_command(self):
+        from app.models.actions import ExecutionResult
+
+        r = ExecutionResult(
+            success=True, environment="staging", command="kubectl get pods"
+        )
+        assert r.environment == "staging"
+        assert r.command == "kubectl get pods"
+
+    def test_log_execution_does_not_crash(self):
+        from app.actions.environment_executor import get_executor
+        from app.models.actions import ExecutionResult
+
+        get_executor()._log_execution(
+            ExecutionResult(success=True, environment="staging", command="kubectl get pods")
+        )
+
+
+def test_validate_enforces_flag_whitelist():
+    """Phase 15 P1-2: the env-aware path previously checked argv[0] only, so
+    an approved `kubectl exec ...` passed the documented defense layer."""
+    e = _make_executor()
+    assert e._validate_command("kubectl exec web -- ls /") is False
+    assert e._validate_command("kubectl config use-context prod") is False
+    assert e._validate_command("kubectl get pods -o json") is True
+    assert e._validate_command("kubectl rollout restart deployment api") is True

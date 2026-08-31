@@ -186,7 +186,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         if not settings.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY not configured")
 
-        self.client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         self.model = settings.ANTHROPIC_MODEL
         self._health_cache: bool | None = None
         self._health_cache_time: float = 0
@@ -328,7 +328,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         # Call Claude API
         try:
             record_request(path="triage", model=self.model)
-            message = self.client.messages.create(
+            message = await self.client.messages.create(
                 model=self.model,
                 max_tokens=settings.AI_MAX_TOKENS,
                 system=self._cached_system(self.SYSTEM_PROMPT),
@@ -511,7 +511,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
         try:
             record_request(path="stream", model=self.model)
             # Create streaming message
-            with self.client.messages.stream(
+            async with self.client.messages.stream(
                 model=self.model,
                 max_tokens=settings.AI_MAX_TOKENS,
                 system=self._cached_system(self.SYSTEM_PROMPT),
@@ -524,7 +524,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
                 temperature=0.3,
             ) as stream:
 
-                for chunk in stream:
+                async for chunk in stream:
                     if chunk.type == "message_start":
                         # Input token count rides on message_start.usage
                         start_usage = getattr(
@@ -617,14 +617,14 @@ You communicate in Vietnamese by default, unless the user specifically requests 
             record_request(path="simple_stream", model=FAST_MODEL)
             # Short questions don't need the full triage model — route them
             # to the cheap fast tier (haiku) instead of the configured default.
-            with self.client.messages.stream(
+            async with self.client.messages.stream(
                 model=FAST_MODEL,
                 max_tokens=min(settings.AI_MAX_TOKENS, 2000),  # Lower limit for simple queries
                 messages=[{"role": "user", "content": user_prompt}],
                 temperature=0.3,
             ) as stream:
 
-                for chunk in stream:
+                async for chunk in stream:
                     if chunk.type == "message_start":
                         start_usage = getattr(
                             getattr(chunk, "message", None), "usage", None
@@ -684,7 +684,7 @@ You communicate in Vietnamese by default, unless the user specifically requests 
             # Simple API call with minimal tokens. Runs on the cheap fast
             # tier — a liveness probe doesn't need the triage model.
             record_request(path="health", model=FAST_MODEL)
-            message = self.client.messages.create(
+            message = await self.client.messages.create(
                 model=FAST_MODEL,
                 max_tokens=10,
                 messages=[{"role": "user", "content": "OK"}],

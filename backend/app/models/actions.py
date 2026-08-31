@@ -60,6 +60,13 @@ class ExecutionResult(BaseModel):
     duration_seconds: float | None = None
     error_message: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    # Set by the environment-aware executor (which environment/command ran).
+    # Both were dropped in the Phase 11 dedup — pydantic silently ignored the
+    # constructor kwargs, then EnvironmentExecutor._log_execution crashed on
+    # the missing attribute AFTER the subprocess had already run, so every
+    # real execution 500'd and never reached EXECUTED (Phase 12 manual smoke).
+    environment: str | None = None
+    command: str | None = None
 
 
 class Action(BaseModel):
@@ -114,6 +121,14 @@ class CreateActionRequest(BaseModel):
     # Phase 12 S6: attribution label for self-approval detection. Not an
     # authorization identity (single-operator tool — see security review).
     created_by: str | None = Field(None, description="Attribution: who created the action")
+    # Phase 15: optional recommendation content. Previously every API-created
+    # action hardcoded `kubectl get pods` regardless of the recommendation;
+    # when command is supplied it goes through the same validator, RBAC and
+    # approval gating as any other recommendation. Absent = legacy mock.
+    command: str | None = Field(None, description="Command to run (overrides the default mock recommendation)")
+    title: str | None = Field(None, description="Action title")
+    reason: str | None = Field(None, description="Why this action is proposed")
+    risk: str | None = Field(None, description="Risk severity: critical|high|medium|low|info")
 
 
 class ApproveActionRequest(BaseModel):

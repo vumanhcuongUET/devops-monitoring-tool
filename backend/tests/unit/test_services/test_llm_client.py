@@ -75,7 +75,7 @@ def _stream_events(input_tokens: int, output_tokens: int, text: str):
 
 
 class FakeMessages:
-    """Stands in for anthropic.Anthropic().messages."""
+    """Stands in for anthropic.AsyncAnthropic().messages."""
 
     def __init__(self, message=None, events=None):
         self.message = message
@@ -83,7 +83,7 @@ class FakeMessages:
         self.create_kwargs: dict | None = None
         self.stream_kwargs: dict | None = None
 
-    def create(self, **kwargs):
+    async def create(self, **kwargs):
         self.create_kwargs = kwargs
         return self.message
 
@@ -91,14 +91,24 @@ class FakeMessages:
         self.stream_kwargs = kwargs
         outer = self
 
-        class _Manager:
-            def __enter__(self):
-                return iter(outer.events)
+        class _Stream:
+            async def __aenter__(self):
+                self._it = iter(outer.events)
+                return self
 
-            def __exit__(self, *exc):
+            async def __aexit__(self, *exc):
                 return False
 
-        return _Manager()
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._it)
+                except StopIteration:
+                    raise StopAsyncIteration from None
+
+        return _Stream()
 
 
 @pytest.fixture

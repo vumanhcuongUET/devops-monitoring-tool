@@ -364,6 +364,18 @@ class EnvironmentAwareCommandExecutor:
             logger.warning(f"Blocked non-whitelisted binary: {argv[0]!r}")
             return False
 
+        # Phase 15: enforce the same per-binary flag whitelist as
+        # CommandExecutor. Previously this path only checked argv[0], so the
+        # engine's real execution path never applied the flag table and
+        # approved actions could reach subcommands (kubectl exec, helm
+        # uninstall) that the documented defense layer rejects.
+        from app.actions.executor import CommandExecutor
+
+        flag_error = CommandExecutor.validate_command_flags(argv)
+        if flag_error is not None:
+            logger.warning(f"Blocked command: {flag_error}")
+            return False
+
         # Basic validation rules
         dangerous_patterns = [
             "rm -rf /",

@@ -58,3 +58,21 @@ def test_auth_disabled_passes_all(mock_settings):
     client = _make_client()
     r = client.get("/api/v1/overview")
     assert r.status_code == 200
+
+@patch("app.main.settings")
+def test_unversioned_webhook_mount_also_exempt(mock_settings):
+    """The approvals router is really mounted at /approvals/webhook/* (no
+    /api/v1 prefix). Phase 12 manual smoke: only the versioned prefix was
+    exempt, so a real Slack callback 401'd at the middleware — plain
+    "Unauthorized" — before signature verification ever ran."""
+    mock_settings.AUTH_ENABLED = True
+    app = FastAPI()
+    app.add_middleware(AuthMiddleware)
+
+    @app.post("/approvals/webhook/slack")
+    def slack_stub():
+        return {"ok": True}
+
+    client = TestClient(app)
+    r = client.post("/approvals/webhook/slack")
+    assert r.status_code == 200

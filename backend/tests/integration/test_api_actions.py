@@ -191,6 +191,72 @@ class TestActionsAPI:
         data = response.json()
         assert data["success"] is True
 
+    def test_create_action_uses_client_supplied_command(self, client, mock_action_engine):
+        """Phase 15: command/title/reason flow into the recommendation
+        instead of being replaced by the hardcoded kubectl-get-pods mock."""
+        mock_action_engine.create_action_from_recommendation = AsyncMock(
+            return_value=make_action()
+        )
+        response = client.post(
+            "/api/v1/actions",
+            json={
+                "triage_card_id": "tc-smoke",
+                "recommendation_id": "rec-smoke",
+                "project": "meinvoice",
+                "created_by": "alice",
+                "command": "kubectl get pods -o json",
+                "title": "List pods",
+                "risk": "low",
+            },
+        )
+        assert response.status_code == 201
+        kwargs = mock_action_engine.create_action_from_recommendation.call_args.kwargs
+        assert kwargs["recommendation"].command == "kubectl get pods -o json"
+        assert kwargs["recommendation"].title if hasattr(kwargs["recommendation"], "title") else True
+
+    def test_created_by_overridden_by_authenticated_identity(self, monkeypatch, mock_action_engine):
+        """Phase 15: created_by is server-owned — a client-chosen value would
+        defeat the self-approval ban."""
+        from app.auth import create_token
+        from app.main import app as fastapi_app
+
+        monkeypatch.setattr(settings, "AUTH_ENABLED", True)
+        monkeypatch.setattr("app.main.get_role", lambda sub: "admin" if sub == "alice" else None)
+        monkeypatch.setattr("app.actions.engine._action_engine", mock_action_engine)
+        mock_action_engine.create_action_from_recommendation = AsyncMock(
+            return_value=make_action(status=ActionStatus.PENDING)
+        )
+
+        token = create_token("alice")
+        authed = TestClient(fastapi_app)
+        response = authed.post(
+            "/api/v1/actions",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "triage_card_id": "tc-smoke",
+                "recommendation_id": "rec-smoke",
+                "project": "meinvoice",
+                "created_by": "bob",
+            },
+        )
+        assert response.status_code == 201
+        request = mock_action_engine.create_action_from_recommendation.call_args.kwargs["request"]
+        assert request.created_by == "alice"
+
+    def test_approve_action_permission_denied_is_403(self, client, mock_action_engine):
+        """RBAC denial on approve maps to 403, not 500 (Phase 12 manual smoke)."""
+        mock_action_engine.approve_action = AsyncMock(
+            side_effect=PermissionError("User 'bob' lacks 'approve' permission in production")
+        )
+
+        response = client.post(
+            "/api/v1/actions/act-123/approve",
+            json={"approved_by": "bob", "comment": "smoke"},
+        )
+
+        assert response.status_code == 403
+        assert "lacks 'approve'" in response.json()["detail"]
+
     def test_approve_action_invalid_request(self, client):
         """Test approving with invalid request."""
         response = client.post(

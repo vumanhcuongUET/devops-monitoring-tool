@@ -718,6 +718,23 @@ class TestActionEngine:
         mock_approval_tracker.get.assert_called_once_with("act-123")
 
     @pytest.mark.asyncio
+    async def test_get_action_injects_id_when_state_omits_it(
+        self, action_engine, mock_approval_tracker
+    ):
+        """Tracker state is keyed by id and omits it — get_action must inject
+        it so the API response_model can rehydrate Action (Phase 12 manual
+        smoke: GET /actions/{id} 500'd on pydantic 'id: Field required')."""
+        mock_approval_tracker.get.return_value = {
+            "status": "pending",
+            "command": "kubectl get pods",
+        }
+
+        result = await action_engine.get_action("act-xyz")
+
+        assert result is not None
+        assert result["id"] == "act-xyz"
+
+    @pytest.mark.asyncio
     async def test_get_action_not_found(self, action_engine, mock_approval_tracker):
         """Test getting non-existent action."""
         # Setup tracker to return None
@@ -948,3 +965,127 @@ class TestOPAEnforcement:
             action = await action_engine.execute_action("act-123", request)
 
         assert action.status == ActionStatus.EXECUTED
+
+
+@pytest.mark.asyncio
+async def test_rollback_survives_real_audit_logger(
+    action_engine, mock_approval_tracker, monkeypatch, tmp_path
+):
+    """Phase 15 P1-1: the rollback trigger must pass a valid AuditEventType.
+
+    With the mocked audit logger of every other test, the invalid
+    'rollback_triggered' string silently passed; the real AuditLogger
+    (pydantic-validated) raised, the broad except overwrote the persisted
+    status and re-raised — every rollback-triggering execution 500'd.
+    """
+    from app.audit.logger import AuditLogger
+    from app.config import settings as app_settings
+    from app.models.actions import ExecutionResult
+
+    monkeypatch.setattr(app_settings, "DATA_DIR", str(tmp_path))
+    action_engine.audit_logger = AuditLogger()
+
+    state = {
+        "id": "act-fail-real",
+        "status": ActionStatus.APPROVED,
+        "command": "kubectl apply -f bad.yaml",
+        "command_type": CommandType.KUBECTL,
+        "parsed_params": CommandParams(
+            command_type=CommandType.KUBECTL, action="apply", resource_type="configmap",
+        ),
+        "project": "test-project",
+        "title": "Apply config",
+        "description": "Apply config",
+        "context": {"environment": "development"},
+    }
+    mock_approval_tracker.get = AsyncMock(return_value=state)
+    action_engine.env_aware_executor.execute = AsyncMock(return_value=ExecutionResult(
+        success=False, exit_code=1, stdout="", stderr="boom", duration_seconds=0.1,
+    ))
+    action_engine.feedback = MagicMock()
+    action_engine.validator.validate.return_value = ValidationResult(
+        is_valid=True, allowed=True, requires_approval=True,
+        reason="mutating", risk_level=RiskLevel.HIGH,
+    )
+
+    request = ExecuteActionRequest(executed_by="operator", dry_run=False)
+    result = await action_engine.execute_action("act-fail-real", request)
+
+    assert result.status == ActionStatus.FAILED
+    statuses = [
+        c.kwargs.get("status") for c in mock_approval_tracker.set_status.call_args_list
+    ]
+    assert any(s == ActionStatus.PENDING for s in statuses), (
+        "a PENDING rollback action must be created after a failed execution"
+    )
+
+
+@pytest.mark.asyncio
+async def test_dry_run_keeps_action_approved(action_engine, mock_approval_tracker):
+    """Phase 15: a dry run must not consume the approval — status stays
+    APPROVED so the operator can execute for real afterwards."""
+    from app.models.actions import ExecutionResult
+
+    state = {
+        "id": "act-dry",
+        "status": ActionStatus.APPROVED,
+        "command": "kubectl get pods",
+        "command_type": CommandType.KUBECTL,
+        "parsed_params": CommandParams(
+            command_type=CommandType.KUBECTL, action="get", resource_type="pod",
+        ),
+        "project": "test-project",
+        "title": "Check pods",
+        "description": "Check pods",
+        "context": {"environment": "development"},
+    }
+    mock_approval_tracker.get = AsyncMock(return_value=state)
+    action_engine.env_aware_executor.execute = AsyncMock(return_value=ExecutionResult(
+        success=True, exit_code=0, stdout="ok", duration_seconds=0.01,
+    ))
+    action_engine.feedback = MagicMock()
+
+    request = ExecuteActionRequest(executed_by="operator", dry_run=True)
+    result = await action_engine.execute_action("act-dry", request)
+
+    assert result.status == ActionStatus.APPROVED
+    statuses = [
+        c.kwargs.get("status") for c in mock_approval_tracker.set_status.call_args_list
+    ]
+    assert ActionStatus.EXECUTED not in statuses, "dry run must not set EXECUTED"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_does_not_consume_rate_limit_slot(action_engine, mock_approval_tracker, monkeypatch):
+    """Dry runs mutate nothing — they must not burn the cooldown slot that
+    the real execution needs."""
+    from unittest.mock import MagicMock as _M
+    from app.models.actions import ExecutionResult
+
+    rl = _M()
+    rl.check.return_value = (True, "allowed", {})
+    monkeypatch.setattr("app.actions.engine.get_rate_limiter", lambda: rl)
+
+    state = {
+        "id": "act-dry-rl",
+        "status": ActionStatus.APPROVED,
+        "command": "kubectl get pods",
+        "command_type": CommandType.KUBECTL,
+        "parsed_params": CommandParams(
+            command_type=CommandType.KUBECTL, action="get", resource_type="pod",
+        ),
+        "project": "test-project",
+        "title": "Check pods",
+        "description": "Check pods",
+        "context": {"environment": "development"},
+    }
+    mock_approval_tracker.get = AsyncMock(return_value=state)
+    action_engine.env_aware_executor.execute = AsyncMock(return_value=ExecutionResult(
+        success=True, exit_code=0, stdout="ok", duration_seconds=0.01,
+    ))
+    action_engine.feedback = MagicMock()
+
+    await action_engine.execute_action(
+        "act-dry-rl", ExecuteActionRequest(executed_by="operator", dry_run=True)
+    )
+    rl.record_action.assert_not_called()

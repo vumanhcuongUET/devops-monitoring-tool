@@ -588,8 +588,13 @@ class ActionEngine:
             success = result.success
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
-            # Update status based on result
-            new_status = ActionStatus.EXECUTED if success else ActionStatus.FAILED
+            # Phase 15: a dry run must not consume the approval. It used to
+            # set EXECUTED (terminal), making a real execution impossible
+            # afterwards; keep APPROVED so the operator can execute for real.
+            if request.dry_run:
+                new_status = ActionStatus.APPROVED
+            else:
+                new_status = ActionStatus.EXECUTED if success else ActionStatus.FAILED
             await self.approval_tracker.set_status(
                 action_id=action_id,
                 status=new_status,
@@ -659,7 +664,7 @@ class ActionEngine:
                 if should_rollback and rollback_plan:
                     # Log rollback trigger
                     self.audit_logger.log_event(
-                        event_type="rollback_triggered",
+                        event_type=AuditEventType.ROLLBACK_TRIGGERED,
                         user=request.executed_by,
                         action_id=action_id,
                         project=project,
@@ -701,8 +706,10 @@ class ActionEngine:
                         f"(status={rollback_action.status.value}, pending approval)"
                     )
 
-            # Record action in rate limiter after successful execution (Phase 8)
-            if success:
+            # Record action in rate limiter after successful execution (Phase 8).
+            # Dry runs are not recorded: they mutate nothing, and counting them
+            # would burn the real execution's cooldown slot.
+            if success and not request.dry_run:
                 rate_limiter.record_action(
                     project=project,
                     action_type=action_type,
@@ -736,13 +743,18 @@ class ActionEngine:
             return Action(**action_kwargs)
 
         except Exception as e:
-            # Execution failed with exception
+            # Execution failed with exception. If the failure happened AFTER
+            # the command already ran and EXECUTED was persisted (e.g. the
+            # rollback bookkeeping below it threw), do not overwrite the
+            # terminal status — audit the error and re-raise instead.
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-            await self.approval_tracker.set_status(
-                action_id=action_id,
-                status=ActionStatus.FAILED,
-                user=request.executed_by,
-            )
+            current_status = (await self.approval_tracker.get(action_id) or {}).get("status")
+            if current_status != ActionStatus.EXECUTED:
+                await self.approval_tracker.set_status(
+                    action_id=action_id,
+                    status=ActionStatus.FAILED,
+                    user=request.executed_by,
+                )
 
             # Log failure
             self.audit_logger.log_action_executed(
@@ -761,6 +773,10 @@ class ActionEngine:
         state = await self.approval_tracker.get(action_id)
         if not state:
             return None
+        # Stored state omits the id (it is the tracker key). Inject it so the
+        # API response_model can rehydrate Action(**state) — found live by the
+        # Phase 12 manual smoke: GET /actions/{id} 500'd on "id: Field required".
+        state.setdefault("id", action_id)
         return state
 
     async def list_actions(

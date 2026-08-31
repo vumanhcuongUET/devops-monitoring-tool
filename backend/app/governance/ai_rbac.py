@@ -57,11 +57,18 @@ ENVIRONMENT_PERMISSIONS: dict[str, list[AIPermission]] = {
         AIPermission.EXECUTE,
         AIPermission.SCALE,
         AIPermission.ROLLBACK,
-        # DELETE and APPROVE require human approval in staging
+        # APPROVE stays in the matrix: approving IS the human approval step
+        # (Phase 12 S6 decision gate reuses this matrix). Who may approve is
+        # decided by role_allows narrowing, not by dropping APPROVE here.
+        AIPermission.APPROVE,
     ],
     "production": [
         AIPermission.VIEW,
         AIPermission.SCALE,
+        # APPROVE must stay reachable: without it no user — admin included —
+        # can approve a production action (found by the Phase 12 manual smoke,
+        # 2026-08-31). Role narrowing still denies operators/viewers.
+        AIPermission.APPROVE,
         # All other actions require human approval in production
     ],
     "production-read-only": [
@@ -100,6 +107,11 @@ ACTION_PERMISSION_MAP: dict[str, AIPermission] = {
     "exec": AIPermission.EXECUTE,
     "attach": AIPermission.EXECUTE,
     "cp": AIPermission.EXECUTE,
+
+    # Governance action: without this mapping "approve" fell through to the
+    # EXECUTE default, so the Phase 12 S6 decision gate denied every approver
+    # in production/staging even after APPROVE returned to the matrix.
+    "approve": AIPermission.APPROVE,
 
     # Helm/ArgoCD actions
     "install": AIPermission.CREATE,

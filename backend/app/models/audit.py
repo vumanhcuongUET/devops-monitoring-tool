@@ -16,6 +16,7 @@ class AuditEventType(str, Enum):
     ACTION_EXECUTED = "action_executed"
     ACTION_FAILED = "action_failed"
     ACTION_CANCELLED = "action_cancelled"
+    ROLLBACK_TRIGGERED = "rollback_triggered"  # failed action spawned a rollback action
     CHAIN_OF_THOUGHT = "chain_of_thought"
     CONTEXT_COLLECTED = "context_collected"
     COMMAND_PARSED = "command_parsed"

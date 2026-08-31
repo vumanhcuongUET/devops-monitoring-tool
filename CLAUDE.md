@@ -153,6 +153,7 @@ All config is in `.env` (see `.env.example`). Critical ones:
 ### AI / LLM (Claude API)
 - `ANTHROPIC_API_KEY` — Claude API key for Triage Card generation
 - `ANTHROPIC_MODEL` — Model to use (default: claude-sonnet-4-20250514)
+- `AI_INPUT_BUDGET_TOKENS` — Soft ceiling for one triage prompt (default 12000); log payloads shrink down a severity ladder when exceeded. See `docs/token-optimization-2026-08-31.md`
 
 ### AI Assistant
 Credentials passed as environment variables (set in `~/.bashrc` or `~/.zshrc`):

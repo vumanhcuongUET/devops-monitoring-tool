@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     ALERT_STATE_USE_REDIS: bool = False  # Use Redis for alert state (default: file-based)
     APPROVAL_STATE_USE_REDIS: bool = False  # Use Redis for approval state (default: file-based)
     RATE_LIMIT_USE_REDIS: bool = False  # Use Redis for rate limiting (default: in-memory)
+    # Phase 15 P2-14: CIDRs allowed to set X-Forwarded-For/X-Real-IP (ingress,
+    # nginx). Empty = trust nobody: forwarded headers are ignored and the
+    # direct connection IP is the rate-limit bucket. MUST be set behind an
+    # ingress, or every client shares the ingress's single bucket.
+    RATE_LIMIT_TRUSTED_PROXIES: list[str] = []
     # Phase 12 H1: multi-replica safe background tasks + cross-pod WS events.
     # Both require Redis; leave off for single-replica deployments.
     ALERT_ENGINE_LEADER_LOCK: bool = False  # Elect one alert-engine/SLO-reporter leader via Redis

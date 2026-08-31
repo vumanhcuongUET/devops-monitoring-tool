@@ -85,6 +85,11 @@ Fixed 2026-08-31 (third batch, same day):
    used unbounded `communicate()`. `ExecuteActionRequest.timeout_seconds`
    added (default 120, 10-600s bounded; the engine hardcoded 30s and killed
    every ~45s helm upgrade). Exact-boundary capture is not falsely flagged.
+14. [x] RateLimitMiddleware: `trusted_proxies` now wired via new
+   `RATE_LIMIT_TRUSTED_PROXIES` setting (empty = trust nobody — fail-closed);
+   XFF chain walked right-to-left past trusted proxies (leftmost was
+   attacker-controlled); X-Real-IP must parse as an IP, never verbatim; the
+   per-key window dict is swept every 60s and hard-capped at 10k keys.
 
 Also fixed: users.json atomic 0600 write (P3), ai_assistant `unit` pytest
 marker registered (P3).
@@ -110,8 +115,6 @@ Still open (design-needed or low priority):
 13. ai_assistant: missing template var silently empties query filters
     (data-widening); ~50% of security.py dead; audit chain sha256-concat +
     cwd-relative + no verifier.
-14. RateLimitMiddleware: no trusted_proxies (ingress → one global bucket),
-    unbounded per-key dict; `X-Real-IP` accepted verbatim.
 
 ## P3 — hardening batch (one PR)
 

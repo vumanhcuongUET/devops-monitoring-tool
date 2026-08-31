@@ -421,7 +421,14 @@ app.add_middleware(HTTPMetricsMiddleware)
 # Phase 8: security headers + CSP (no nonce — frontend is a static build, no inline scripts)
 app.add_middleware(SecurityHeadersMiddleware)
 # Phase 9: Support Redis-based rate limiting
-app.add_middleware(RateLimitMiddleware, requests_per_minute=60, burst=20, use_redis=settings.RATE_LIMIT_USE_REDIS)
+# Phase 15 P2-14: forwarded headers are honored only from RATE_LIMIT_TRUSTED_PROXIES.
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=60,
+    burst=20,
+    use_redis=settings.RATE_LIMIT_USE_REDIS,
+    trusted_proxies=settings.RATE_LIMIT_TRUSTED_PROXIES,
+)
 app.add_middleware(AuthMiddleware)
 
 app.add_middleware(

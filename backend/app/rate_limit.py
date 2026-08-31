@@ -1,4 +1,5 @@
 """Rate limiter middleware - supports both in-memory and Redis-based limiting."""
+import ipaddress
 import logging
 import time
 from collections import defaultdict
@@ -15,6 +16,15 @@ try:
     REDIS_RATE_LIMITER_AVAILABLE = True
 except ImportError:
     REDIS_RATE_LIMITER_AVAILABLE = False
+
+# Phase 15 P2-14: the per-key window dict used to grow without bound — every
+# distinct client IP (including junk from a spoofed header behind a trusted
+# proxy) allocated a list forever. Keys are swept when stale and the dict is
+# hard-capped; overflow evicts the oldest key (rate-limiting degrades to a
+# fresh window for that key, it is never bypassed).
+MAX_TRACKED_CLIENTS = 10_000
+_SWEEP_INTERVAL_SECONDS = 60
+_WINDOW_SECONDS = 60
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -43,7 +53,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.rpm = requests_per_minute
         self.burst = burst
         self.use_redis = use_redis
+        # Phase 15 P2-14: wired from settings.RATE_LIMIT_TRUSTED_PROXIES.
+        # Empty (the default) means trust nobody — X-Forwarded-For/X-Real-IP
+        # are ignored and the direct connection IP is the bucket. Behind an
+        # ingress/NAT this collapses everyone into one bucket until the
+        # deployment sets the proxy CIDRs, which is fail-closed: trusting
+        # headers without this list would let any client forge its bucket.
         self.trusted_proxies = trusted_proxies or []
+        self._last_sweep = 0.0
 
         if not use_redis:
             # In-memory backend
@@ -68,50 +85,69 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self.trusted_proxies:
             return False
 
-        import ipaddress
         try:
             client_ip = ipaddress.ip_address(ip)
-            for proxy_cidr in self.trusted_proxies:
-                if client_ip in ipaddress.ip_network(proxy_cidr, strict=False):
-                    return True
         except ValueError:
-            logger.warning(f"Invalid IP address: {ip}")
+            return False
+        for proxy_cidr in self.trusted_proxies:
+            if client_ip in ipaddress.ip_network(proxy_cidr, strict=False):
+                return True
         return False
+
+    @staticmethod
+    def _is_valid_ip(value: str) -> bool:
+        try:
+            ipaddress.ip_address(value)
+            return True
+        except ValueError:
+            return False
 
     def _client_id(self, request: Request) -> str:
         """Extract client IP with proper proxy validation.
 
         Priority:
-        1. If X-Real-IP header exists and proxy is trusted, use it
-        2. If X-Forwarded-For exists and proxy is trusted, use first IP
-        3. Otherwise, use direct connection IP
+        1. X-Forwarded-For chain, walked right-to-left past trusted proxies
+        2. X-Real-IP if it parses as an IP and the proxy is trusted
+        3. Otherwise, the direct connection IP
         """
-        # Try X-Real-IP first (set by nginx when using set_real_ip_from)
+        direct_ip = request.client.host if request.client else ""
+
+        forwarded = request.headers.get("x-forwarded-for", "").strip()
+        if forwarded and self._is_trusted_proxy(direct_ip):
+            # "client, proxy1, proxy2" — the leftmost entry is
+            # attacker-controlled whenever the client could send the header
+            # itself; only proxies we trust may have appended entries. Walk
+            # from the right, skip proxies we trust, and the first address
+            # that is not a trusted proxy is the client.
+            client_ip = ""
+            for candidate in reversed([p.strip() for p in forwarded.split(",")]):
+                if not candidate:
+                    continue
+                if self._is_trusted_proxy(candidate):
+                    continue
+                if self._is_valid_ip(candidate):
+                    client_ip = candidate
+                break
+            if client_ip:
+                return f"ip:{client_ip}"
+            # Chain was entirely trusted proxies (or malformed) — fall
+            # through to the direct connection IP.
+            return f"ip:{direct_ip}"
+
+        # X-Real-IP (set by nginx `set_real_ip_from`) — accepted only from a
+        # trusted proxy and only if it actually parses as an IP, never
+        # verbatim.
         real_ip = request.headers.get("x-real-ip", "").strip()
-        if real_ip and self._is_trusted_proxy(
-            request.client.host if request.client else ""
-        ):
+        if real_ip and self._is_trusted_proxy(direct_ip) and self._is_valid_ip(real_ip):
             return f"ip:{real_ip}"
 
-        # Try X-Forwarded-For (only if from trusted proxy)
-        forwarded = request.headers.get("x-forwarded-for", "").strip()
         if forwarded:
-            # Check if the immediate connection is from a trusted proxy
-            direct_ip = request.client.host if request.client else ""
-            if self._is_trusted_proxy(direct_ip):
-                # X-Forwarded-For format: "client, proxy1, proxy2"
-                # Take the leftmost (original client) IP
-                client_ip = forwarded.split(",")[0].strip()
-                return f"ip:{client_ip}"
-            else:
-                # Untrusted proxy trying to spoof - ignore X-Forwarded-For
-                logger.warning(
-                    f"Untrusted proxy {direct_ip} attempted X-Forwarded-For spoofing"
-                )
+            logger.warning(
+                f"Untrusted proxy {direct_ip} attempted X-Forwarded-For spoofing"
+            )
 
         # Fall back to direct connection IP
-        direct_ip = request.client.host if request.client else "unknown"
-        return f"ip:{direct_ip}"
+        return f"ip:{direct_ip or 'unknown'}"
 
     async def _is_limited_redis(self, client_id: str) -> tuple[bool, dict | None]:
         """Check Redis-based rate limit.
@@ -131,23 +167,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return not allowed, info
 
-    def _is_limited(self, client_id: str) -> bool:
-        """Check in-memory rate limit."""
-        now = time.time()
-        window = self._windows[client_id]
-        # Remove entries older than 60s
-        self._windows[client_id] = [t for t in window if now - t < 60]
-        window = self._windows[client_id]
-
-        if len(window) >= self.rpm:
-            return True
-        # Burst check: more than `burst` requests in last 2s
-        recent = sum(1 for t in window if now - t < 2)
-        if recent >= self.burst:
-            return True
-
-        window.append(now)
-        return False
+    def _sweep_and_bound(self, now: float) -> None:
+        """Keep the per-key window dict bounded (Phase 15 P2-14)."""
+        if now - self._last_sweep >= _SWEEP_INTERVAL_SECONDS:
+            self._last_sweep = now
+            stale = [
+                key for key, window in self._windows.items()
+                if not window or now - window[-1] >= _WINDOW_SECONDS
+            ]
+            for key in stale:
+                del self._windows[key]
+        while len(self._windows) >= MAX_TRACKED_CLIENTS:
+            # Insertion-order dict: evict the oldest key. The evicted client
+            # simply starts a fresh window — limiting is degraded, never
+            # bypassed, and only under a flood of that many distinct IPs.
+            del self._windows[next(iter(self._windows))]
 
     async def _is_limited_memory(self, client_id: str) -> tuple[bool, dict | None]:
         """Check in-memory rate limit with info dict.
@@ -156,17 +190,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             Tuple of (is_limited: bool, info: dict or None)
         """
         now = time.time()
+        self._sweep_and_bound(now)
         window = self._windows[client_id]
         # Remove entries older than 60s
-        self._windows[client_id] = [t for t in window if now - t < 60]
+        self._windows[client_id] = [t for t in window if now - t < _WINDOW_SECONDS]
         window = self._windows[client_id]
 
         if len(window) >= self.rpm:
             return True, {
                 "limit": self.rpm,
                 "remaining": 0,
-                "reset": int(now + 60),
-                "retry_after": 60,
+                "reset": int(now + _WINDOW_SECONDS),
+                "retry_after": _WINDOW_SECONDS,
             }
 
         # Burst check: more than `burst` requests in last 2s
@@ -184,7 +219,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return False, {
             "limit": self.rpm,
             "remaining": max(0, remaining - 1),
-            "reset": int(now + 60),
+            "reset": int(now + _WINDOW_SECONDS),
             "retry_after": 0,
         }
 

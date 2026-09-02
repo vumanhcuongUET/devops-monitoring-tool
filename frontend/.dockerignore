@@ -4,7 +4,12 @@ dist
 .gitignore
 *.log
 coverage
-test
-src/test
 Dockerfile
 .dockerignore
+
+# NOTE: do NOT exclude src/test here. `npm run build` runs `tsc -b` over all
+# of src/**, and src/test/setup.ts carries the `@testing-library/jest-dom/
+# vitest` type augmentation the *.test.tsx files depend on — without it the
+# build fails with "Property 'toBeInTheDocument' does not exist on type
+# 'Assertion'" (Phase 16). Test files never reach the runtime image: the prod
+# stage copies /app/dist only.

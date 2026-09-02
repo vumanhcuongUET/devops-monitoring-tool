@@ -1,8 +1,6 @@
 package devops.resources
 
-import future.keywords.contains
-import future.keywords.if
-import future.keywords.every
+import future.keywords
 
 # Resource protection policies
 

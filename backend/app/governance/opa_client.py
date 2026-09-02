@@ -130,7 +130,7 @@ class OPAClient:
             timeout: Request timeout in seconds
             enable_cache: Whether to cache policy decisions
         """
-        self.opa_url = opa_url or getattr(settings, "OPA_URL", "http://localhost:8181")
+        self.opa_url = opa_url or settings.OPA_URL
         self.timeout = timeout
         self.enable_cache = enable_cache
         self._cache: dict[str, tuple[datetime, PolicyEvaluationResult]] = {}

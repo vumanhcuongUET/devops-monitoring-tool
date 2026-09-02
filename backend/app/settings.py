@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     # Phase 12 Sprint 3: OPA enforcement (default off — evaluation API only).
     # When true and OPA is reachable, execute_action denies on OPA DENY.
     OPA_ENFORCE: bool = False
+    # Phase 16 P1-9: where the OPA server actually lives. The client used a
+    # getattr() fallback to localhost because this setting didn't exist, so
+    # an in-cluster deployment could never reach the opa Service.
+    OPA_URL: str = "http://localhost:8181"
 
     # Approvals integrity (Phase 12 S6): allow the creator to approve their own action.
     # Default False everywhere; flip only in dev where the creator and approver are

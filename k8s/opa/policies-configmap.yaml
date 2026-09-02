@@ -1,0 +1,396 @@
+---
+# OPA policy bundle — the REAL policies from policies/opa/*.rego, synced by
+# scripts/sync-opa-policies.sh. Phase 16 P1-9: this ConfigMap held only an
+# `allow := true` placeholder, so the deployment evaluated nothing.
+# GENERATED FILE — edit policies/opa/*.rego and re-run the script.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-policies
+  namespace: opa
+  labels:
+    app: opa
+data:
+  actions.rego: |
+    package devops.actions
+
+    import future.keywords
+
+    # Phase 16 P1-9: the engine's OPA input now sends the full action shape
+    # (risk_level, status, parsed_params, command_type, resource_type/name,
+    # labels, context, title) — every rule below used to be undefined against
+    # the old {"command", "id"} input, so allow defaulted to false and turning
+    # on OPA_ENFORCE denied everything.
+    #
+    # Structure:
+    #   violations  — every reason the action must not run (consumed by
+    #                 opa_client via /v1/data/devops/actions/violations)
+    #   allow       — the decision: base preconditions AND no violations.
+    #                 (The old deny[msg] sets were dead letters: nothing read
+    #                 them and they never influenced `allow`.)
+
+    default allow := false
+
+    # Base preconditions (independent of deny rules)
+    preconditions_allow if {
+        input.action.risk_level == "safe"
+        is_read_only_action(input.action.parsed_params)
+    }
+
+    preconditions_allow if {
+        input.environment != "production"
+        input.action.status == "approved"
+    }
+
+    preconditions_allow if {
+        input.environment == "production"
+        input.action.status == "approved"
+        input.action.risk_level in ["safe", "low"]
+    }
+
+    # The decision: preconditions hold AND no policy violation applies.
+    allow if {
+        preconditions_allow
+        count(violations) == 0
+    }
+
+    # Business hours restriction for production
+    violations contains violation if {
+        input.environment == "production"
+        is_business_hour(input.timestamp)
+        input.action.risk_level in ["high", "critical"]
+        not has_override(input.action)
+        violation := {
+            "policy_id": "production-business-hours",
+            "description": sprintf("High-risk actions not allowed during business hours: %s", [object.get(input.action, "title", "action")]),
+            "severity": "high",
+        }
+    }
+
+    # Protect production databases
+    violations contains violation if {
+        input.environment == "production"
+        is_database_action(input.action)
+        is_destructive_action(input.action)
+        violation := {
+            "policy_id": "production-database",
+            "description": "Production database destructive actions are forbidden",
+            "severity": "critical",
+        }
+    }
+
+    # Protect namespace deletions
+    violations contains violation if {
+        input.action.command_type == "kubectl"
+        input.action.parsed_params.action == "delete"
+        input.action.parsed_params.resource_type == "namespace"
+        violation := {
+            "policy_id": "namespace-deletion",
+            "description": "Namespace deletion is forbidden",
+            "severity": "critical",
+        }
+    }
+
+    # Protect critical resources
+    violations contains violation if {
+        is_critical_resource(input.action)
+        is_destructive_action(input.action)
+        not has_override(input.action)
+        violation := {
+            "policy_id": "critical-resource",
+            "description": sprintf("Action forbidden on critical resource: %s", [object.get(input.action, "resource_name", "unknown")]),
+            "severity": "high",
+        }
+    }
+
+    # Helper functions
+
+    is_read_only_action(params) if {
+        params.action in ["get", "describe", "logs", "top", "list"]
+    }
+
+    is_business_hour(timestamp) if {
+        # OPA has no time.hour builtin — time.clock(ns) returns [h, m, s].
+        ns := time.parse_rfc3339_ns(timestamp)
+        clock := time.clock(ns)
+        hour := clock[0]
+        day := time.weekday(ns)
+        hour >= 9
+        hour <= 17
+        # time.weekday() returns day NAMES ("Monday"..), never numbers.
+        day != "Saturday"
+        day != "Sunday"
+    }
+
+    forbidden_action(action) if {
+        is_destructive_action(action)
+        action.risk_level == "critical"
+    }
+
+    is_destructive_action(action) if {
+        action.command_type == "kubectl"
+        action.parsed_params.action in ["delete", "drain", "cordon"]
+    }
+
+    is_destructive_action(action) if {
+        action.command_type == "helm"
+        action.parsed_params.action == "uninstall"
+    }
+
+    is_database_action(action) if {
+        action.resource_type == "database"
+    }
+
+    is_database_action(action) if {
+        name := object.get(action, "resource_name", "")
+        is_string(name)
+        contains(name, "db")
+    }
+
+    is_database_action(action) if {
+        name := object.get(action, "resource_name", "")
+        is_string(name)
+        contains(name, "postgres")
+    }
+
+    is_database_action(action) if {
+        name := object.get(action, "resource_name", "")
+        is_string(name)
+        contains(name, "mysql")
+    }
+
+    is_critical_resource(action) if {
+        action.environment == "production"
+        object.get(action, "labels", {})["critical"] == "true"
+    }
+
+    is_critical_resource(action) if {
+        action.environment == "production"
+        action.resource_type in ["database", "storage", "statefulset"]
+    }
+
+    has_override(action) if {
+        action.context.override_reason
+    }
+
+    has_override(action) if {
+        action.context.emergency_override == true
+    }
+  resources.rego: |
+    package devops.resources
+
+    import future.keywords
+
+    # Resource protection policies
+
+    deny[msg] if {
+        is_production(input.action)
+        is_statefulset_action(input.action)
+        is_destructive(input.action)
+        not has_approval(input.action)
+        msg := "StatefulSet destructive actions require explicit approval in production"
+    }
+
+    deny[msg] if {
+        is_production(input.action)
+        is_pvc_action(input.action)
+        input.action.parsed_params.action == "delete"
+        msg := "PVC deletion is forbidden in production"
+    }
+
+    deny[msg] if {
+        is_production(input.action)
+        is_configmap_action(input.action)
+        input.action.resource_name == "core-config"
+        is_destructive(input.action)
+        msg := "Core configmap modification requires additional approval"
+    }
+
+    deny[msg] if {
+        is_production(input.action)
+        is_secret_action(input.action)
+        not has_approval(input.action)
+        msg := "Secret actions in production require approval"
+    }
+
+    deny[msg] if {
+        is_production(input.action)
+        is_ingress_action(input.action)
+        input.action.resource_name == "main-ingress"
+        is_destructive(input.action)
+        msg := "Main ingress modification is restricted in production"
+    }
+
+    # Helper functions
+
+    is_production(action) if {
+        action.environment == "production"
+    }
+
+    is_statefulset_action(action) if {
+        action.resource_type == "statefulset"
+    }
+
+    is_statefulset_action(action) if {
+        action.resource_type == "statefulsets"
+    }
+
+    is_pvc_action(action) if {
+        action.resource_type == "persistentvolumeclaim"
+    }
+
+    is_pvc_action(action) if {
+        action.resource_type == "pvc"
+    }
+
+    is_configmap_action(action) if {
+        action.resource_type == "configmap"
+    }
+
+    is_secret_action(action) if {
+        action.resource_type == "secret"
+    }
+
+    is_ingress_action(action) if {
+        action.resource_type == "ingress"
+    }
+
+    is_destructive(action) if {
+        action.parsed_params.action in ["delete", "remove", "uninstall"]
+    }
+
+    has_approval(action) if {
+        action.status == "approved"
+        action.approved_by
+        not action.auto_approved
+    }
+  time_windows.rego: |
+    package devops.time_windows
+
+    import future.keywords
+
+    # Time-based policy enforcement
+
+    deny[msg] if {
+        is_production(input.action)
+        is_blackout_period(input.timestamp)
+        not is_emergency(input.action)
+        msg := "Actions are blocked during blackout period"
+    }
+
+    deny[msg] if {
+        is_production(input.action)
+        is_maintenance_window(input.timestamp) == false
+        is_destructive_action(input.action)
+        is_risky_action(input.action)
+        not has_approval(input.action)
+        msg := "High-risk destructive actions outside maintenance window require approval"
+    }
+
+    # Allow routine maintenance during maintenance window
+    allow if {
+        is_production(input.action)
+        is_maintenance_window(input.timestamp)
+        is_maintenance_action(input.action)
+        not is_destructive_action(input.action)
+    }
+
+    # Helper functions
+
+    is_blackout_period(timestamp) if {
+        # Blackout during critical business periods
+        # Example: End of month closing (days 28-31). OPA has no time.day /
+        # time.month builtins — time.date(ns) returns [year, month, day] with
+        # numeric month (Phase 16 P1-9: the old builtins don't exist, the module
+        # could never compile).
+        date := time.date(time.parse_rfc3339_ns(timestamp))
+        day := date[2]
+        month := date[1]
+        day >= 28
+        day <= 31
+        month in [3, 6, 9, 12]  # Quarter ends
+    }
+
+    is_maintenance_window(timestamp) if {
+        # Default maintenance window: 10 PM - 6 AM daily. Two rules because
+        # "hour >= 22 AND hour <= 6" is unsatisfiable — the window crosses
+        # midnight (Phase 16 P1-9).
+        clock := time.clock(time.parse_rfc3339_ns(timestamp))
+        hour := clock[0]
+        hour >= 22
+    }
+
+    is_maintenance_window(timestamp) if {
+        clock := time.clock(time.parse_rfc3339_ns(timestamp))
+        hour := clock[0]
+        hour < 6
+    }
+
+    is_maintenance_window(timestamp) if {
+        # Weekend maintenance window. time.weekday() returns day NAMES, so the
+        # old "day in [6, 0]" never matched (Phase 16 P1-9).
+        day := time.weekday(timestamp)
+        day in ["Saturday", "Sunday"]
+    }
+
+    is_production(action) if {
+        action.environment == "production"
+    }
+
+    is_destructive_action(action) if {
+        action.parsed_params.action in ["delete", "drain", "cordon", "uninstall"]
+    }
+
+    is_risky_action(action) if {
+        action.risk_level in ["high", "critical"]
+    }
+
+    is_maintenance_action(action) if {
+        action.command_type == "kubectl"
+        action.parsed_params.action in ["scale", "rollout", "apply"]
+    }
+
+    is_emergency(action) if {
+        action.context.emergency == true
+    }
+
+    has_approval(action) if {
+        action.status == "approved"
+        action.approved_by
+    }
+  compliance.rego: |
+    package devops.compliance
+
+    import future.keywords
+
+    # Phase 16 P1-9: opa_client.check_compliance queries
+    # /v1/data/devops/compliance/status — no rule defined it, so the call always
+    # returned {} and compliance reporting read as "unknown". This reports the
+    # time-window posture (blackout / maintenance window) for the environment
+    # being checked. Cross-package refs use the fully qualified data paths.
+
+    status := {
+        "environment": input.environment,
+        "project": input.project,
+        "blackout_period": blackout,
+        "maintenance_window": maintenance,
+        "restricted": restricted,
+        "checked_at": input.timestamp,
+    }
+
+    default blackout := false
+
+    blackout if {
+        data.devops.time_windows.is_blackout_period(input.timestamp)
+    }
+
+    default maintenance := false
+
+    maintenance if {
+        data.devops.time_windows.is_maintenance_window(input.timestamp)
+    }
+
+    # A blackout period restricts everything non-emergency, regardless of window.
+    restricted if blackout
+
+    default restricted := false

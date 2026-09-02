@@ -23,7 +23,12 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }))
 
-import toast from 'react-hot-toast'
+import toast, { toast as namedToast } from 'react-hot-toast'
+
+// The card renders errors via the mutation's onError, which uses the
+// NAMED toast export from useActions; the card-level default-export toast
+// stays silent (Phase 16 P1-6 removed the duplicate toast).
+const mutationToast = namedToast
 
 const makeAction = (overrides: Partial<Action> = {}): Action => ({
   id: 'act-1',
@@ -159,14 +164,20 @@ describe('ActionCard interactions', () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalled())
   })
 
-  it('approve API failure shows the card-level error toast', async () => {
+  it('approve API failure toasts once, with the server detail', async () => {
     const user = userEvent.setup()
     vi.mocked(approveAction).mockRejectedValue(new Error('denied'))
 
     renderCard(makeAction({ status: 'pending' }))
     await user.click(screen.getByRole('button', { name: /Approve/i }))
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to approve action'))
+    // Phase 16 P1-6: failures reject through the mutation, whose onError
+    // toasts with the server detail — the card no longer adds a second,
+    // detail-free toast.
+    await waitFor(() =>
+      expect(mutationToast.error).toHaveBeenCalledWith('Failed to approve action: denied')
+    )
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('reject requires a reason before confirming', async () => {
@@ -232,7 +243,7 @@ describe('ActionCard interactions', () => {
     )
   })
 
-  it('execute API failure shows the card-level error toast', async () => {
+  it('execute API failure toasts once, with the server detail', async () => {
     const user = userEvent.setup()
     vi.mocked(executeAction).mockRejectedValue(new Error('boom'))
 
@@ -240,6 +251,9 @@ describe('ActionCard interactions', () => {
     await user.click(screen.getByRole('button', { name: /Execute Action/i }))
     await user.click(screen.getByRole('button', { name: /Execute for real/i }))
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to execute action'))
+    await waitFor(() =>
+      expect(mutationToast.error).toHaveBeenCalledWith('Failed to execute action: boom')
+    )
+    expect(toast.error).not.toHaveBeenCalled()
   })
 })

@@ -298,6 +298,34 @@ async def lifespan(app: FastAPI):
         fanout_task = asyncio.create_task(subscribe_loop(ws_manager.broadcast_local))
         logger.info("Phase 12 H1: WS fanout subscriber started (Redis pub/sub)")
 
+    # Phase 16 P1-7: push live overview snapshots to connected dashboards.
+    # Nothing ever produced "overview_update", so the frontend (which stops
+    # polling once the socket is up) froze on its mount-time data. The loop
+    # only collects when someone is actually watching.
+    async def _overview_push_loop(interval: float = 15.0) -> None:
+        from app.api.v1.overview import collect_overview
+
+        while True:
+            try:
+                if ws_manager.active:
+                    overview = await collect_overview(
+                        app.state.es_client,
+                        app.state.prometheus_client,
+                        app.state.k8s_client,
+                        app.state.apm_client,
+                        getattr(app.state, "alert_state", {}),
+                    )
+                    await ws_manager.broadcast(
+                        {"type": "overview_update", "data": overview.model_dump()}
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("Overview WS push failed: %s", e)
+            await asyncio.sleep(interval)
+
+    overview_push_task = asyncio.create_task(_overview_push_loop())
+
     # Phase 2: Initialize Action Engine
     # Phase 12 B3: inject the real k8s client so impact estimation can use it.
     action_engine = get_action_engine(k8s_client=app.state.k8s_client)
@@ -433,6 +461,7 @@ async def lifespan(app: FastAPI):
     slo_task.cancel()
     if fanout_task is not None:
         fanout_task.cancel()
+    overview_push_task.cancel()
 
     # Close database engine if it was initialized
     if getattr(app.state, 'db_enabled', False):

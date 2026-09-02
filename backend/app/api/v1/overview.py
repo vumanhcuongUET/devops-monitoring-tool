@@ -15,13 +15,17 @@ from app.models.overview import (
 router = APIRouter(tags=["overview"])
 
 
-@router.get("/overview")
-async def get_overview(request: Request):
-    es = request.app.state.es_client
-    prom = request.app.state.prometheus_client
-    k8s = request.app.state.k8s_client
-    apm = request.app.state.apm_client
-
+async def collect_overview(
+    es,
+    prom,
+    k8s,
+    apm,
+    alert_state: dict | None = None,
+) -> OverviewResponse:
+    """Gather the unified overview payload. Shared by GET /overview and the
+    WebSocket push loop (Phase 16 P1-7: nothing ever broadcast
+    "overview_update", so a connected dashboard froze on its mount-time
+    snapshot)."""
     results = await asyncio.gather(
         _get_k8s_health(k8s),
         _get_es_health(es),
@@ -35,7 +39,7 @@ async def get_overview(request: Request):
     apm_health = results[2] if not isinstance(results[2], Exception) else ApmHealth(status=HealthStatus.DOWN)
     infra_health = results[3] if not isinstance(results[3], Exception) else InfrastructureHealth(status=HealthStatus.DOWN)
 
-    active_alerts = request.app.state.alert_state if hasattr(request.app.state, 'alert_state') else {}
+    active_alerts = alert_state or {}
 
     return OverviewResponse(
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -48,6 +52,18 @@ async def get_overview(request: Request):
         active_alerts=sum(1 for s in active_alerts.values() if s.get("status") == "firing") if isinstance(active_alerts, dict) else 0,
         recent_alerts=[],
     )
+
+
+@router.get("/overview")
+async def get_overview(request: Request):
+    es = request.app.state.es_client
+    prom = request.app.state.prometheus_client
+    k8s = request.app.state.k8s_client
+    apm = request.app.state.apm_client
+
+    active_alerts = request.app.state.alert_state if hasattr(request.app.state, 'alert_state') else {}
+
+    return await collect_overview(es, prom, k8s, apm, active_alerts)
 
 
 async def _get_k8s_health(k8s) -> KubernetesHealth:

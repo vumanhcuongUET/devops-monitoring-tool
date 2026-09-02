@@ -87,6 +87,37 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshInFlight;
 }
 
+// ============================================
+// PROACTIVE REFRESH (Phase 16 P1-8)
+// ============================================
+// The refresh contract needs a still-valid token, but nothing ever refreshed
+// before expiry: the request interceptor only attaches the (now expired)
+// token, the reactive 401 path re-sent that same expired token, and every
+// session hard-logged-out at the 15-minute TTL even during active use.
+// Schedule a refresh 30s before expiry instead.
+const REFRESH_MARGIN_MS = 30_000;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleProactiveRefresh(): void {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  const info = tokenManager.getTokenInfo();
+  if (!info) return;
+
+  const delay = info.expiresAt - Date.now() - REFRESH_MARGIN_MS;
+  if (delay <= 0) {
+    // Already inside the margin (or expired): refresh now if still valid.
+    if (tokenManager.isTokenValid()) void refreshAccessToken();
+    return;
+  }
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void refreshAccessToken();
+  }, delay);
+}
+
 async function _doRefresh(): Promise<string | null> {
   try {
     // Bearer-based refresh contract: the backend reads the Authorization
@@ -104,12 +135,16 @@ async function _doRefresh(): Promise<string | null> {
       tokenType: 'Bearer',
       username: tokenManager.getUsername() ?? undefined,
     });
+    scheduleProactiveRefresh();
     return access_token;
   } catch (error) {
     console.error('Token refresh failed:', error);
     return null;
   }
 }
+
+// A restored session (page reload) also needs its timer re-armed.
+scheduleProactiveRefresh();
 
 // ============================================
 // EXPORTS
@@ -134,6 +169,10 @@ export async function logout(): Promise<void> {
     }
   } catch {
     // ignore — local clear happens either way
+  }
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
   }
   tokenManager.clear();
 }

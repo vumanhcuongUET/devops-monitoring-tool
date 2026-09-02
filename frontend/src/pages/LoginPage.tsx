@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { api, tokenManager } from '../api/client'
+import { api, tokenManager, scheduleProactiveRefresh } from '../api/client'
 
 /**
  * Phase 13 per-user login. On success the backend token (sub=<username>)
@@ -25,6 +25,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
         tokenType: 'Bearer',
         username,
       })
+      scheduleProactiveRefresh()
       onLogin()
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status

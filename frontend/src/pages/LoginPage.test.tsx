@@ -6,6 +6,7 @@ const post = vi.fn();
 vi.mock('../api/client', () => ({
   api: { post: (...args: unknown[]) => post(...args) },
   tokenManager: { setToken: vi.fn() },
+  scheduleProactiveRefresh: vi.fn(),
 }));
 
 import LoginPage from './LoginPage';

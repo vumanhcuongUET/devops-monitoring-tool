@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useQuery } from '@tanstack/react-query';
 import { fetchOverview } from '../api/overview';
@@ -10,7 +11,11 @@ import { ApiDownEmptyState } from '../components/common';
 export function OverviewPage() {
   const { data: wsData, connected } = useWebSocket();
 
-  // Use TanStack Query for better error handling
+  // Always poll as the safety net (slow); live updates arrive over the
+  // WebSocket push and win when fresher. Phase 16 P1-7: polling used to be
+  // disabled entirely once the socket connected, but nothing on the backend
+  // ever sent "overview_update" — the page froze on its mount-time snapshot
+  // under a "Live" badge.
   const {
     data: pollingData,
     isLoading,
@@ -19,7 +24,7 @@ export function OverviewPage() {
   } = useQuery({
     queryKey: ['overview'],
     queryFn: fetchOverview,
-    enabled: !connected,
+    refetchInterval: connected ? 60000 : 10000,
     retry: 2,
     retryDelay: 1000,
   });
@@ -32,7 +37,16 @@ export function OverviewPage() {
     retry: 1,
   });
 
-  const data = wsData || pollingData;
+  // Whichever source is fresher wins — a dead WS push loop degrades to the
+  // poll, a fast WS event beats the stale poll snapshot.
+  const data = useMemo(() => {
+    if (pollingData && wsData) {
+      return new Date(wsData.timestamp) >= new Date(pollingData.timestamp)
+        ? wsData
+        : pollingData;
+    }
+    return wsData ?? pollingData;
+  }, [pollingData, wsData]);
 
   if (isLoading && !data) {
     return <LoadingSkeleton rows={4} />;

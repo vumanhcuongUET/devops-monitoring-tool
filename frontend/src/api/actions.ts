@@ -84,6 +84,13 @@ export interface ActionListResponse {
   actions: Action[];
 }
 
+/** Backend response envelope for single-action operations (get/approve/reject/execute). */
+interface ActionResponse {
+  success: boolean;
+  action: Action | null;
+  error: string | null;
+}
+
 // API Functions
 export async function fetchActions(
   project?: string,
@@ -99,42 +106,45 @@ export async function fetchActions(
   return data;
 }
 
+/**
+ * Backend wraps every single-action response in {success, action, error}
+ * and returns HTTP 200 even when the engine rejected the operation — unwrap
+ * here and turn failure into a rejection so react-query error paths fire
+ * (Phase 16 P1-6: callers used to receive the wrapper itself, so dry-run
+ * results read `undefined`, success/failure toasts were dead code, and
+ * engine failures vanished).
+ */
+async function unwrapAction(promise: Promise<{ data: ActionResponse }>): Promise<Action> {
+  const { data } = await promise;
+  if (!data.success || !data.action) {
+    throw new Error(data.error || 'Action operation failed');
+  }
+  return data.action;
+}
+
 export async function fetchAction(actionId: string): Promise<Action> {
-  const { data } = await api.get<Action>(`/api/v1/actions/${actionId}`);
-  return data;
+  return unwrapAction(api.get(`/api/v1/actions/${actionId}`));
 }
 
 export async function approveAction(
   actionId: string,
   request: ApproveActionRequest,
 ): Promise<Action> {
-  const { data } = await api.post<Action>(
-    `/api/v1/actions/${actionId}/approve`,
-    request,
-  );
-  return data;
+  return unwrapAction(api.post(`/api/v1/actions/${actionId}/approve`, request));
 }
 
 export async function rejectAction(
   actionId: string,
   request: RejectActionRequest,
 ): Promise<Action> {
-  const { data } = await api.post<Action>(
-    `/api/v1/actions/${actionId}/reject`,
-    request,
-  );
-  return data;
+  return unwrapAction(api.post(`/api/v1/actions/${actionId}/reject`, request));
 }
 
 export async function executeAction(
   actionId: string,
   request: ExecuteActionRequest,
 ): Promise<Action> {
-  const { data } = await api.post<Action>(
-    `/api/v1/actions/${actionId}/execute`,
-    request,
-  );
-  return data;
+  return unwrapAction(api.post(`/api/v1/actions/${actionId}/execute`, request));
 }
 
 export async function getActionStats(): Promise<{

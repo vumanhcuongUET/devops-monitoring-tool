@@ -16,9 +16,11 @@ vi.mock('axios', () => ({
   }
 }))
 
-// Mock tokenManager so logout()'s clear can be observed.
+// Mock tokenManager so logout()'s clear can be observed. getTokenInfo
+// (returning null = signed out) is required by the proactive-refresh
+// scheduler that arms itself at module load.
 vi.mock('../auth/tokenManager', () => ({
-  getTokenManager: vi.fn(() => ({ clear: vi.fn() })),
+  getTokenManager: vi.fn(() => ({ clear: vi.fn(), getTokenInfo: () => null })),
 }))
 
 describe('API Client', () => {

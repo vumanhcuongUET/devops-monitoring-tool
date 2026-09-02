@@ -120,7 +120,9 @@ export function useExecuteAction() {
 
 // Combined hook for action management
 export function useActionManagement(actionId: string) {
-  const { data: action, isLoading: isLoadingAction } = useAction(actionId);
+  // No per-id query here: ActionCard renders from the list item it already
+  // has, and fetching per card was an N+1 storm (up to 100 extra GETs per
+  // page view). Mutations invalidate the list/detail caches instead.
   const approveMutation = useApproveAction();
   const rejectMutation = useRejectAction();
   const executeMutation = useExecuteAction();
@@ -138,8 +140,6 @@ export function useActionManagement(actionId: string) {
   };
 
   return {
-    action,
-    isLoadingAction,
     approveAction: handleApprove,
     rejectAction: handleReject,
     executeAction: handleExecute,

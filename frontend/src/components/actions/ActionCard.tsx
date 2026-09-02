@@ -49,7 +49,7 @@ export function ActionCard({ action, currentUser, onRefresh }: ActionCardProps) 
       setComment('');
       if (onRefresh) onRefresh();
     } catch {
-      toast.error('Failed to approve action');
+      // Failure already toasted by the mutation's onError (with server detail)
     }
   };
 
@@ -67,7 +67,7 @@ export function ActionCard({ action, currentUser, onRefresh }: ActionCardProps) 
       setShowRejectForm(false);
       if (onRefresh) onRefresh();
     } catch {
-      toast.error('Failed to reject action');
+      // Failure already toasted by the mutation's onError (with server detail)
     }
   };
 
@@ -95,7 +95,7 @@ export function ActionCard({ action, currentUser, onRefresh }: ActionCardProps) 
       setShowExecConfirm(false);
       if (onRefresh) onRefresh();
     } catch {
-      toast.error('Failed to execute action');
+      // Failure already toasted by the mutation's onError (with server detail)
     }
   };
 

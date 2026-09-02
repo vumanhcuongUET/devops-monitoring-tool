@@ -102,6 +102,7 @@ async function _doRefresh(): Promise<string | null> {
       accessToken: access_token,
       expiresAt: Date.now() + (expires_in || 900) * 1000,
       tokenType: 'Bearer',
+      username: tokenManager.getUsername() ?? undefined,
     });
     return access_token;
   } catch (error) {

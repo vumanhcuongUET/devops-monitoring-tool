@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { usePolling } from '../hooks/usePolling';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { fetchLogs } from '../api/logs';
 import { DataTable, type Column } from '../components/common/DataTable';
 import { TimeRangePicker } from '../components/common/TimeRangePicker';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
+import { ErrorState } from '../components/common/ErrorState';
 import type { LogQueryParams, LogsResponse, TimeRange } from '../types';
 
 export function LogsPage() {
   const [params, setParams] = useState<LogQueryParams>({ page: 1, size: 50 });
   const [timeRange, setTimeRange] = useState<TimeRange>({ start: 'now-1h', end: 'now', label: '1h' });
   const [filters, setFilters] = useState({ q: '', level: '', service: '' });
+  const debouncedFilters = useDebouncedValue(filters);
 
-  const { data, isLoading } = usePolling<LogsResponse>(
-    ['logs', JSON.stringify(params), JSON.stringify(timeRange)],
-    () => fetchLogs({ ...params, ...filters, start: timeRange.start, end: timeRange.end }),
+  const { data, isLoading, isError, refetch } = usePolling<LogsResponse>(
+    ['logs', JSON.stringify(params), JSON.stringify(timeRange), JSON.stringify(debouncedFilters)],
+    () => fetchLogs({ ...params, ...debouncedFilters, start: timeRange.start, end: timeRange.end }),
   );
 
   const columns: Column<Record<string, unknown>>[] = [
@@ -44,11 +47,13 @@ export function LogsPage() {
         <input
           type="text"
           placeholder="Search..."
+          aria-label="Search log messages"
           value={filters.q}
           onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
           className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
         />
         <select
+          aria-label="Filter by log level"
           value={filters.level}
           onChange={(e) => setFilters((f) => ({ ...f, level: e.target.value }))}
           className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm"
@@ -59,7 +64,9 @@ export function LogsPage() {
           <option value="INFO">INFO</option>
         </select>
       </div>
-      {isLoading ? <LoadingSkeleton /> : (
+      {isLoading ? <LoadingSkeleton /> : isError ? (
+        <ErrorState message="Failed to load logs" onRetry={() => refetch()} />
+      ) : (
         <>
           <DataTable columns={columns} data={(data?.items || []) as unknown as Record<string, unknown>[]} />
           {data && (
@@ -69,7 +76,7 @@ export function LogsPage() {
                 <button
                   disabled={data.page <= 1}
                   onClick={() => setParams((p) => ({ ...p, page: p.page! - 1 }))}
-                  className="rounded px-3 py-1 hover:bg-white/5 disabled:opacity-30"
+                  className="rounded px-3 py-2 hover:bg-white/5 disabled:opacity-30"
                 >
                   Previous
                 </button>
@@ -77,7 +84,7 @@ export function LogsPage() {
                 <button
                   disabled={data.page * data.size >= data.total}
                   onClick={() => setParams((p) => ({ ...p, page: p.page! + 1 }))}
-                  className="rounded px-3 py-1 hover:bg-white/5 disabled:opacity-30"
+                  className="rounded px-3 py-2 hover:bg-white/5 disabled:opacity-30"
                 >
                   Next
                 </button>

@@ -5,13 +5,16 @@
 import { useActions, useActionStats, type ActionStatus } from '../../hooks/useActions';
 import { ActionCard } from './ActionCard';
 import { useState } from 'react';
+import { getTokenManager } from '../../auth/tokenManager';
 
 interface ActionListProps {
   project?: string;
+  /** Override the signed-in identity (tests, previews). Defaults to the session username. */
   currentUser?: string;
 }
 
-export function ActionList({ project, currentUser = 'user' }: ActionListProps) {
+export function ActionList({ project, currentUser }: ActionListProps) {
+  const user = currentUser ?? getTokenManager().getUsername() ?? 'unknown';
   const [statusFilter, setStatusFilter] = useState<ActionStatus | 'all'>('all');
   const { data: actions, isLoading, error } = useActions(
     project,
@@ -135,19 +138,10 @@ export function ActionList({ project, currentUser = 'user' }: ActionListProps) {
           <ActionCard
             key={action.id}
             action={action}
-            currentUser={currentUser}
+            currentUser={user}
           />
         ))}
       </div>
-
-      {/* Load More */}
-      {actions.actions.length >= 100 && (
-        <div className="text-center">
-          <button className="text-[var(--color-accent)] hover:underline text-sm">
-            Load more actions...
-          </button>
-        </div>
-      )}
     </div>
   );
 }

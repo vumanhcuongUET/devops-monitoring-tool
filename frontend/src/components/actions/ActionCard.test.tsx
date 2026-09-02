@@ -184,19 +184,51 @@ describe('ActionCard interactions', () => {
 
     await user.click(confirm)
     await waitFor(() =>
-      expect(rejectAction).toHaveBeenCalledWith('act-1', { rejected_by: 'user', reason: 'wrong target' })
+      expect(rejectAction).toHaveBeenCalledWith('act-1', { rejected_by: 'unknown', reason: 'wrong target' })
     )
   })
 
-  it('execute calls the API with dry_run=false', async () => {
+  it('execute opens a confirmation and calls the API with dry_run=false', async () => {
     const user = userEvent.setup()
     vi.mocked(executeAction).mockResolvedValue(makeAction({ status: 'executed' }))
 
     renderCard(makeAction({ status: 'approved' }), { currentUser: 'alice' })
     await user.click(screen.getByRole('button', { name: /Execute Action/i }))
 
+    const dialog = screen.getByRole('dialog', { name: /Confirm execution/i })
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Execute for real/i })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: /Execute for real/i }))
     await waitFor(() =>
       expect(executeAction).toHaveBeenCalledWith('act-1', { executed_by: 'alice', dry_run: false })
+    )
+  })
+
+  it('high-risk execute requires a passing dry run before the real run', async () => {
+    const user = userEvent.setup()
+    vi.mocked(executeAction)
+      .mockResolvedValueOnce(makeAction({
+        status: 'approved',
+        execution_result: { success: true, exit_code: 0, stdout: 'dry-run ok (no changes)', timestamp: '2026-08-30T00:00:00Z' },
+      }))
+      .mockResolvedValueOnce(makeAction({ status: 'executed' }))
+
+    renderCard(makeAction({ status: 'approved', risk_level: 'critical' }), { currentUser: 'alice' })
+    await user.click(screen.getByRole('button', { name: /Execute Action/i }))
+
+    const realRun = screen.getByRole('button', { name: /Execute for real/i })
+    expect(realRun).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /Run dry run first/i }))
+    await waitFor(() =>
+      expect(executeAction).toHaveBeenCalledWith('act-1', { executed_by: 'alice', dry_run: true })
+    )
+    await waitFor(() => expect(realRun).toBeEnabled())
+
+    await user.click(realRun)
+    await waitFor(() =>
+      expect(executeAction).toHaveBeenLastCalledWith('act-1', { executed_by: 'alice', dry_run: false })
     )
   })
 
@@ -206,6 +238,7 @@ describe('ActionCard interactions', () => {
 
     renderCard(makeAction({ status: 'approved' }))
     await user.click(screen.getByRole('button', { name: /Execute Action/i }))
+    await user.click(screen.getByRole('button', { name: /Execute for real/i }))
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to execute action'))
   })

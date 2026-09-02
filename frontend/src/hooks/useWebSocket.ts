@@ -143,11 +143,14 @@ export function useAlertNotifications(onAlert?: AlertHandler) {
     const alertEvent = msg.data as AlertEvent;
     const isFiring = msg.type === 'alert_fired';
 
+    // Dark card + severity border: white-on-green/red toasts failed contrast
+    // (~1.9:1 / ~3.8:1) exactly when urgency peaks.
     toast(`${isFiring ? '🔴' : '🟢'} ${alertEvent.rule_name}: ${alertEvent.message}`, {
       duration: isFiring ? 8000 : 4000,
       style: {
-        background: isFiring ? 'var(--color-down)' : 'var(--color-healthy)',
-        color: '#fff',
+        background: 'var(--color-bg-card)',
+        color: 'var(--color-text-primary)',
+        border: `1px solid ${isFiring ? 'var(--color-down)' : 'var(--color-healthy)'}`,
       },
     });
 

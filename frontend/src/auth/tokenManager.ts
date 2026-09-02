@@ -10,6 +10,8 @@ export interface TokenInfo {
   refreshToken?: string;
   expiresAt: number; // Unix timestamp (ms)
   tokenType: 'Bearer';
+  /** Authenticated username (JWT sub) — set at login, preserved across refreshes. */
+  username?: string;
 }
 
 const STORAGE_KEY = 'token_info';
@@ -47,6 +49,11 @@ class TokenManager {
   /** Get current token info */
   public getTokenInfo(): TokenInfo | null {
     return this.currentToken;
+  }
+
+  /** Authenticated username for audit trails, or null when signed out */
+  public getUsername(): string | null {
+    return this.currentToken?.username ?? null;
   }
 
   /** Check if token is valid and not expired */

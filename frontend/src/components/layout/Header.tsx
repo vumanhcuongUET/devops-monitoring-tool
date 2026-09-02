@@ -1,9 +1,25 @@
 import { toast } from 'react-hot-toast';
+import { Menu } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { logout, tokenManager } from '../../api/client';
 
-export function Header() {
+const routeTitles: Record<string, string> = {
+  '/': 'Overview',
+  '/logs': 'Logs',
+  '/apm': 'APM',
+  '/slo': 'SLO',
+  '/infrastructure': 'Infrastructure',
+  '/kubernetes': 'Kubernetes',
+  '/alerts': 'Alerts',
+  '/actions': 'Actions',
+  '/governance': 'Governance',
+  '/skills': 'Skills',
+};
+
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const { connected } = useWebSocket();
+  const location = useLocation();
 
   const signedIn = Boolean(tokenManager.getTokenInfo());
 
@@ -22,9 +38,18 @@ export function Header() {
   };
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-6">
-      <div className="text-sm text-[var(--color-text-secondary)]">
-        System Overview
+    <header className="flex h-14 items-center justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 md:px-6">
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={onMenuClick}
+          aria-label="Toggle navigation"
+          className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] md:hidden"
+        >
+          <Menu size={18} />
+        </button>
+        <h2 className="text-sm text-[var(--color-text-secondary)] truncate">
+          {routeTitles[location.pathname] ?? 'DevOps Monitor'}
+        </h2>
       </div>
       <div className="flex items-center gap-4 text-xs">
         <div className="flex items-center gap-2">
@@ -40,7 +65,7 @@ export function Header() {
         {signedIn && (
           <button
             onClick={handleLogout}
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+            className="rounded border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] min-h-[36px]"
           >
             Logout
           </button>

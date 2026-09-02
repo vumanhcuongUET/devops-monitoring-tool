@@ -43,3 +43,6 @@ service_account.json
 # Local artifacts
 backend/bandit-report.json
 backend/projects/smoke-project.yaml
+
+# Tool review artifacts
+.impeccable/

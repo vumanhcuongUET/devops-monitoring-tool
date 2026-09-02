@@ -7,6 +7,45 @@ import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
 import type { AlertRule, AlertEvent } from '../types';
 import toast from 'react-hot-toast';
 
+/** Edit + two-step delete: "Delete" arms the button, a second click deletes. */
+function RuleActions({ rule, onEdit, onDelete }: { rule: AlertRule; onEdit: () => void; onDelete: () => void }) {
+  const [armed, setArmed] = useState(false);
+
+  if (!armed) {
+    return (
+      <div className="flex gap-2">
+        <button onClick={onEdit} className="text-xs text-[var(--color-accent)] hover:underline min-h-[32px] px-1">Edit</button>
+        <button
+          onClick={() => setArmed(true)}
+          aria-label={`Delete rule ${rule.name}`}
+          className="text-xs text-[var(--color-down)] hover:underline min-h-[32px] px-1"
+        >
+          Delete
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-2 items-center">
+      <span className="text-xs text-[var(--color-text-secondary)]">Delete permanently?</span>
+      <button
+        onClick={onDelete}
+        autoFocus
+        className="text-xs bg-[var(--color-down)] text-white rounded px-2 py-1.5 min-h-[32px] hover:opacity-90"
+      >
+        Confirm
+      </button>
+      <button
+        onClick={() => setArmed(false)}
+        className="text-xs border border-[var(--color-border)] rounded px-2 py-1.5 min-h-[32px] text-[var(--color-text-secondary)] hover:bg-white/5"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 export function AlertsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
@@ -17,9 +56,9 @@ export function AlertsPage() {
   );
   const { data: history } = usePolling<AlertEvent[]>(['alert-history'], fetchAlertHistory);
 
-  const handleDelete = async (id: string) => {
-    await deleteAlertRule(id);
-    toast.success('Rule deleted');
+  const handleDelete = async (rule: AlertRule) => {
+    await deleteAlertRule(rule.id);
+    toast.success(`Rule "${rule.name}" deleted`);
     refetchRules();
   };
 
@@ -38,19 +77,20 @@ export function AlertsPage() {
       return <span className={`font-medium ${color}`}>{row.severity}</span>;
     }},
     { key: 'enabled', header: 'Enabled', render: (row) => (
-      <button onClick={() => handleToggle(row)} className={`rounded px-2 py-0.5 text-xs ${row.enabled ? 'bg-[var(--color-healthy)]/20 text-[var(--color-healthy)]' : 'bg-white/10 text-[var(--color-text-secondary)]'}`}>
+      <button
+        onClick={() => handleToggle(row)}
+        role="switch"
+        aria-checked={row.enabled}
+        aria-label={`${row.enabled ? 'Disable' : 'Enable'} rule ${row.name}`}
+        className={`rounded px-3 py-1.5 text-xs font-medium min-h-[32px] ${row.enabled ? 'bg-[var(--color-healthy)]/20 text-[var(--color-healthy)]' : 'bg-white/10 text-[var(--color-text-secondary)]'}`}
+      >
         {row.enabled ? 'ON' : 'OFF'}
       </button>
     )},
     {
       key: 'actions',
       header: '',
-      render: (row) => (
-        <div className="flex gap-2">
-          <button onClick={() => { setEditingRule(row); setShowForm(true); }} className="text-xs text-[var(--color-accent)] hover:underline">Edit</button>
-          <button onClick={() => handleDelete(row.id)} className="text-xs text-[var(--color-down)] hover:underline">Delete</button>
-        </div>
-      ),
+      render: (row) => <RuleActions rule={row} onEdit={() => { setEditingRule(row); setShowForm(true); }} onDelete={() => handleDelete(row)} />,
     },
   ];
 

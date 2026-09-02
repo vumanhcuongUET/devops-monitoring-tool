@@ -23,6 +23,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
         accessToken: data.access_token,
         expiresAt: Date.now() + (data.expires_in || 900) * 1000,
         tokenType: 'Bearer',
+        username,
       })
       onLogin()
     } catch (err: unknown) {

@@ -7,14 +7,18 @@ import { Clock, User, AlertTriangle, CheckCircle, XCircle, Rocket, Shield } from
 import { useActionManagement, type Action } from '../../hooks/useActions';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { getTokenManager } from '../../auth/tokenManager';
+import type { ExecutionResult } from '../../api/actions';
 
 interface ActionCardProps {
   action: Action;
+  /** Override the signed-in identity (tests, previews). Defaults to the session username. */
   currentUser?: string;
   onRefresh?: () => void;
 }
 
-export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCardProps) {
+export function ActionCard({ action, currentUser, onRefresh }: ActionCardProps) {
+  const user = currentUser ?? getTokenManager().getUsername() ?? 'unknown';
   const {
     approveAction,
     rejectAction,
@@ -27,11 +31,19 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
   const [comment, setComment] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
+  const [showExecConfirm, setShowExecConfirm] = useState(false);
+  const [dryRun, setDryRun] = useState<{
+    state: 'idle' | 'running' | 'done' | 'failed';
+    result?: ExecutionResult;
+  }>({ state: 'idle' });
+
+  // High/critical commands must prove themselves in a dry run before the real one.
+  const highRisk = action.risk_level === 'critical' || action.risk_level === 'high';
 
   const handleApprove = async () => {
     try {
       await approveAction({
-        approved_by: currentUser,
+        approved_by: user,
         comment: comment || undefined,
       });
       setComment('');
@@ -48,7 +60,7 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
     }
     try {
       await rejectAction({
-        rejected_by: currentUser,
+        rejected_by: user,
         reason: rejectReason,
       });
       setRejectReason('');
@@ -59,12 +71,28 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
     }
   };
 
+  const openExecConfirm = () => {
+    setDryRun({ state: 'idle' });
+    setShowExecConfirm(true);
+  };
+
+  const handleDryRun = async () => {
+    setDryRun({ state: 'running' });
+    try {
+      const result = await executeAction({ executed_by: user, dry_run: true });
+      setDryRun({ state: 'done', result: result.execution_result ?? undefined });
+    } catch {
+      setDryRun({ state: 'failed' });
+    }
+  };
+
   const handleExecute = async () => {
     try {
       await executeAction({
-        executed_by: currentUser,
+        executed_by: user,
         dry_run: false,
       });
+      setShowExecConfirm(false);
       if (onRefresh) onRefresh();
     } catch {
       toast.error('Failed to execute action');
@@ -124,8 +152,8 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
       </div>
 
       {/* Command */}
-      <div className="bg-black/5 rounded p-2 mb-3">
-        <code className="text-xs text-[var(--color-text-secondary)] break-all">
+      <div className="rounded bg-[var(--color-bg-primary)] border border-[var(--color-border)] p-2 mb-3">
+        <code className="font-mono text-xs text-[var(--color-text-primary)] break-all">
           {action.command}
         </code>
       </div>
@@ -266,16 +294,104 @@ export function ActionCard({ action, currentUser = 'user', onRefresh }: ActionCa
         </div>
       )}
 
-      {/* Execute Button for Approved Actions */}
-      {action.status === 'approved' && (
+      {/* Execute Confirmation for Approved Actions */}
+      {action.status === 'approved' && !showExecConfirm && (
         <button
-          onClick={handleExecute}
-          disabled={isExecuting}
-          className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 disabled:opacity-50"
+          onClick={openExecConfirm}
+          className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2"
         >
           <Rocket className="w-4 h-4" />
-          {isExecuting ? 'Executing...' : 'Execute Action'}
+          Execute Action
         </button>
+      )}
+
+      {action.status === 'approved' && showExecConfirm && (
+        <div
+          role="dialog"
+          aria-label={`Confirm execution of ${action.title}`}
+          className="mt-3 rounded border border-blue-500/30 bg-blue-500/5 p-3"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-orange-500" />
+            <span className="text-sm font-semibold">
+              {highRisk ? `${action.risk_level.toUpperCase()} RISK — dry run required` : 'Confirm execution'}
+            </span>
+          </div>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-[var(--color-text-secondary)] mb-3">
+            <dt>Project</dt>
+            <dd className="font-medium text-[var(--color-text-primary)]">{action.project}</dd>
+            <dt>Executed by</dt>
+            <dd className="font-medium text-[var(--color-text-primary)]">{user}</dd>
+            {action.estimated_impact && (
+              <>
+                <dt>Impact</dt>
+                <dd className="font-medium text-[var(--color-text-primary)]">{action.estimated_impact}</dd>
+              </>
+            )}
+          </dl>
+          <div className="rounded bg-[var(--color-bg-primary)] border border-[var(--color-border)] p-2 mb-3">
+            <code className="font-mono text-xs text-[var(--color-text-primary)] break-all">
+              {action.command}
+            </code>
+          </div>
+
+          {highRisk && (
+            <div className="mb-3">
+              {dryRun.state === 'idle' && (
+                <button
+                  onClick={handleDryRun}
+                  className="w-full rounded border border-[var(--color-border)] bg-white/5 hover:bg-white/10 text-[var(--color-text-primary)] px-3 py-2 text-sm"
+                >
+                  Run dry run first
+                </button>
+              )}
+              {dryRun.state === 'running' && (
+                <p role="status" className="text-xs text-[var(--color-text-secondary)] px-1 py-2">
+                  Running dry run…
+                </p>
+              )}
+              {dryRun.state === 'done' && (
+                <div role="status" className={`rounded border p-2 text-xs ${
+                  dryRun.result?.success
+                    ? 'border-[var(--color-healthy)]/30 bg-[var(--color-healthy)]/10 text-[var(--color-text-primary)]'
+                    : 'border-[var(--color-down)]/30 bg-[var(--color-down)]/10 text-[var(--color-text-primary)]'
+                }`}>
+                  <p className="font-semibold mb-1">
+                    {dryRun.result?.success ? 'Dry run passed' : 'Dry run failed'}
+                    {dryRun.result?.exit_code != null && ` (exit ${dryRun.result.exit_code})`}
+                  </p>
+                  {(dryRun.result?.stderr || dryRun.result?.stdout) && (
+                    <pre className="font-mono whitespace-pre-wrap max-h-32 overflow-y-auto text-[var(--color-text-secondary)]">
+                      {(dryRun.result?.stderr || dryRun.result?.stdout || '').slice(0, 500)}
+                    </pre>
+                  )}
+                </div>
+              )}
+              {dryRun.state === 'failed' && (
+                <p role="status" className="text-xs text-[var(--color-down)] px-1 py-2">
+                  Dry run could not run — fix the error and try again.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleExecute}
+              disabled={isExecuting || (highRisk && dryRun.state !== 'done')}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Rocket className="w-4 h-4" />
+              {isExecuting ? 'Executing…' : 'Execute for real'}
+            </button>
+            <button
+              onClick={() => setShowExecConfirm(false)}
+              className="flex-1 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] hover:bg-white/5 text-[var(--color-text-primary)] px-3 py-2 rounded text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

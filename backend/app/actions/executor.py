@@ -84,6 +84,37 @@ class CommandExecutor:
         },
     }
 
+    # Flags (bare names) that consume a separate value token. The subcommand
+    # scan must skip those values when locating the first positional, or
+    # "kubectl -n prod delete pod x" would find "prod" instead of "delete".
+    VALUE_FLAGS = {
+        "kubectl": {"n", "namespace", "context", "kubeconfig",
+                    "o", "output", "l", "selector", "filename", "f",
+                    "grace-period", "replicas", "type", "to-revision",
+                    "patch", "p", "revision"},
+        "helm": {"n", "namespace", "kubeconfig", "set"},
+        "argocd": set(),
+    }
+
+    @classmethod
+    def _first_positional(cls, cmd_args: list[str], binary: str) -> str | None:
+        """Return the first non-flag argument (the subcommand), skipping
+        flags and — for known value-taking flags — their values."""
+        value_flags = cls.VALUE_FLAGS.get(binary, set())
+        i = 1
+        while i < len(cmd_args):
+            arg = cmd_args[i]
+            if arg.startswith("-"):
+                if "=" not in arg:
+                    key = arg.split("=", 1)[0].lstrip("-")
+                    if (key in value_flags and i + 1 < len(cmd_args)
+                            and not cmd_args[i + 1].startswith("-")):
+                        i += 1  # value consumed with its flag
+                i += 1
+                continue
+            return arg
+        return None
+
     @classmethod
     def validate_command_flags(cls, cmd_args: list[str]) -> str | None:
         """Shared flag-whitelist check; returns an error string or None.
@@ -102,11 +133,14 @@ class CommandExecutor:
         for g in config["allowed_global_flags"]:
             allowed.add(g)
             allowed.add(g.lstrip("-"))
-        # The first positional argument is the subcommand — it must be
-        # whitelisted explicitly (`kubectl exec`/`config` are not).
-        if len(cmd_args) > 1 and not cmd_args[1].startswith("-"):
-            if cmd_args[1] not in config["allowed_flags"]:
-                return f"Subcommand '{cmd_args[1]}' is not allowed for command '{binary}'"
+        # The subcommand is the first POSITIONAL argument, not necessarily
+        # cmd_args[1]: global flags may precede it. Phase 16 P1-3: checking
+        # only cmd_args[1] let any flag-first invocation skip the whitelist
+        # entirely ("kubectl -n X edit deploy foo" ran with "edit" unchecked,
+        # as did "kubectl -n X config use-context prod").
+        subcommand = cls._first_positional(cmd_args, binary)
+        if subcommand is not None and subcommand not in config["allowed_flags"]:
+            return f"Subcommand '{subcommand}' is not allowed for command '{binary}'"
         i = 1
         while i < len(cmd_args):
             arg = cmd_args[i]

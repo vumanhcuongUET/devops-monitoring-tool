@@ -48,8 +48,24 @@ class CommandParser:
     # helm patterns
     HELM_COMMAND_PATTERN = re.compile(r"(?:install|upgrade|uninstall|rollback|list|status)")
 
+    # helm global flags that consume a value — needed to skip a flag-first
+    # invocation ("helm -n prod uninstall rel") without misreading the flag's
+    # value as the action positional.
+    HELM_GLOBAL_FLAGS_WITH_VALUES = {
+        "n", "namespace", "kube-context", "kubeconfig", "kube-apiserver",
+        "registry-config", "repository-cache", "repository-config",
+        "f", "values", "output", "o", "version",
+    }
+
     # argocd patterns
     ARGOCD_COMMAND_PATTERN = re.compile(r"(?:app|cluster|project)")
+
+    # argocd global flags (see HELM_GLOBAL_FLAGS_WITH_VALUES).
+    ARGOCD_GLOBAL_FLAGS_WITH_VALUES = {
+        "server", "auth-token", "grpc-web-root-path", "config",
+        "port-forward-namespace", "logformat", "loglevel", "headers",
+    }
+    ARGOCD_BOOLEAN_FLAGS = {"grpc-web", "insecure", "plaintext", "core", "port-forward"}
 
     def __init__(self):
         self._patterns = {
@@ -167,18 +183,50 @@ class CommandParser:
 
         return params
 
+    def _skip_global_flags(self, parts: list, idx: int,
+                           with_values: set, boolean_flags: set | None = None) -> int:
+        """Return the index of the first non-flag token at or after idx.
+
+        Value-taking flags skip their value ("helm -n prod uninstall" lands
+        on "uninstall", not "prod"); unknown or boolean flags skip only
+        themselves. A "--flag=value" form never consumes an extra token.
+        """
+        i = idx
+        while i < len(parts) and parts[i].startswith("-"):
+            name = parts[i].lstrip("-").split("=", 1)[0]
+            if ("=" not in parts[i] and name in with_values
+                    and i + 1 < len(parts) and not parts[i + 1].startswith("-")):
+                i += 2
+            elif boolean_flags and name in boolean_flags:
+                i += 1
+            else:
+                # Unknown flag: conservatively skip only itself; its value
+                # (if any) will surface and stop the scan — callers then
+                # fail to match an action rather than misread one.
+                i += 1
+        return i
+
     def _parse_helm(self, command: str) -> CommandParams:
         """Parse helm command."""
         parts = self._split(command)
         params = CommandParams(command_type=CommandType.HELM)
 
         # Skip 'helm'
-        idx = 1 if parts and parts[0] == "helm" else 0
+        flag_start = 1 if parts and parts[0] == "helm" else 0
+
+        # Global flags may precede the action ("helm -n prod uninstall rel")
+        idx = self._skip_global_flags(
+            parts, flag_start, self.HELM_GLOBAL_FLAGS_WITH_VALUES
+        )
 
         # Extract action (install, upgrade, uninstall, etc.)
         if idx < len(parts) and self.HELM_COMMAND_PATTERN.match(parts[idx]):
             params.action = parts[idx]
             idx += 1
+        else:
+            # Nothing parsed past the flags — keep the pre-flag position so
+            # _parse_flags still sees the whole invocation.
+            idx = flag_start
 
         # Extract release name (usually follows action)
         if idx < len(parts) and not parts[idx].startswith("-"):
@@ -190,7 +238,7 @@ class CommandParser:
             params.args.append(parts[idx])  # Chart path
             idx += 1
 
-        self._parse_flags(parts, idx, params)
+        self._parse_flags(parts, flag_start, params)
 
         return params
 
@@ -200,24 +248,34 @@ class CommandParser:
         params = CommandParams(command_type=CommandType.ARGOCD)
 
         # Skip 'argocd'
-        idx = 1 if parts and parts[0] == "argocd" else 0
+        flag_start = 1 if parts and parts[0] == "argocd" else 0
+
+        # Global flags may precede the resource type ("argocd --grpc-web app get")
+        idx = self._skip_global_flags(
+            parts, flag_start,
+            self.ARGOCD_GLOBAL_FLAGS_WITH_VALUES, self.ARGOCD_BOOLEAN_FLAGS,
+        )
 
         # Extract resource type (app, cluster, project)
         if idx < len(parts) and self.ARGOCD_COMMAND_PATTERN.match(parts[idx]):
             params.resource_type = parts[idx]
             idx += 1
+        else:
+            idx = flag_start
 
         # Extract action
-        if idx < len(parts):
+        if idx < len(parts) and not parts[idx].startswith("-"):
             params.action = parts[idx]
             idx += 1
+        else:
+            idx = flag_start
 
         # Extract app name (usually follows action)
         if idx < len(parts) and not parts[idx].startswith("-"):
             params.resource_name = parts[idx]
             idx += 1
 
-        self._parse_flags(parts, idx, params)
+        self._parse_flags(parts, flag_start, params)
 
         return params
 

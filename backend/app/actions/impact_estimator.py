@@ -84,7 +84,7 @@ class ImpactEstimator:
         """
         self.thresholds = thresholds or ImpactThresholds()
 
-    def estimate(
+    async def estimate(
         self,
         action_id: str,
         command: str,
@@ -110,7 +110,7 @@ class ImpactEstimator:
         is_namespace_wide = self._is_namespace_wide_operation(parsed)
 
         # Calculate resource impacts
-        resource_impacts = self._calculate_resource_impacts(
+        resource_impacts = await self._calculate_resource_impacts(
             parsed, k8s_client, dry_run
         )
 
@@ -239,7 +239,7 @@ class ImpactEstimator:
 
         return False
 
-    def _calculate_resource_impacts(
+    async def _calculate_resource_impacts(
         self,
         parsed: dict[str, Any],
         k8s_client: Any | None,
@@ -271,7 +271,7 @@ class ImpactEstimator:
 
         # If we have a k8s client and not in dry run, get actual counts
         if k8s_client and not dry_run:
-            impacts = self._get_real_resource_impacts(
+            impacts = await self._get_real_resource_impacts(
                 k8s_client, operation, resource_type, namespace, args
             )
         else:
@@ -280,7 +280,7 @@ class ImpactEstimator:
 
         return impacts
 
-    def _get_real_resource_impacts(
+    async def _get_real_resource_impacts(
         self,
         k8s_client: Any,
         operation: str,
@@ -305,7 +305,7 @@ class ImpactEstimator:
         try:
             # Map common resource types to k8s client methods
             if resource_type in ("pods", "pod") or operation == "rollout":
-                pods = k8s_client.list_pods(namespace=namespace)
+                pods = await k8s_client.list_pods(namespace=namespace)
                 impacts.append(ResourceImpact(
                     resource_type="pods",
                     affected_count=len(pods),
@@ -313,7 +313,7 @@ class ImpactEstimator:
                 ))
 
             elif resource_type in ("deployments", "deployment", "deploy"):
-                deployments = k8s_client.list_deployments(namespace=namespace)
+                deployments = await k8s_client.list_deployments(namespace=namespace)
                 impacts.append(ResourceImpact(
                     resource_type="deployments",
                     affected_count=len(deployments),
@@ -321,7 +321,7 @@ class ImpactEstimator:
                 ))
 
             elif resource_type in ("services", "service", "svc"):
-                services = k8s_client.list_services(namespace=namespace)
+                services = await k8s_client.list_services(namespace=namespace)
                 impacts.append(ResourceImpact(
                     resource_type="services",
                     affected_count=len(services),
@@ -329,7 +329,7 @@ class ImpactEstimator:
                 ))
 
             elif resource_type in ("configmaps", "configmap", "cm"):
-                configmaps = k8s_client.list_configmaps(namespace=namespace)
+                configmaps = await k8s_client.list_configmaps(namespace=namespace)
                 impacts.append(ResourceImpact(
                     resource_type="configmaps",
                     affected_count=len(configmaps),
@@ -337,7 +337,7 @@ class ImpactEstimator:
                 ))
 
             elif resource_type in ("secrets", "secret"):
-                secrets = k8s_client.list_secrets(namespace=namespace)
+                secrets = await k8s_client.list_secrets(namespace=namespace)
                 impacts.append(ResourceImpact(
                     resource_type="secrets",
                     affected_count=len(secrets),

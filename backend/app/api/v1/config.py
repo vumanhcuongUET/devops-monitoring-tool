@@ -535,6 +535,9 @@ async def create_git_branch(request: GitBranchCreateRequest, http_request: Reque
 
     except HTTPException:
         raise
+    except ValueError as e:
+        # Invalid ref name from the manager — client error, not a server fault
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Branch creation error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -615,6 +618,9 @@ async def sync_from_git(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        # Invalid branch name — client error, not a server fault
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Git sync error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

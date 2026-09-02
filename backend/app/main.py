@@ -624,8 +624,24 @@ async def health_ready():
 
 
 @app.post("/api/v1/auth/token", include_in_schema=True)
-async def create_auth_token():
-    """Generate a new bearer token. Requires API key in header (enforced by middleware)."""
+async def create_auth_token(request: Request):
+    """Generate a new service bearer token. API key only.
+
+    Phase 16 P1-1: the middleware accepts a user Bearer token as request
+    auth, but a service token must never be mintable from a user session —
+    it would skip per-user RBAC (role narrowing, viewer restrictions) for
+    its whole TTL.
+    """
+    if settings.AUTH_ENABLED and getattr(request.state, "auth_method", None) != "api_key":
+        logger.warning(
+            "Rejected service-token mint attempt via %s auth (user=%r)",
+            getattr(request.state, "auth_method", "anonymous"),
+            getattr(request.state, "user", None),
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Service tokens are minted with the X-API-Key credential only",
+        )
     from app.auth import create_token
     return {
         "access_token": create_token(),

@@ -358,16 +358,31 @@ class AIPermissionChecker:
     def _extract_action(self, command: str) -> str | None:
         """Extract action from a command string.
 
-        Args:
-            command: Command string (e.g., "kubectl delete pod")
-
-        Returns:
-            Extracted action or None
+        Phase 16 P1-2: this used to return ``parts[1]``, which is a global
+        flag for flag-first invocations ("kubectl -n prod delete pod x" →
+        "-n") and "app" for every argocd command. Both fall through
+        ``get_required_permission``'s EXECUTE default, so DELETE-tier
+        commands passed the execute-time check in staging while read-only
+        argocd actions were denied in production. Parse with the shared
+        CommandParser (per-binary action rules, flag-aware positional scan)
+        instead.
         """
+        from app.actions.parser import get_command_parser
+
+        try:
+            params = get_command_parser().parse(command)
+        except Exception:
+            return None
+        if params.action:
+            return params.action.lower()
+        # Verb the parser does not know ("edit", "config"): surface the
+        # first real positional so it maps through ACTION_PERMISSION_MAP
+        # instead of silently degrading to the EXECUTE default.
         parts = command.strip().split()
-        if len(parts) >= 2:
-            # Second word is usually the action
-            return parts[1].lower()
+        binary = parts[0] if parts else ""
+        for part in params.args:
+            if part != binary:
+                return part.lower()
         return None
 
 

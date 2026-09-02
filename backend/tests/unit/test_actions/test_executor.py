@@ -589,3 +589,25 @@ class TestFlagWhitelist:
 
     def test_non_whitelisted_binary(self):
         assert CommandExecutor.validate_command_flags(["curl", "http://x"]) is not None
+
+    def test_flag_first_invocation_still_whitelists_subcommand(self):
+        """Phase 16 P1-3: the subcommand is the first positional, not
+        cmd_args[1] — a leading global flag must not skip the whitelist."""
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "-n", "prod", "edit", "deploy", "foo"]) is not None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "--namespace=prod", "port-forward", "pod/p", "8080"]) is not None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "-n", "prod", "config", "use-context", "prod"]) is not None
+        assert CommandExecutor.validate_command_flags(
+            ["helm", "-n", "prod", "exec", "rel"]) is not None
+        # …while the legitimate flag-first remediation forms still pass.
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "-n", "prod", "delete", "pod", "x",
+             "--force", "--grace-period=0"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "--force", "delete", "pod", "x"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["helm", "-n", "prod", "rollback", "rel", "1"]) is None
+        assert CommandExecutor.validate_command_flags(
+            ["kubectl", "--context=staging", "get", "pods", "-o", "json"]) is None

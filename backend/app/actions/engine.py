@@ -153,7 +153,7 @@ class ActionEngine:
         # instead of silently degrading to heuristics.
         k8s_client = self.k8s_client
 
-        impact_estimate = impact_estimator.estimate(
+        impact_estimate = await impact_estimator.estimate(
             action_id=action_id,
             command=command,
             k8s_client=k8s_client,
@@ -548,7 +548,7 @@ class ActionEngine:
         if settings.OPA_ENFORCE:
             try:
                 opa_result = await get_opa_client().evaluate_action(
-                    action={"command": command, "id": action_id},
+                    action=self._build_opa_action_payload(action_id, command, state, environment),
                     project=project,
                     environment=environment,
                     user=request.executed_by,
@@ -805,6 +805,48 @@ class ActionEngine:
 
             logger.error(f"Action {action_id} execution failed: {e}")
             raise
+
+    def _build_opa_action_payload(
+        self,
+        action_id: str,
+        command: str,
+        state: dict,
+        environment: str,
+    ) -> dict:
+        """Build the input.action payload for OPA evaluation.
+
+        Phase 16 P1-9: this used to be just {"command", "id"}, while every
+        rule in actions.rego reads risk_level/status/parsed_params — all
+        undefined, so the policy could only ever deny. Send the full action
+        shape the policies were written against (the tracker state carries
+        _ACTION_STATE_FIELDS). Enum-valued fields are normalized to .value.
+        """
+
+        def _val(v):
+            return getattr(v, "value", v)
+
+        parsed = state.get("parsed_params")
+        if not isinstance(parsed, dict):
+            parsed = {}
+        context = state.get("context") if isinstance(state.get("context"), dict) else {}
+
+        return {
+            "id": action_id,
+            "command": command,
+            "command_type": _val(state.get("command_type") or "script"),
+            "status": _val(state.get("status") or "approved"),
+            "risk_level": _val(state.get("risk_level") or "medium"),
+            "title": state.get("title", ""),
+            "project": state.get("project", ""),
+            "environment": environment,
+            "resource_type": parsed.get("resource_type"),
+            "resource_name": parsed.get("resource_name"),
+            "parsed_params": parsed,
+            # Policies gate on labels["critical"]="true" and context override
+            # markers; default to empty rather than omitting the keys.
+            "labels": context.get("labels", {}) if isinstance(context.get("labels"), dict) else {},
+            "context": context,
+        }
 
     async def get_action(self, action_id: str) -> dict | None:
         """Get action details."""

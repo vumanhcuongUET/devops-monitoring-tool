@@ -11,6 +11,9 @@ data:
   ELASTICSEARCH_INDEX_PATTERN: "logs-*"
   APM_INDEX_PATTERN: "apm-*"
   PROMETHEUS_URL: "http://prometheus:9090"
+  # Phase 16 P1-9: OPA evaluation server (k8s/opa/deployment.yaml). The
+  # backend defaulted to localhost because no setting pointed here.
+  OPA_URL: "http://opa.opa.svc.cluster.local:8181"
   K8S_NAMESPACES: '["default","production"]'
   ALERT_CHECK_INTERVAL_SECONDS: "30"
   CORS_ORIGINS: '["http://localhost"]'
@@ -19,7 +22,10 @@ data:
   # approvals, audit log) lives on the alert-data PVC mounted at /app/data.
   DATA_DIR: "/app/data"
   # Tracing: OTLP endpoint of the collector; empty keeps the console exporter.
-  OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
+  # Phase 16 P1-10: the collector actually runs in devops-monitoring
+  # (k8s/otel-collector/otel-collector.yaml) — .monitoring pointed at a
+  # namespace with no collector, so DNS never resolved.
+  OTLP_ENDPOINT: "http://otel-collector.devops-monitoring.svc.cluster.local:4317"
   # Config subsystem store (versions, audit); scratch emptyDir at /app/configs
   # keeps it writable under the read-only root filesystem.
   CONFIG_STORAGE_PATH: "/app/configs"

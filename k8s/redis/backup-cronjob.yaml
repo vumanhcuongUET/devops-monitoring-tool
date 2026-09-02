@@ -105,7 +105,9 @@ spec:
                   # Retention: delete uploads older than RETENTION_DAYS.
                   # `aws s3 ls` lines look like: "2026-08-31 12:00:00 1234 file"
                   # — the DATE is field 1, stripped of dashes for comparison.
-                  CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+                  # busybox date cannot parse GNU "-d N days ago"; compute
+                  # the cutoff with awk strftime (portable busybox/GNU).
+                  CUTOFF_DATE=$(awk -v t=$(( $(date +%s) - RETENTION_DAYS*86400 )) 'BEGIN { print strftime("%Y%m%d", t) }')
                   aws s3 ls "${S3_BUCKET}/" | while read -r _date _time _size fname; do
                     [ -n "${fname:-}" ] || continue
                     FILE_DATE=$(echo "${_date}" | tr -d '-')

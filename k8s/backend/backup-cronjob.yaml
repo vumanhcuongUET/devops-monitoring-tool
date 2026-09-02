@@ -71,7 +71,9 @@ spec:
                   fi
 
                   # Retention (30d — file-state backups are the only copy).
-                  CUTOFF_DATE=$(date -d "${RETENTION_DAYS} days ago" +%Y%m%d)
+                  # busybox date cannot parse GNU "-d N days ago"; compute
+                  # the cutoff with awk strftime (portable busybox/GNU).
+                  CUTOFF_DATE=$(awk -v t=$(( $(date +%s) - RETENTION_DAYS*86400 )) 'BEGIN { print strftime("%Y%m%d", t) }')
                   aws s3 ls "${S3_BUCKET}/" | while read -r _date _time _size fname; do
                     [ -n "${fname:-}" ] || continue
                     FILE_DATE=$(echo "${_date}" | tr -d '-')

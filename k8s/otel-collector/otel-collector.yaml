@@ -42,22 +42,25 @@ data:
             action: insert
 
     exporters:
-      # Export to Jaeger
-      jaeger:
-        endpoint: jaeger:4317
+      # Phase 16 P1-10: the `jaeger` exporter was REMOVED from the collector
+      # in v0.86 — with the 0.97.0 image the pod exited at startup
+      # ("unsupported type"). Jaeger's OTLP receiver is the supported path.
+      otlp/jaeger:
+        endpoint: jaeger.devops-monitoring.svc.cluster.local:4317
         tls:
           insecure: true
 
-      # Alternative: Export to stdout (for debugging)
-      logging:
-        loglevel: debug
+      # Phase 16 P1-10: `logging` exporter was removed in v0.86 too; its
+      # replacement is `debug`.
+      debug:
+        verbosity: basic
 
     service:
       pipelines:
         traces:
           receivers: [otlp]
           processors: [batch, attributes]
-          exporters: [jaeger, logging]
+          exporters: [otlp/jaeger, debug]
 
 ---
 # Service for OTLP receiver

@@ -108,6 +108,63 @@ spec:
       ports:
         - port: 9090
           protocol: TCP
+    # Phase 16 P1-10: OTLP traces to the collector (separate namespace) —
+    # without this rule spans are silently dropped by the default-deny policy.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devops-monitoring
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - port: 4317
+          protocol: TCP
+    # Phase 16 P1-9: policy evaluation against the OPA server (opa namespace).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: opa
+      ports:
+        - port: 8181
+          protocol: TCP
+
+---
+# Phase 16 P1-11: backup CronJob pods (redis-backup-pod, alert-data-backup-pod)
+# matched only default-deny-all — they could not resolve DNS or reach S3, so
+# every run failed at its first line. Allow DNS + HTTPS egress for them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backup-pod-egress
+  namespace: devops-monitor
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - redis-backup-pod
+          - alert-data-backup-pod
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow HTTPS (S3 upload, package installation)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 443
+          protocol: TCP
 
 ---
 # Allow frontend egress to backend

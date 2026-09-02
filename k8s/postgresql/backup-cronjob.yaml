@@ -83,21 +83,20 @@ spec:
                   echo "Backup completed successfully"
 
               env:
+                # Phase 16 P1-11: PGUSER/PGDATABASE referenced secret key
+                # `username`, which no template creates — every pod died with
+                # CreateContainerConfigError before running a single backup.
+                # The user/db are fixed by the StatefulSet bootstrap
+                # (POSTGRES_USER: devops_monitor, k8s/postgresql/deployment.yaml).
                 - name: PGUSER
-                  valueFrom:
-                    secretKeyRef:
-                      name: postgres-credentials
-                      key: username
+                  value: "devops_monitor"
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: postgres-credentials
                       key: password
                 - name: PGDATABASE
-                  valueFrom:
-                    secretKeyRef:
-                      name: postgres-credentials
-                      key: username  # bootstrap DB is named after the user
+                  value: "devops_monitor"
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
                     secretKeyRef:

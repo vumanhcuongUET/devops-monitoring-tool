@@ -1,7 +1,7 @@
 """approval_events table (review F2: durable approval event log)
 
 Revision ID: 003_approval_events
-Revises: 002_timescaledb_metrics
+Revises: 002_timescaledb
 Create Date: 2026-08-29
 """
 
@@ -9,7 +9,10 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "003_approval_events"
-down_revision = "002_timescaledb_metrics"
+# Phase 16 P1-12: pointed at the FILE name "002_timescaledb_metrics" —
+# the actual revision id in 002 is "002_timescaledb", so the chain
+# (and alembic upgrade head) failed to locate the revision.
+down_revision = "002_timescaledb"
 branch_labels = None
 depends_on = None
 

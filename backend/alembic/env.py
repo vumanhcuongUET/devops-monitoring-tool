@@ -46,10 +46,13 @@ DATABASE_URL = (
 
 
 def get_database_url() -> str:
-    """Get the database URL for migrations."""
-    # Convert async URL to sync for Alembic
-    if DATABASE_URL.startswith("postgresql+asyncpg://"):
-        return DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+py://", 1)
+    """Get the database URL for migrations.
+
+    Phase 16 P1-12: this used to rewrite postgresql+asyncpg:// to
+    postgresql+py:// — a dialect that does not exist in SQLAlchemy — so
+    every migration died at engine creation. run_migrations_online drives
+    the async engine (asyncpg), so the URL must stay as configured.
+    """
     return DATABASE_URL
 
 

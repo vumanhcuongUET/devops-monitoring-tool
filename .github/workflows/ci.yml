@@ -334,6 +334,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # upload-sarif needs this to push Trivy results to code scanning
+      security-events: write
 
     strategy:
       matrix:
